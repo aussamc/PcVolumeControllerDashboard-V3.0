@@ -1,0 +1,17 @@
+# Build output
+**/bin/
+**/obj/
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Diagnostics exports (runtime-generated, not source)
+diagnostics_extracted/
+
+# User-specific settings overrides
+*.local.json
