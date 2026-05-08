@@ -1,0 +1,5344 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
+using System.IO.Ports;
+using System.IO.Compression;
+using System.Text;
+using System.Threading.Tasks;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text.Json;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Interop;
+using System.Windows.Input;
+using Microsoft.Win32;
+using NAudio.CoreAudioApi;
+using Forms = System.Windows.Forms;
+using WpfBrush = System.Windows.Media.Brush;
+using WpfBrushes = System.Windows.Media.Brushes;
+using WpfColor = System.Windows.Media.Color;
+using WpfSolidColorBrush = System.Windows.Media.SolidColorBrush;
+using WpfSystemColors = System.Windows.SystemColors;
+using WpfDispatcherTimer = System.Windows.Threading.DispatcherTimer;
+
+namespace PcVolumeControllerDashboard;
+
+public partial class MainWindow : Window
+{
+    private const string DashboardVersion = "1.3.39";
+    private const string RequiredProtocolVersion = "1.3.38 Beta 7";
+    private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
+    private const int LogRetentionDays = 7;
+    private const int ExpectedChannelCount = 6;
+
+    private const int BaudRate = 115200;
+    private const int EspChannel = 0;
+    private const int BaseVolumeStepPercent = 2;
+    private const int MaxEncoderSensitivityPercent = 500;
+    private const int MaxVolumeStepPercent = 25;
+    private const int EncoderApplyIntervalMs = 55;
+    private const int EncoderReverseGuardMs = 140;
+    private const int EncoderReverseConfirmEvents = 2;
+    private const int EncoderMaxCoalescedDelta = 5;
+    private const int StatePollMs = 500;
+    private const int HeartbeatMs = 1000;
+    private const int AudioSessionRefreshCheckMs = 2500;
+    private const int ComPortRefreshMs = 1000;
+    private const int DeviceMessageTimeoutMs = 5000;
+    private const int HelloTimeoutMs = 5000;
+    private const int AutoReconnectCooldownMs = 3000;
+    private const int RejectedPortCooldownMs = 5 * 60 * 1000;
+    private const int PhantomPortOpenFailCooldownMs = 15 * 1000;
+    private const int DeviceChangeDebounceMs = 2200;
+    private const int RememberedPortUsbSettleMs = 1200;
+    private const int RememberedPortMissingBeforeScanAllMs = 30000;
+    private const int UserIdleSleepMs = 10 * 60 * 1000;
+    private const int DebugConsoleMaxLines = 500;
+    private const int ChannelCount = 6;
+    private const string StartupRegistryName = "PcVolumeControllerDashboard";
+    private const int DwmwaUseImmersiveDarkMode = 20;
+    private const int WmDeviceChange = 0x0219;
+    private const int DbtDeviceArrival = 0x8000;
+    private const int DbtDeviceRemoveComplete = 0x8004;
+    private const int DbtDevNodesChanged = 0x0007;
+
+    private readonly ObservableCollection<AudioTargetItem> _audioTargets = new();
+    private readonly ObservableCollection<ChannelMappingItem> _channels = new();
+    private readonly ObservableCollection<string> _availableComPorts = new();
+    private readonly object _serialLock = new();
+    private readonly object _serialBufferLock = new();
+    private readonly object _logFileLock = new();
+
+    private SerialPort? _serial;
+    private MMDeviceEnumerator? _deviceEnumerator;
+    private MMDevice? _defaultRenderDevice;
+    private System.Threading.Timer? _statePollTimer;
+    private System.Threading.Timer? _heartbeatTimer;
+    private System.Threading.Timer? _audioSessionRefreshTimer;
+    private System.Threading.Timer? _comPortRefreshTimer;
+    private Forms.NotifyIcon? _trayIcon;
+
+    private readonly bool _safeMode = Environment.GetCommandLineArgs()
+        .Any(arg => string.Equals(arg, "--safe", StringComparison.OrdinalIgnoreCase));
+    private readonly List<string> _debugConsoleLines = new();
+    private readonly int[] _hardwareEncoderCounts = new int[ExpectedChannelCount];
+    private readonly bool[] _hardwareButtonSeen = new bool[ExpectedChannelCount];
+    private readonly object _encoderSmoothingLock = new();
+    private readonly int[] _encoderPendingDeltas = new int[ExpectedChannelCount];
+    private readonly DateTime[] _encoderLastAppliedAt = new DateTime[ExpectedChannelCount];
+    private readonly int[] _encoderLastDirection = new int[ExpectedChannelCount];
+    private readonly int[] _encoderReverseCandidateDirection = new int[ExpectedChannelCount];
+    private readonly int[] _encoderReverseCandidateCount = new int[ExpectedChannelCount];
+    private readonly DateTime[] _encoderReverseCandidateStartedAt = new DateTime[ExpectedChannelCount];
+    private readonly System.Threading.Timer?[] _encoderCoalesceTimers = new System.Threading.Timer?[ExpectedChannelCount];
+
+    private DashboardSettings _settings = new();
+    private int _selectedChannelIndex = 0;
+    private int _lastSentVolume = -1;
+    private bool _lastSentMute;
+    private string _lastSentLabel = string.Empty;
+    private string _lastAudioSessionSnapshot = string.Empty;
+    private string _lastStateSent = "--";
+    private string _lastEspMessage = "--";
+    private DateTime? _lastEspMessageTime;
+    private string _espFirmwareName = "Unknown";
+    private string _espProtocolVersion = "Unknown";
+    private string _espChannelCount = "Unknown";
+    private bool _esp32Seen;
+    private bool _esp32HelloReceived;
+    private DateTime? _serialConnectedAt;
+    private DateTime _lastAutoReconnectAttempt = DateTime.MinValue;
+    private string _activeConnectionState = "Disconnected";
+    private string[] _lastKnownComPorts = Array.Empty<string>();
+    private string _lastLoggedComPortSnapshot = string.Empty;
+    private string _lastLoggedComPortSelection = string.Empty;
+    private string _lastLoggedRememberedControllerPort = string.Empty;
+    private string _lastLoggedConnectionState = string.Empty;
+    private bool _reallyClose;
+    private int _statePollBusy;
+    private int _audioRefreshBusy;
+    private int _comRefreshBusy;
+    private int _deviceChangeRefreshQueued;
+    private string _serialReceiveBuffer = string.Empty;
+    private bool _manualDisconnectRequested;
+    private DateTime _lastManualDisconnectAt = DateTime.MinValue;
+    private bool _manualAutoReconnectSuppressionLogged;
+    private bool _serialControlLinesDisabledLogged;
+    private bool _controllerSleepRequested;
+    private string _controllerSleepReason = string.Empty;
+    private bool _sessionLocked;
+    private bool _systemSuspending;
+    private bool _lastUserIdleSleepState;
+    private readonly Dictionary<string, DateTime> _rejectedComPorts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, DateTime> _phantomComPorts = new(StringComparer.OrdinalIgnoreCase);
+    private DateTime? _rememberedPortMissingSince;
+    private DateTime _rememberedPortReadyAfter = DateTime.MinValue;
+    private DateTime _lastRememberedPortScanDelayLog = DateTime.MinValue;
+    private readonly string _logPath = GetLogPath();
+    private string _selectedFirmwareBinPath = string.Empty;
+    private System.Threading.Timer? _fullStateSendCoalesceTimer;
+    private int _fullStateSendQueued;
+    private DateTime _lastSleepWakeTestCommandAt = DateTime.MinValue;
+    private Slider? _activeSliderDrag;
+
+
+    public MainWindow()
+    {
+        InitializeComponent();
+
+        AudioSessionsListView.ItemsSource = _audioTargets;
+        ChannelTargetComboBox.ItemsSource = _audioTargets;
+        ChannelMappingsListView.ItemsSource = _channels;
+
+        LoadSettings();
+        SetupTrayIcon();
+        SystemEvents.SessionSwitch += OnSessionSwitch;
+        SystemEvents.PowerModeChanged += OnPowerModeChanged;
+
+        _deviceEnumerator = new MMDeviceEnumerator();
+        RefreshDefaultAudioDevice();
+
+        BuildChannels();
+        BuildLogicalChannelComboBox();
+        ApplySettingsToUi();
+        ApplyTheme();
+        ApplySavedWindowSize();
+        CleanupOldLogs();
+        LogStartupHeader();
+        UpdateVersionHeader();
+        UpdateSelectedFirmwareBinDisplay();
+        ApplyFirstRunWizardSettingsToUi();
+        UpdateFirstRunWizardStatus();
+
+        ForceRefreshComPorts("startup", preserveSelection: false);
+        RefreshAudioSessions();
+        ApplySettingsToChannels();
+        SelectChannel(_settings.SelectedChannelIndex);
+
+        _statePollTimer = new System.Threading.Timer(_ =>
+        {
+            QueueStatePollTick();
+        }, null, StatePollMs, StatePollMs);
+
+        _heartbeatTimer = new System.Threading.Timer(_ =>
+        {
+            SendPingToDevice();
+        }, null, HeartbeatMs, HeartbeatMs);
+
+        _audioSessionRefreshTimer = new System.Threading.Timer(_ =>
+        {
+            QueueAudioRefreshTick();
+        }, null, AudioSessionRefreshCheckMs, AudioSessionRefreshCheckMs);
+
+        _comPortRefreshTimer = new System.Threading.Timer(_ =>
+        {
+            QueueComPortRefreshTick();
+        }, null, ComPortRefreshMs, ComPortRefreshMs);
+
+
+        if (_safeMode)
+        {
+            SetConnectionStatus("Safe Mode - hardware auto-connect disabled", connected: false);
+            Log("Safe mode enabled by --safe argument. Auto-connect, reconnect loop, and audio-control writes are disabled.");
+        }
+
+        if (!_settings.FirstRunWizardCompleted && !_safeMode)
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (MainTabs != null && FirstRunWizardTab != null)
+                {
+                    MainTabs.SelectedItem = FirstRunWizardTab;
+                }
+            }));
+        }
+
+        if (_settings.AutoConnectOnLaunch && !_safeMode)
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (_serial?.IsOpen != true)
+                {
+                    TryAutoReconnect(GetAvailableComPorts());
+                }
+            }));
+        }
+
+        if (_settings.StartMinimizedToTray && _settings.MinimizeToTray)
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                HideToTray();
+                ShowTrayNotification("PC Volume Controller", "Dashboard started minimized to tray.");
+            }));
+        }
+    }
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+
+        HwndSource? source = PresentationSource.FromVisual(this) as HwndSource;
+        source?.AddHook(WndProc);
+
+        ApplyTheme();
+    }
+
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == WmDeviceChange)
+        {
+            int eventType = wParam.ToInt32();
+
+            if (eventType == DbtDeviceArrival || eventType == DbtDeviceRemoveComplete || eventType == DbtDevNodesChanged)
+            {
+                QueueDebouncedDeviceChangeRefresh($"Windows device-change event 0x{eventType:X}");
+            }
+        }
+
+        return IntPtr.Zero;
+    }
+
+    private void QueueDebouncedDeviceChangeRefresh(string reason)
+    {
+        // Windows can report the device-change event before the COM port has
+        // actually reappeared. Do not clear remembered-port cooldowns here; the
+        // delayed refresh will clear them only after SerialPort.GetPortNames()
+        // confirms the remembered controller port is present.
+        if (System.Threading.Interlocked.Exchange(ref _deviceChangeRefreshQueued, 1) == 1)
+        {
+            return;
+        }
+
+        Log($"{reason} received. Scheduling one debounced COM-port refresh.");
+        QueueDelayedComPortRefresh("Windows device change debounced refresh");
+    }
+
+    private void QueueDelayedComPortRefresh(string reason)
+    {
+        _ = System.Threading.Tasks.Task.Run(async () =>
+        {
+            await System.Threading.Tasks.Task.Delay(DeviceChangeDebounceMs);
+
+            try
+            {
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    // Re-check immediately before refreshing. This catches the case
+                    // where the device-change burst happened before Windows finished
+                    // recreating the COM port.
+                    UpdateRememberedControllerPortPresence(reason);
+                    UpdateComPortAndConnectionState(forceRefresh: true, reason: reason);
+                });
+            }
+            catch
+            {
+            }
+            finally
+            {
+                System.Threading.Interlocked.Exchange(ref _deviceChangeRefreshQueued, 0);
+            }
+        });
+    }
+
+    [DllImport("dwmapi.dll", CharSet = CharSet.Unicode, PreserveSig = true)]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct LASTINPUTINFO
+    {
+        public uint cbSize;
+        public uint dwTime;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);
+
+    private void QueueStatePollTick()
+    {
+        if (System.Threading.Interlocked.Exchange(ref _statePollBusy, 1) == 1)
+        {
+            return;
+        }
+
+        try
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                try
+                {
+                    RefreshAllChannelStates();
+                    UpdateControllerPowerStateFromPcActivity();
+                    SendStateIfChanged();
+                    UpdateDiagnostics();
+                }
+                catch (Exception ex)
+                {
+                    Log($"State poll error: {ex.Message}");
+                }
+                finally
+                {
+                    System.Threading.Interlocked.Exchange(ref _statePollBusy, 0);
+                }
+            }));
+        }
+        catch
+        {
+            System.Threading.Interlocked.Exchange(ref _statePollBusy, 0);
+        }
+    }
+
+    private void QueueAudioRefreshTick()
+    {
+        if (System.Threading.Interlocked.Exchange(ref _audioRefreshBusy, 1) == 1)
+        {
+            return;
+        }
+
+        try
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                try
+                {
+                    AutoRefreshAudioSessionsIfChanged();
+                }
+                finally
+                {
+                    System.Threading.Interlocked.Exchange(ref _audioRefreshBusy, 0);
+                }
+            }));
+        }
+        catch
+        {
+            System.Threading.Interlocked.Exchange(ref _audioRefreshBusy, 0);
+        }
+    }
+
+    private void QueueComPortRefreshTick()
+    {
+        if (System.Threading.Interlocked.Exchange(ref _comRefreshBusy, 1) == 1)
+        {
+            return;
+        }
+
+        try
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                try
+                {
+                    RefreshComPortsIfChanged();
+                }
+                catch (Exception ex)
+                {
+                    Log($"COM refresh error: {ex.Message}");
+                }
+                finally
+                {
+                    System.Threading.Interlocked.Exchange(ref _comRefreshBusy, 0);
+                }
+            }));
+        }
+        catch
+        {
+            System.Threading.Interlocked.Exchange(ref _comRefreshBusy, 0);
+        }
+    }
+
+    private void RequestManualDisconnect(string source)
+    {
+        _manualDisconnectRequested = true;
+        _manualAutoReconnectSuppressionLogged = false;
+        _lastManualDisconnectAt = DateTime.Now;
+        _lastAutoReconnectAttempt = DateTime.Now;
+        _rejectedComPorts.Clear();
+        _phantomComPorts.Clear();
+        Log($"{source}. Auto-reconnect paused for this dashboard session until Connect/Reconnect is requested.");
+        DisconnectSerial();
+        SetConnectionStatus("Disconnected - manual reconnect required", connected: false);
+    }
+
+    private void RefreshPortsButton_Click(object sender, RoutedEventArgs e)
+    {
+        CheckConnectedPortStillExists();
+        ForceRefreshComPorts("manual refresh", preserveSelection: false);
+    }
+
+    private void ConnectButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_serial?.IsOpen == true)
+        {
+            RequestManualDisconnect("Manual disconnect requested");
+        }
+        else
+        {
+            _manualDisconnectRequested = false;
+            _manualAutoReconnectSuppressionLogged = false;
+            ConnectSerial();
+        }
+    }
+
+    private void RefreshSessionsButton_Click(object sender, RoutedEventArgs e)
+    {
+        RefreshAudioSessions();
+        RefreshAllChannelStates();
+        SendAllChannelStatesToDevice();
+        SendStateToDevice(force: true);
+    }
+
+    private void SaveSettingsButton_Click(object sender, RoutedEventArgs e)
+    {
+        SaveSettingsFromUi();
+        ApplyStartupSetting();
+        ApplyTheme();
+        RefreshAudioSessions();
+        RefreshAllChannelStates();
+        SendAllChannelStatesToDevice();
+        SendStateToDevice(force: true);
+        SendOledSettingsToDevice(logIfNotConnected: false);
+        Log("Settings saved.");
+    }
+
+    private void SaveOledSetupButton_Click(object sender, RoutedEventArgs e)
+    {
+        SaveSettingsFromUi();
+        UpdateOledBrightnessLabel();
+        UpdateOledSleepTimeoutLabel();
+        UpdateOledConnectedIdleTimeoutLabel();
+        UpdateOledPreviewPanels();
+        SendOledSettingsToDevice(logIfNotConnected: true);
+        Log("OLED setup saved.");
+    }
+
+    private void CloseAppButton_Click(object sender, RoutedEventArgs e)
+    {
+        ExitApplication();
+    }
+
+    private void WizardDetectControllerButton_Click(object sender, RoutedEventArgs e)
+    {
+        _manualDisconnectRequested = false;
+        ForceRefreshComPorts("first-run wizard detect", preserveSelection: false);
+
+        if (_serial?.IsOpen == true && _esp32HelloReceived)
+        {
+            Log("First-run wizard detect requested; controller is already connected.");
+            UpdateFirstRunWizardStatus();
+            return;
+        }
+
+        string[] ports = GetAvailableComPorts();
+        if (ports.Length == 0)
+        {
+            SetConnectionStatus("Disconnected - no COM ports found", connected: false);
+            Log("First-run wizard detect requested, but no usable COM ports were found.");
+            UpdateFirstRunWizardStatus();
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_settings.LastComPort) &&
+            ports.Contains(_settings.LastComPort, StringComparer.OrdinalIgnoreCase))
+        {
+            Log($"First-run wizard probing remembered controller port {_settings.LastComPort}.");
+            ConnectSerial(_settings.LastComPort, showErrors: false, isAutoReconnect: true);
+        }
+        else
+        {
+            Log("First-run wizard scanning available COM ports for controller identity.");
+            bool previousScanAll = _settings.ScanAllComPortsIfRememberedMissing;
+            _settings.ScanAllComPortsIfRememberedMissing = true;
+            TryAutoReconnect(ports);
+            _settings.ScanAllComPortsIfRememberedMissing = previousScanAll;
+        }
+
+        UpdateFirstRunWizardStatus();
+    }
+
+    private void WizardApplyRecommendedButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (WizardAutoConnectCheckBox != null)
+        {
+            WizardAutoConnectCheckBox.IsChecked = true;
+        }
+
+        if (WizardStartWithWindowsCheckBox != null)
+        {
+            WizardStartWithWindowsCheckBox.IsChecked = true;
+        }
+
+        if (WizardMinimizeToTrayCheckBox != null)
+        {
+            WizardMinimizeToTrayCheckBox.IsChecked = true;
+        }
+
+        if (WizardStartMinimizedCheckBox != null)
+        {
+            WizardStartMinimizedCheckBox.IsChecked = true;
+        }
+
+        if (WizardScanAllCheckBox != null)
+        {
+            WizardScanAllCheckBox.IsChecked = false;
+        }
+
+        WizardSaveSetupButton_Click(sender, e);
+    }
+
+    private void WizardSaveSetupButton_Click(object sender, RoutedEventArgs e)
+    {
+        _settings.AutoConnectOnLaunch = WizardAutoConnectCheckBox?.IsChecked == true;
+        _settings.StartWithWindows = WizardStartWithWindowsCheckBox?.IsChecked == true;
+        _settings.MinimizeToTray = WizardMinimizeToTrayCheckBox?.IsChecked == true;
+        _settings.StartMinimizedToTray = WizardStartMinimizedCheckBox?.IsChecked == true;
+        _settings.ScanAllComPortsIfRememberedMissing = WizardScanAllCheckBox?.IsChecked == true;
+
+        ApplySettingsToUi();
+        ApplyStartupSetting();
+        SaveSettingsFromCurrentState();
+        UpdateFirstRunWizardStatus();
+        Log("First-run wizard setup choices saved.");
+    }
+
+    private void WizardOpenAudioPageButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (MainTabs != null)
+        {
+            MainTabs.SelectedIndex = 0;
+        }
+    }
+
+    private void WizardCompleteButton_Click(object sender, RoutedEventArgs e)
+    {
+        _settings.FirstRunWizardCompleted = true;
+        SaveSettingsFromCurrentState();
+        UpdateFirstRunWizardStatus();
+        Log("First-run wizard marked complete.");
+
+        if (MainTabs != null)
+        {
+            MainTabs.SelectedIndex = 0;
+        }
+    }
+
+    private void EncoderSensitivitySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (EncoderSensitivityValueTextBlock == null)
+        {
+            return;
+        }
+
+        int sensitivity = GetEncoderSensitivityPercentFromUi();
+        EncoderSensitivityValueTextBlock.Text = $"Sensitivity: {sensitivity}%";
+        _settings.EncoderSensitivityPercent = sensitivity;
+    }
+
+    private void ChannelSensitivitySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (ChannelSensitivityValueTextBlock == null || _channels.Count == 0)
+        {
+            return;
+        }
+
+        ChannelMappingItem channel = SelectedChannel;
+        int sensitivity = GetChannelSensitivityPercentFromUi();
+        channel.EncoderSensitivityPercent = sensitivity;
+        ChannelSensitivityValueTextBlock.Text = $"Channel sensitivity: {sensitivity}%";
+    }
+
+    private void ChannelButtonActionComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ChannelButtonActionComboBox == null || _channels.Count == 0)
+        {
+            return;
+        }
+
+        SelectedChannel.ButtonAction = GetSelectedChannelButtonActionFromUi();
+    }
+
+    private void Slider_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not Slider slider)
+        {
+            return;
+        }
+
+        SetSliderValueFromMouse(slider, e);
+        _activeSliderDrag = slider;
+        slider.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void Slider_PreviewMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (sender is not Slider slider || _activeSliderDrag != slider || e.LeftButton != MouseButtonState.Pressed)
+        {
+            return;
+        }
+
+        SetSliderValueFromMouse(slider, e);
+        e.Handled = true;
+    }
+
+    private void Slider_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not Slider slider)
+        {
+            return;
+        }
+
+        if (_activeSliderDrag == slider)
+        {
+            SetSliderValueFromMouse(slider, e);
+            _activeSliderDrag = null;
+            slider.ReleaseMouseCapture();
+            e.Handled = true;
+        }
+    }
+
+    private void Slider_LostMouseCapture(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (_activeSliderDrag == sender)
+        {
+            _activeSliderDrag = null;
+        }
+    }
+
+    private static void SetSliderValueFromMouse(Slider slider, System.Windows.Input.MouseEventArgs e)
+    {
+        System.Windows.Point clickPosition = e.GetPosition(slider);
+        double trackWidth = Math.Max(1.0, slider.ActualWidth);
+        double ratio = Math.Clamp(clickPosition.X / trackWidth, 0.0, 1.0);
+        double newValue = slider.Minimum + (ratio * (slider.Maximum - slider.Minimum));
+
+        if (slider.IsSnapToTickEnabled && slider.TickFrequency > 0)
+        {
+            newValue = Math.Round(newValue / slider.TickFrequency) * slider.TickFrequency;
+        }
+
+        slider.Value = Math.Clamp(newValue, slider.Minimum, slider.Maximum);
+    }
+
+    private void ThemeRadioButton_Checked(object sender, RoutedEventArgs e)
+    {
+        if (ThemeFollowSystemRadioButton == null ||
+            ThemeLightRadioButton == null ||
+            ThemeDarkRadioButton == null)
+        {
+            return;
+        }
+
+        _settings.ThemeMode = GetThemeModeFromUi();
+        ApplyTheme();
+    }
+
+    private void LogicalChannelComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (LogicalChannelComboBox.SelectedIndex >= 0 && LogicalChannelComboBox.SelectedIndex < ChannelCount)
+        {
+            SelectChannel(LogicalChannelComboBox.SelectedIndex);
+        }
+    }
+
+    private void ChannelMappingsListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ChannelMappingsListView.SelectedItem is ChannelMappingItem channel)
+        {
+            SelectChannel(channel.ChannelIndex);
+        }
+    }
+
+    private void AssignChannelButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (ChannelTargetComboBox.SelectedItem is not AudioTargetItem target)
+        {
+            return;
+        }
+
+        ChannelMappingItem channel = _channels[_selectedChannelIndex];
+
+        channel.TargetKey = target.Key;
+        channel.AssignedLabel = target.Label;
+        channel.FriendlyName = ChannelDisplayNameTextBox.Text.Trim();
+
+        if (string.IsNullOrWhiteSpace(channel.FriendlyName))
+        {
+            channel.FriendlyName = target.Label;
+        }
+
+        channel.Status = target.IsActiveOrMaster ? "Active" : "Waiting for app";
+
+        SaveSettingsFromCurrentState();
+        RefreshAudioSessions();
+        RefreshAllChannelStates();
+        SendAllChannelStatesToDevice();
+        SendStateToDevice(force: true);
+
+        Log($"Channel {channel.ChannelNumber} assigned to {target.Label}.");
+    }
+
+    private void SaveDisplayNameButton_Click(object sender, RoutedEventArgs e)
+    {
+        ChannelMappingItem channel = _channels[_selectedChannelIndex];
+
+        channel.FriendlyName = ChannelDisplayNameTextBox.Text.Trim();
+
+        if (string.IsNullOrWhiteSpace(channel.FriendlyName))
+        {
+            channel.FriendlyName = channel.AssignedLabel;
+        }
+
+        SaveSettingsFromCurrentState();
+        RefreshAllChannelStates();
+        SendAllChannelStatesToDevice();
+        SendStateToDevice(force: true);
+
+        Log($"Channel {channel.ChannelNumber} display name saved as {channel.DisplayLabel}.");
+    }
+
+    private void PreviousChannelButton_Click(object sender, RoutedEventArgs e)
+    {
+        SelectPreviousChannel();
+    }
+
+    private void NextChannelButton_Click(object sender, RoutedEventArgs e)
+    {
+        SelectNextChannel();
+    }
+
+    private void VolumeDownButton_Click(object sender, RoutedEventArgs e)
+    {
+        ChangeSelectedChannelVolume(-GetVolumeStepPercent());
+        RefreshAllChannelStates();
+        SendAllChannelStatesToDevice();
+        SendStateToDevice(force: true);
+    }
+
+    private void VolumeUpButton_Click(object sender, RoutedEventArgs e)
+    {
+        ChangeSelectedChannelVolume(GetVolumeStepPercent());
+        RefreshAllChannelStates();
+        SendAllChannelStatesToDevice();
+        SendStateToDevice(force: true);
+    }
+
+    private void MuteButton_Click(object sender, RoutedEventArgs e)
+    {
+        ToggleSelectedChannelMute();
+        RefreshAllChannelStates();
+        SendAllChannelStatesToDevice();
+        SendStateToDevice(force: true);
+    }
+
+    private void BuildChannels()
+    {
+        _channels.Clear();
+
+        for (int i = 0; i < ChannelCount; i++)
+        {
+            _channels.Add(new ChannelMappingItem
+            {
+                ChannelIndex = i,
+                ChannelNumber = i + 1,
+                TargetKey = i == 0 ? "MASTER" : string.Empty,
+                AssignedLabel = i == 0 ? "Master" : "Unassigned",
+                FriendlyName = i == 0 ? "Master" : string.Empty,
+                EncoderSensitivityPercent = 50,
+                ButtonAction = ChannelButtonActions.SelectNextChannel,
+                Status = i == 0 ? "Active" : "Unassigned"
+            });
+        }
+    }
+
+    private void BuildLogicalChannelComboBox()
+    {
+        LogicalChannelComboBox.Items.Clear();
+
+        for (int i = 0; i < ChannelCount; i++)
+        {
+            LogicalChannelComboBox.Items.Add($"Channel {i + 1}");
+        }
+    }
+
+    private void SelectPreviousChannel()
+    {
+        int index = _selectedChannelIndex - 1;
+
+        if (index < 0)
+        {
+            index = ChannelCount - 1;
+        }
+
+        SelectChannel(index);
+    }
+
+    private void SelectNextChannel()
+    {
+        int index = _selectedChannelIndex + 1;
+
+        if (index >= ChannelCount)
+        {
+            index = 0;
+        }
+
+        SelectChannel(index);
+    }
+
+    private bool _selectingChannel;
+
+    private void SelectChannel(int index)
+    {
+        if (_selectingChannel) return;
+
+        if (index < 0 || index >= ChannelCount)
+        {
+            index = 0;
+        }
+
+        _selectingChannel = true;
+        try
+        {
+        _selectedChannelIndex = index;
+        _settings.SelectedChannelIndex = index;
+        SaveSettings();
+
+        if (LogicalChannelComboBox.SelectedIndex != index)
+        {
+            LogicalChannelComboBox.SelectedIndex = index;
+        }
+
+        if (ChannelMappingsListView.SelectedItem != _channels[index])
+        {
+            ChannelMappingsListView.SelectedItem = _channels[index];
+        }
+
+        ChannelMappingsListView.ScrollIntoView(_channels[index]);
+
+        ChannelMappingItem channel = _channels[index];
+        AudioTargetItem? target = FindTargetByKey(channel.TargetKey);
+
+        if (target != null)
+        {
+            ChannelTargetComboBox.SelectedItem = target;
+        }
+
+        ChannelDisplayNameTextBox.Text = channel.DisplayLabel == "Unassigned" ? string.Empty : channel.DisplayLabel;
+
+        RefreshAllChannelStates();
+        UpdateSelectedChannelUi();
+        SendStateToDevice(force: true);
+
+        }
+        finally
+        {
+            _selectingChannel = false;
+        }
+    }
+
+    private ChannelMappingItem SelectedChannel => _channels[_selectedChannelIndex];
+
+    private void RefreshComPortsIfChanged()
+    {
+        UpdateComPortAndConnectionState(forceRefresh: false, reason: "auto refresh");
+    }
+
+    private void UpdateComPortAndConnectionState(bool forceRefresh = false, string reason = "auto refresh")
+    {
+        PrunePhantomComPorts();
+        UpdateRememberedControllerPortPresence(reason);
+
+        string[] ports = GetAvailableComPorts();
+        string? connectedPort = _serial?.PortName;
+        bool serialOpen = _serial?.IsOpen == true;
+        bool connectedPortStillExists = serialOpen && !string.IsNullOrWhiteSpace(connectedPort) &&
+            ports.Any(port => port.Equals(connectedPort, StringComparison.OrdinalIgnoreCase));
+
+        bool portListChanged = !_lastKnownComPorts.SequenceEqual(ports, StringComparer.OrdinalIgnoreCase);
+        string currentSnapshot = string.Join("|", ComPortComboBox.Items.Cast<object>().Select(item => item.ToString()));
+        string newSnapshot = string.Join("|", ports);
+
+        if (serialOpen && !connectedPortStillExists)
+        {
+            Log($"Connected COM port {connectedPort} is no longer available. Marking controller disconnected.");
+            DisconnectSerial(sendDisconnectCommand: false, preserveLastControllerPort: true, refreshPortsAfterDisconnect: false);
+            serialOpen = false;
+            connectedPort = null;
+            ports = GetAvailableComPorts();
+            QueueDelayedComPortRefresh("connected port disappeared delayed refresh");
+        }
+        else if (serialOpen && IsConnectedDeviceTimedOut())
+        {
+            Log("No valid ESP32 identity/heartbeat received within timeout. Marking port disconnected.");
+            if (!_esp32HelloReceived)
+            {
+                MarkPortRejected(connectedPort, "no valid controller identity received");
+            }
+            DisconnectSerial(sendDisconnectCommand: false, preserveLastControllerPort: true, refreshPortsAfterDisconnect: false);
+            serialOpen = false;
+            connectedPort = null;
+            ports = GetAvailableComPorts();
+            QueueDelayedComPortRefresh("controller timeout delayed refresh");
+        }
+
+        portListChanged = !_lastKnownComPorts.SequenceEqual(ports, StringComparer.OrdinalIgnoreCase);
+        newSnapshot = string.Join("|", ports);
+        bool comboNeedsRefresh = forceRefresh || portListChanged || !currentSnapshot.Equals(newSnapshot, StringComparison.OrdinalIgnoreCase);
+
+        if (comboNeedsRefresh)
+        {
+            ForceRefreshComPorts(reason, preserveSelection: serialOpen, portsOverride: ports);
+        }
+        else if (_serial?.IsOpen != true)
+        {
+            SetDisconnectedStatusForAvailablePorts(ports);
+        }
+
+        if (!serialOpen)
+        {
+            TryAutoReconnect(ports);
+        }
+
+        UpdateDiagnostics();
+        UpdateVersionHeader();
+    }
+
+    private void ForceRefreshComPorts(string reason, bool preserveSelection, string[]? portsOverride = null)
+    {
+        string? previousSelection = ComPortComboBox.SelectedItem as string;
+        string[] ports = portsOverride ?? GetAvailableComPorts();
+        _lastKnownComPorts = ports;
+
+        string? preferred = GetPreferredVisibleComPort(ports, previousSelection, preserveSelection);
+
+        // Aggressive rebuild: the visible dropdown is a pure live view of
+        // SerialPort.GetPortNames(). Do not let WPF retain a disconnected
+        // port through selection, text search, or an old ItemsSource binding.
+        _availableComPorts.Clear();
+        foreach (string port in ports)
+        {
+            _availableComPorts.Add(port);
+        }
+
+        ComPortComboBox.SelectedIndex = -1;
+        ComPortComboBox.SelectedItem = null;
+        ComPortComboBox.SelectedValue = null;
+        ComPortComboBox.Text = string.Empty;
+        ComPortComboBox.ItemsSource = null;
+        ComPortComboBox.Items.Clear();
+        ComPortComboBox.ItemsSource = ports.ToList();
+
+        if (!string.IsNullOrWhiteSpace(preferred) &&
+            ports.Contains(preferred, StringComparer.OrdinalIgnoreCase))
+        {
+            string? visiblePort = ports.FirstOrDefault(port =>
+                port.Equals(preferred, StringComparison.OrdinalIgnoreCase));
+
+            if (!string.IsNullOrWhiteSpace(visiblePort))
+            {
+                ComPortComboBox.SelectedItem = visiblePort;
+            }
+        }
+
+        if (ports.Length == 0)
+        {
+            ComPortComboBox.SelectedIndex = -1;
+            ComPortComboBox.SelectedItem = null;
+            ComPortComboBox.SelectedValue = null;
+            ComPortComboBox.Text = string.Empty;
+        }
+
+        if (_serial?.IsOpen != true)
+        {
+            SetDisconnectedStatusForAvailablePorts(ports);
+        }
+
+        LogComPortRefreshIfChanged(reason, ports, ComPortComboBox.SelectedItem as string);
+    }
+
+    private void LogComPortRefreshIfChanged(string reason, string[] ports, string? selectedPort)
+    {
+        string portSnapshot = ports.Length == 0 ? "none" : string.Join(", ", ports);
+        string rememberedPort = string.IsNullOrWhiteSpace(_settings.LastComPort) ? "none" : _settings.LastComPort;
+        string selected = string.IsNullOrWhiteSpace(selectedPort) ? "none" : selectedPort;
+        string phantomPorts = _phantomComPorts.Count == 0
+            ? "none"
+            : string.Join(", ", _phantomComPorts.Select(pair => $"{pair.Key} until {pair.Value:HH:mm:ss}"));
+        string reasonLower = reason.ToLowerInvariant();
+
+        bool forceLog = reasonLower.Contains("startup") ||
+            reasonLower.Contains("manual") ||
+            reasonLower.Contains("disconnect") ||
+            reasonLower.Contains("device change") ||
+            reasonLower.Contains("disappeared") ||
+            reasonLower.Contains("error") ||
+            reasonLower.Contains("phantom");
+
+        bool changed = !portSnapshot.Equals(_lastLoggedComPortSnapshot, StringComparison.OrdinalIgnoreCase) ||
+            !rememberedPort.Equals(_lastLoggedRememberedControllerPort, StringComparison.OrdinalIgnoreCase) ||
+            !selected.Equals(_lastLoggedComPortSelection, StringComparison.OrdinalIgnoreCase);
+
+        if (!forceLog && !changed)
+        {
+            return;
+        }
+
+        Log($"COM port refresh ({reason}): actual usable ports = {portSnapshot}; remembered controller port = {rememberedPort}; selected dropdown port = {selected}; phantom/open-failed ports = {phantomPorts}.");
+
+        _lastLoggedComPortSnapshot = portSnapshot;
+        _lastLoggedRememberedControllerPort = rememberedPort;
+        _lastLoggedComPortSelection = selected;
+    }
+
+    private string? GetPreferredVisibleComPort(string[] ports, string? previousSelection, bool preserveSelection)
+    {
+        if (_serial?.IsOpen == true &&
+            _esp32HelloReceived &&
+            !string.IsNullOrWhiteSpace(_serial.PortName) &&
+            ports.Contains(_serial.PortName, StringComparer.OrdinalIgnoreCase))
+        {
+            return _serial.PortName;
+        }
+
+        if (preserveSelection &&
+            !string.IsNullOrWhiteSpace(previousSelection) &&
+            ports.Contains(previousSelection, StringComparer.OrdinalIgnoreCase))
+        {
+            return previousSelection;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_settings.LastComPort) &&
+            ports.Contains(_settings.LastComPort, StringComparer.OrdinalIgnoreCase))
+        {
+            return _settings.LastComPort;
+        }
+
+        return ports.Length > 0 ? ports[0] : null;
+    }
+
+    private void SetDisconnectedStatusForAvailablePorts(string[] ports)
+    {
+        if (ports.Length == 0)
+        {
+            SetConnectionStatus("Disconnected - no COM ports found", connected: false);
+        }
+        else if (!string.IsNullOrWhiteSpace(_settings.LastComPort) && !ports.Contains(_settings.LastComPort, StringComparer.OrdinalIgnoreCase))
+        {
+            SetConnectionStatus($"Disconnected - waiting for {_settings.LastComPort}", connected: false);
+        }
+        else
+        {
+            SetConnectionStatus($"Disconnected - {ports.Length} actual COM port(s) available", connected: false);
+        }
+
+        if (!_esp32Seen)
+        {
+            EspStatusTextBlock.Text = "No controller connected";
+        }
+    }
+
+    private string[] GetAvailableComPorts()
+    {
+        PrunePhantomComPorts();
+
+        return GetRawComPorts()
+            .Where(port => !IsPortTemporarilyPhantom(port))
+            .ToArray();
+    }
+
+    private static string[] GetRawComPorts()
+    {
+        return SerialPort.GetPortNames()
+            .Where(port => !string.IsNullOrWhiteSpace(port))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(NormalizeComPortForSort)
+            .ToArray();
+    }
+
+    private static int NormalizeComPortForSort(string portName)
+    {
+        string digits = new(portName.Where(char.IsDigit).ToArray());
+        return int.TryParse(digits, out int value) ? value : int.MaxValue;
+    }
+
+    private bool IsPortTemporarilyPhantom(string portName)
+    {
+        if (!_phantomComPorts.TryGetValue(portName, out DateTime retryAfter))
+        {
+            return false;
+        }
+
+        if (DateTime.Now >= retryAfter)
+        {
+            _phantomComPorts.Remove(portName);
+            Log($"Phantom/open-failed COM-port cooldown expired for {portName}.");
+            return false;
+        }
+
+        return true;
+    }
+
+    private void PrunePhantomComPorts()
+    {
+        string[] expiredPorts = _phantomComPorts
+            .Where(pair => DateTime.Now >= pair.Value)
+            .Select(pair => pair.Key)
+            .ToArray();
+
+        foreach (string port in expiredPorts)
+        {
+            _phantomComPorts.Remove(port);
+            Log($"Phantom/open-failed COM-port cooldown expired for {port}.");
+        }
+    }
+
+    private void MarkPortPhantom(string? portName, string reason)
+    {
+        if (string.IsNullOrWhiteSpace(portName))
+        {
+            return;
+        }
+
+        DateTime retryAfter = DateTime.Now.AddMilliseconds(PhantomPortOpenFailCooldownMs);
+        _phantomComPorts[portName] = retryAfter;
+        Log($"Marked {portName} as phantom/open-failed: {reason}. Will retry after {retryAfter:HH:mm:ss} ({PhantomPortOpenFailCooldownMs / 1000}s cooldown). This cooldown is cleared only after Windows reports the remembered controller port as present again.");
+        ForceRefreshComPorts("phantom/open-failed port hidden", preserveSelection: false);
+    }
+
+    private void UpdateRememberedControllerPortPresence(string reason)
+    {
+        string? rememberedPort = string.IsNullOrWhiteSpace(_settings.LastComPort)
+            ? null
+            : _settings.LastComPort;
+
+        if (string.IsNullOrWhiteSpace(rememberedPort))
+        {
+            _rememberedPortMissingSince = null;
+            return;
+        }
+
+        bool rememberedPortIsPresent = GetRawComPorts()
+            .Any(port => port.Equals(rememberedPort, StringComparison.OrdinalIgnoreCase));
+
+        if (!rememberedPortIsPresent)
+        {
+            _rememberedPortMissingSince ??= DateTime.Now;
+            return;
+        }
+
+        _rememberedPortMissingSince = null;
+
+        if (_phantomComPorts.Remove(rememberedPort))
+        {
+            _rememberedPortReadyAfter = DateTime.Now.AddMilliseconds(RememberedPortUsbSettleMs);
+            Log($"Remembered controller port {rememberedPort} is present again after {reason}. Cleared open-fail cooldown and waiting {RememberedPortUsbSettleMs}ms before opening it.");
+        }
+    }
+
+    private static bool IsMissingPortOpenFailure(Exception ex)
+    {
+        string message = ex.Message ?? string.Empty;
+
+        return ex is FileNotFoundException ||
+            message.Contains("could not find file", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("does not exist", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("cannot find", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsAccessDeniedOpenFailure(Exception ex)
+    {
+        string message = ex.Message ?? string.Empty;
+
+        return ex is UnauthorizedAccessException ||
+            message.Contains("access denied", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("access to the path", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void CheckConnectedPortStillExists()
+    {
+        UpdateComPortAndConnectionState(forceRefresh: true, reason: "connected-port check");
+    }
+
+    private bool IsConnectedDeviceTimedOut()
+    {
+        if (_serial?.IsOpen != true)
+        {
+            return false;
+        }
+
+        DateTime now = DateTime.Now;
+
+        if (_lastEspMessageTime.HasValue)
+        {
+            return (now - _lastEspMessageTime.Value).TotalMilliseconds > DeviceMessageTimeoutMs;
+        }
+
+        if (_serialConnectedAt.HasValue)
+        {
+            return (now - _serialConnectedAt.Value).TotalMilliseconds > HelloTimeoutMs;
+        }
+
+        return false;
+    }
+
+    private void TryAutoReconnect(string[] ports)
+    {
+        if (_safeMode)
+        {
+            return;
+        }
+
+        if (!_settings.AutoConnectOnLaunch)
+        {
+            return;
+        }
+
+        if (_manualDisconnectRequested)
+        {
+            SetConnectionStatus("Disconnected - manual reconnect required", connected: false);
+            if (!_manualAutoReconnectSuppressionLogged)
+            {
+                Log("Auto-connect suppressed because the controller was manually disconnected. Use Connect/Reconnect to resume automatic reconnects.");
+                _manualAutoReconnectSuppressionLogged = true;
+            }
+            return;
+        }
+
+        if (_serial?.IsOpen == true)
+        {
+            return;
+        }
+
+        if ((DateTime.Now - _lastAutoReconnectAttempt).TotalMilliseconds < AutoReconnectCooldownMs)
+        {
+            return;
+        }
+
+        PruneRejectedComPorts();
+        UpdateRememberedControllerPortPresence("auto reconnect");
+
+        List<string> candidates = new();
+        string? rememberedPort = !string.IsNullOrWhiteSpace(_settings.LastComPort) ? _settings.LastComPort : null;
+        bool scanAllPorts = string.IsNullOrWhiteSpace(rememberedPort) || _settings.ScanAllComPortsIfRememberedMissing;
+
+        if (!string.IsNullOrWhiteSpace(rememberedPort))
+        {
+            string? matchingRememberedPort = ports.FirstOrDefault(port =>
+                port.Equals(rememberedPort, StringComparison.OrdinalIgnoreCase));
+
+            if (!string.IsNullOrWhiteSpace(matchingRememberedPort))
+            {
+                if (DateTime.Now < _rememberedPortReadyAfter)
+                {
+                    SetConnectionStatus($"Disconnected - waiting for {rememberedPort} to settle", connected: false);
+                    if ((DateTime.Now - _lastRememberedPortScanDelayLog).TotalSeconds >= 10)
+                    {
+                        Log($"Remembered controller port {rememberedPort} is present but still settling after USB re-enumeration; reconnect will retry shortly.");
+                        _lastRememberedPortScanDelayLog = DateTime.Now;
+                    }
+                    return;
+                }
+
+                candidates.Add(matchingRememberedPort);
+            }
+            else
+            {
+                SetConnectionStatus($"Disconnected - waiting for {rememberedPort}", connected: false);
+
+                if (!scanAllPorts)
+                {
+                    return;
+                }
+
+                TimeSpan missingFor = _rememberedPortMissingSince.HasValue
+                    ? DateTime.Now - _rememberedPortMissingSince.Value
+                    : TimeSpan.Zero;
+
+                if (missingFor.TotalMilliseconds < RememberedPortMissingBeforeScanAllMs)
+                {
+                    if ((DateTime.Now - _lastRememberedPortScanDelayLog).TotalSeconds >= 10)
+                    {
+                        int remainingSeconds = Math.Max(1, (int)Math.Ceiling((RememberedPortMissingBeforeScanAllMs - missingFor.TotalMilliseconds) / 1000.0));
+                        Log($"Remembered controller port {rememberedPort} is temporarily missing. Delaying scan-all fallback for {remainingSeconds}s to avoid probing unrelated COM ports during Windows USB churn.");
+                        _lastRememberedPortScanDelayLog = DateTime.Now;
+                    }
+                    return;
+                }
+            }
+        }
+
+        if (scanAllPorts)
+        {
+            foreach (string port in ports)
+            {
+                if (!candidates.Contains(port, StringComparer.OrdinalIgnoreCase))
+                {
+                    candidates.Add(port);
+                }
+            }
+        }
+
+        string? candidate = candidates.FirstOrDefault(port => !IsPortTemporarilyRejected(port));
+
+        if (string.IsNullOrWhiteSpace(candidate))
+        {
+            return;
+        }
+
+        _lastAutoReconnectAttempt = DateTime.Now;
+        Log($"Auto-connect probing {candidate} for controller identity.");
+        ConnectSerial(candidate, showErrors: false, isAutoReconnect: true);
+    }
+
+    private bool IsPortTemporarilyRejected(string portName)
+    {
+        if (!_rejectedComPorts.TryGetValue(portName, out DateTime retryAfter))
+        {
+            return false;
+        }
+
+        if (DateTime.Now >= retryAfter)
+        {
+            _rejectedComPorts.Remove(portName);
+            Log($"Rejected-port cooldown expired for {portName}.");
+            return false;
+        }
+
+        return true;
+    }
+
+    private void PruneRejectedComPorts()
+    {
+        string[] expiredPorts = _rejectedComPorts
+            .Where(pair => DateTime.Now >= pair.Value)
+            .Select(pair => pair.Key)
+            .ToArray();
+
+        foreach (string port in expiredPorts)
+        {
+            _rejectedComPorts.Remove(port);
+            Log($"Rejected-port cooldown expired for {port}.");
+        }
+    }
+
+    private void MarkPortRejected(string? portName, string reason)
+    {
+        if (string.IsNullOrWhiteSpace(portName))
+        {
+            return;
+        }
+
+        DateTime retryAfter = DateTime.Now.AddMilliseconds(RejectedPortCooldownMs);
+        _rejectedComPorts[portName] = retryAfter;
+        Log($"Rejected {portName}: {reason}. Will retry after {retryAfter:HH:mm:ss} ({RejectedPortCooldownMs / 60000} min cooldown).");
+        ShowTrayNotification("Reconnect failed", $"{portName}: {reason}");
+    }
+
+    private void ConnectSerial()
+    {
+        string? selectedPort = ComPortComboBox.SelectedItem as string;
+        ConnectSerial(selectedPort, showErrors: true, isAutoReconnect: false);
+    }
+
+    private void ConnectSerial(string? portName, bool showErrors, bool isAutoReconnect)
+    {
+        if (isAutoReconnect && _manualDisconnectRequested)
+        {
+            SetConnectionStatus("Disconnected - manual reconnect required", connected: false);
+            if (!_manualAutoReconnectSuppressionLogged)
+            {
+                Log("Ignored queued auto-connect attempt because manual disconnect lockout is active.");
+                _manualAutoReconnectSuppressionLogged = true;
+            }
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(portName))
+        {
+            if (showErrors)
+            {
+                System.Windows.MessageBox.Show(
+                    "Select a COM port first.",
+                    "No COM Port",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+
+            return;
+        }
+
+        if (!GetRawComPorts().Contains(portName, StringComparer.OrdinalIgnoreCase))
+        {
+            Log($"Skipped opening {portName} because Windows does not currently list that COM port.");
+            if (showErrors)
+            {
+                System.Windows.MessageBox.Show(
+                    $"{portName} is not currently available. Unplug/replug the controller or select a different COM port.",
+                    "COM Port Not Available",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+            else
+            {
+                MarkPortPhantom(portName, "port not present before open");
+            }
+
+            return;
+        }
+
+        try
+        {
+            if (_serial != null)
+            {
+                DisconnectSerial(sendDisconnectCommand: false, preserveLastControllerPort: true, refreshPortsAfterDisconnect: false);
+            }
+
+            lock (_serialBufferLock)
+            {
+                _serialReceiveBuffer = string.Empty;
+            }
+
+            _serial = new SerialPort(portName, BaudRate)
+            {
+                NewLine = ((char)10).ToString(),
+                // Keep USB CDC control lines low. Some ESP32-S3 boards reset when
+                // DTR/RTS are asserted during repeated dashboard connect/disconnect
+                // cycles, which makes COM9 disappear briefly and causes reconnect loops.
+                DtrEnable = false,
+                RtsEnable = false,
+                ReadTimeout = 100,
+                WriteTimeout = 250
+            };
+
+            _serial.DataReceived += OnSerialDataReceived;
+            _serial.Open();
+            try
+            {
+                _serial.DtrEnable = false;
+                _serial.RtsEnable = false;
+                if (!_serialControlLinesDisabledLogged)
+                {
+                    Log("Serial DTR/RTS kept disabled to avoid ESP32-S3 USB reset loops during connect/disconnect.");
+                    _serialControlLinesDisabledLogged = true;
+                }
+            }
+            catch
+            {
+            }
+            _serial.DiscardInBuffer();
+            _serial.DiscardOutBuffer();
+
+            _serialConnectedAt = DateTime.Now;
+            _activeConnectionState = isAutoReconnect ? "Auto-identifying" : "Identifying";
+            ConnectButton.Content = "Disconnect";
+            _esp32Seen = false;
+            _esp32HelloReceived = false;
+            _espFirmwareName = "Unknown";
+            _espProtocolVersion = "Unknown";
+            _espChannelCount = "Unknown";
+            _lastEspMessage = "--";
+            _lastEspMessageTime = null;
+            SetConnectionStatus($"Identifying controller on {portName}...", connected: false);
+            EspStatusTextBlock.Text = "Waiting for controller hello...";
+            UpdateVersionHeader();
+
+            Log($"Opened {portName}; waiting for controller identity.");
+            RequestHelloFromDevice();
+            UpdateDiagnostics();
+        }
+        catch (Exception ex)
+        {
+            if (showErrors)
+            {
+                System.Windows.MessageBox.Show(
+                    ex.Message,
+                    "Serial Connection Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+
+            Log($"Connection error on {portName}: {ex.Message}");
+            DisconnectSerial(sendDisconnectCommand: false, preserveLastControllerPort: true, refreshPortsAfterDisconnect: false);
+
+            if (IsMissingPortOpenFailure(ex) || IsAccessDeniedOpenFailure(ex))
+            {
+                MarkPortPhantom(portName, ex.Message);
+            }
+            else if (!showErrors)
+            {
+                MarkPortRejected(portName, $"connection error: {ex.Message}");
+            }
+        }
+    }
+
+    private void DisconnectSerial(bool sendDisconnectCommand = true, bool preserveLastControllerPort = true, bool refreshPortsAfterDisconnect = true)
+    {
+        bool wasAlreadyDisconnected = _serial == null &&
+            !_esp32Seen &&
+            !_esp32HelloReceived &&
+            _activeConnectionState.Equals("Disconnected", StringComparison.OrdinalIgnoreCase);
+
+        try
+        {
+            if (sendDisconnectCommand)
+            {
+                SendDisconnectToDevice();
+            }
+
+            if (_serial != null)
+            {
+                _serial.DataReceived -= OnSerialDataReceived;
+
+                if (_serial.IsOpen)
+                {
+                    _serial.Close();
+                }
+
+                _serial.Dispose();
+                _serial = null;
+            }
+        }
+        catch
+        {
+        }
+
+        ConnectButton.Content = "Connect";
+        _activeConnectionState = "Disconnected";
+        _serialConnectedAt = null;
+        _controllerSleepRequested = false;
+        _controllerSleepReason = string.Empty;
+        SetConnectionStatus("Disconnected", connected: false);
+        EspStatusTextBlock.Text = "No controller connected";
+
+        _esp32Seen = false;
+        _esp32HelloReceived = false;
+        _espFirmwareName = "Unknown";
+        _espProtocolVersion = "Unknown";
+        _espChannelCount = "Unknown";
+        _lastEspMessage = "--";
+        _lastEspMessageTime = null;
+
+        if (refreshPortsAfterDisconnect)
+        {
+            ForceRefreshComPorts("disconnect", preserveSelection: true);
+        }
+        UpdateVersionHeader();
+
+        if (!wasAlreadyDisconnected)
+        {
+            Log("Disconnected.");
+        }
+
+        UpdateDiagnostics();
+    }
+
+    private void SetConnectionStatus(string text, bool connected)
+    {
+        ConnectionStatusTextBlock.Text = text;
+
+        string key = connected ? "ConnectionGoodForeground" : "ConnectionBadForeground";
+
+        if (Resources[key] is WpfBrush brush)
+        {
+            ConnectionStatusTextBlock.Foreground = brush;
+        }
+
+        if (!text.Equals(_lastLoggedConnectionState, StringComparison.Ordinal))
+        {
+            string previousState = _lastLoggedConnectionState;
+            Log($"Connection state: {text}");
+            _lastLoggedConnectionState = text;
+
+            if (!string.IsNullOrWhiteSpace(previousState))
+            {
+                if (connected)
+                {
+                    ShowTrayNotification("Controller connected", text);
+                }
+                else if (previousState.StartsWith("Connected", StringComparison.OrdinalIgnoreCase))
+                {
+                    ShowTrayNotification("Controller disconnected", text);
+                }
+            }
+        }
+    }
+
+    private void OnSessionSwitch(object sender, SessionSwitchEventArgs e)
+    {
+        try
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (e.Reason == SessionSwitchReason.SessionLock)
+                {
+                    _sessionLocked = true;
+                    SendControllerSleep("PC_LOCKED");
+                }
+                else if (e.Reason == SessionSwitchReason.SessionUnlock)
+                {
+                    _sessionLocked = false;
+                    UpdateControllerPowerStateFromPcActivity(forceEvaluate: true);
+                }
+            }));
+        }
+        catch
+        {
+        }
+    }
+
+    private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
+    {
+        try
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (e.Mode == PowerModes.Suspend)
+                {
+                    _systemSuspending = true;
+                    SendControllerSleep("PC_SUSPEND");
+                }
+                else if (e.Mode == PowerModes.Resume)
+                {
+                    _systemSuspending = false;
+                    SendControllerWake("PC_RESUME");
+                }
+            }));
+        }
+        catch
+        {
+        }
+    }
+
+    private void UpdateControllerPowerStateFromPcActivity(bool forceEvaluate = false)
+    {
+        if (_serial?.IsOpen != true || !_esp32HelloReceived)
+        {
+            return;
+        }
+
+        bool userIdle = GetUserIdleMilliseconds() >= UserIdleSleepMs;
+        string reason = _systemSuspending
+            ? "PC_SUSPEND"
+            : _sessionLocked
+                ? "PC_LOCKED"
+                : userIdle
+                    ? "PC_IDLE"
+                    : string.Empty;
+
+        if (userIdle != _lastUserIdleSleepState)
+        {
+            _lastUserIdleSleepState = userIdle;
+            Log(userIdle ? "PC user-idle sleep threshold reached." : "PC user activity detected after idle.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(reason))
+        {
+            SendControllerSleep(reason);
+        }
+        else if (!userIdle && (_controllerSleepRequested || forceEvaluate))
+        {
+            SendControllerWake("PC_ACTIVE");
+        }
+    }
+
+    private void SendControllerSleep(string reason)
+    {
+        if (_serial?.IsOpen != true || !_esp32HelloReceived)
+        {
+            return;
+        }
+
+        if (_controllerSleepRequested && _controllerSleepReason.Equals(reason, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        _controllerSleepRequested = true;
+        _controllerSleepReason = reason;
+        WriteSerialLine($"SLEEP,{MakeProtocolSafeLabel(reason)}", logOutgoing: true);
+        EspStatusTextBlock.Text = $"Connected - controller sleeping ({reason})";
+        Log($"Controller sleep requested: {reason}");
+        UpdateDiagnostics();
+    }
+
+    private void SendControllerWake(string reason)
+    {
+        if (_serial?.IsOpen != true || !_esp32HelloReceived)
+        {
+            _controllerSleepRequested = false;
+            _controllerSleepReason = string.Empty;
+            return;
+        }
+
+        if (!_controllerSleepRequested && !reason.Equals("PC_RESUME", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        _controllerSleepRequested = false;
+        _controllerSleepReason = string.Empty;
+        WriteSerialLine($"WAKE,{MakeProtocolSafeLabel(reason)}", logOutgoing: true);
+        EspStatusTextBlock.Text = $"Connected - firmware {_espProtocolVersion} ({_espFirmwareName})";
+        Log($"Controller wake requested: {reason}");
+        SendAllChannelStatesToDevice();
+        SendStateToDevice(force: true);
+        UpdateDiagnostics();
+    }
+
+    private static uint GetUserIdleMilliseconds()
+    {
+        LASTINPUTINFO info = new()
+        {
+            cbSize = (uint)Marshal.SizeOf<LASTINPUTINFO>()
+        };
+
+        if (!GetLastInputInfo(ref info))
+        {
+            return 0;
+        }
+
+        return unchecked((uint)Environment.TickCount - info.dwTime);
+    }
+
+    private void SendPingToDevice()
+    {
+        if (_serial?.IsOpen == true && _esp32HelloReceived)
+        {
+            WriteSerialLine("PING", logOutgoing: false);
+        }
+    }
+
+    private void RequestHelloFromDevice()
+    {
+        WriteSerialLine("HELLO?", logOutgoing: false);
+    }
+
+    private void SendDisconnectToDevice()
+    {
+        WriteSerialLine("DISCONNECT", logOutgoing: false);
+    }
+
+    private void OnSerialDataReceived(object sender, SerialDataReceivedEventArgs e)
+    {
+        try
+        {
+            if (sender is not SerialPort port || !port.IsOpen)
+            {
+                return;
+            }
+
+            string received = port.ReadExisting();
+
+            if (string.IsNullOrEmpty(received))
+            {
+                return;
+            }
+
+            List<string> completeLines = new();
+
+            lock (_serialBufferLock)
+            {
+                _serialReceiveBuffer += received.Replace("\r", "\n");
+
+                while (true)
+                {
+                    int newlineIndex = _serialReceiveBuffer.IndexOf('\n');
+
+                    if (newlineIndex < 0)
+                    {
+                        break;
+                    }
+
+                    string line = _serialReceiveBuffer[..newlineIndex].Trim();
+                    _serialReceiveBuffer = _serialReceiveBuffer[(newlineIndex + 1)..];
+
+                    if (!string.IsNullOrWhiteSpace(line))
+                    {
+                        completeLines.Add(line);
+                    }
+                }
+            }
+
+            foreach (string line in completeLines)
+            {
+                Dispatcher.BeginInvoke(new Action(() => HandleDeviceMessage(line)));
+            }
+        }
+        catch (InvalidOperationException)
+        {
+        }
+        catch (IOException ex)
+        {
+            BeginDisconnectAfterSerialError($"Serial read error: {ex.Message}");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            BeginDisconnectAfterSerialError($"Serial access error: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            BeginDisconnectAfterSerialError($"Serial read error: {ex.Message}");
+        }
+    }
+
+    private void BeginDisconnectAfterSerialError(string message)
+    {
+        Log(message);
+
+        try
+        {
+            Dispatcher.BeginInvoke(new Action(() => DisconnectSerialDueToError(message)));
+        }
+        catch
+        {
+        }
+    }
+
+    private void DisconnectSerialDueToError(string message)
+    {
+        DisconnectSerial(sendDisconnectCommand: false);
+        ForceRefreshComPorts("disconnect/error", preserveSelection: true);
+    }
+
+    private void HandleDeviceMessage(string line)
+    {
+        AppendDebugConsole("IN", line);
+        string[] parts = line.Split(',', StringSplitOptions.TrimEntries);
+
+        if (parts.Length < 1)
+        {
+            return;
+        }
+
+        string command = parts[0].ToUpperInvariant();
+
+        if (!_esp32HelloReceived && command != "HELLO")
+        {
+            if (!string.Equals(line, "PONG", StringComparison.OrdinalIgnoreCase))
+            {
+                Log($"Ignoring pre-identity serial data from {_serial?.PortName ?? "unknown port"}: {line}");
+            }
+            return;
+        }
+
+        _lastEspMessage = line;
+        _lastEspMessageTime = DateTime.Now;
+
+        // Normal heartbeat traffic arrives once per second. Keep it out of the log so the log remains useful.
+        bool duplicateHelloAfterIdentity = command == "HELLO" &&
+            _esp32HelloReceived &&
+            _activeConnectionState.Equals("Connected", StringComparison.OrdinalIgnoreCase);
+
+        bool suppressNormalEncoderLog = command == "ENC" && !IsAdvancedDebugLoggingEnabled();
+
+        if (!string.Equals(line, "PONG", StringComparison.OrdinalIgnoreCase) && !duplicateHelloAfterIdentity && !suppressNormalEncoderLog)
+        {
+            Log($"ESP32 -> PC: {line}");
+        }
+
+        switch (command)
+        {
+            case "HELLO":
+                HandleHelloMessage(parts, line);
+                break;
+
+            case "PONG":
+                MarkEsp32Seen("heartbeat");
+                UpdateDiagnostics();
+                break;
+
+            case "DBG":
+                MarkEsp32Seen("debug");
+                Log($"ESP32 debug: {string.Join(",", parts.Skip(1))}");
+                break;
+
+            case "ENC":
+                MarkEsp32Seen("encoder");
+                HandleEncoderMessage(parts);
+                break;
+
+            case "BTN":
+            case "BTN_SHORT":
+                MarkEsp32Seen("button");
+                RegisterHardwareButtonEvent(parts);
+                if (_controllerSleepRequested)
+                {
+                    Log("Ignored button event while controller sleep is active.");
+                    break;
+                }
+                if (_safeMode)
+                {
+                    Log("Safe mode: button event observed but audio-control action was skipped.");
+                    break;
+                }
+                ApplyShortButtonAction(parts);
+                break;
+
+            case "BTN_LONG":
+                MarkEsp32Seen("button long");
+                RegisterHardwareButtonEvent(parts);
+                if (_controllerSleepRequested)
+                {
+                    Log("Ignored long-button event while controller sleep is active.");
+                    break;
+                }
+                if (_safeMode)
+                {
+                    Log("Safe mode: long-button event observed but audio-control action was skipped.");
+                    break;
+                }
+                ToggleSelectedChannelMute();
+                RefreshAllChannelStates();
+                SendAllChannelStatesToDevice();
+                SendStateToDevice(force: true);
+                break;
+
+            case "SLEEPING":
+                MarkEsp32Seen("sleep ack");
+                if (HardwareTestStatusTextBlock != null)
+                {
+                    HardwareTestStatusTextBlock.Text = $"Controller sleeping: {string.Join(',', parts.Skip(1))}";
+                }
+                break;
+
+            case "AWAKE":
+                MarkEsp32Seen("wake ack");
+                if (HardwareTestStatusTextBlock != null)
+                {
+                    HardwareTestStatusTextBlock.Text = $"Controller awake: {string.Join(',', parts.Skip(1))}";
+                }
+                break;
+
+            case "OLEDCFG_ACK":
+                MarkEsp32Seen("oled config ack");
+                Log($"ESP32 OLED config applied: {string.Join(',', parts.Skip(1))}");
+                break;
+
+            case "OLED_IDLE_START":
+                MarkEsp32Seen("oled idle start");
+                Log($"ESP32 OLED idle started: {string.Join(',', parts.Skip(1))}");
+                break;
+
+            case "OLED_IDLE_END":
+                MarkEsp32Seen("oled idle end");
+                Log($"ESP32 OLED idle ended: {string.Join(',', parts.Skip(1))}");
+                break;
+
+            case "ERR":
+                Log($"ESP32 error: {string.Join(',', parts.Skip(1))}");
+                break;
+        }
+
+        UpdateDiagnostics();
+        UpdateVersionHeader();
+    }
+
+    private void MarkEsp32Seen(string source)
+    {
+        _esp32Seen = true;
+        _lastEspMessageTime = DateTime.Now;
+
+        if (!_esp32HelloReceived && _serial?.IsOpen == true)
+        {
+            EspStatusTextBlock.Text = $"Connected - active, controller hello not received ({source})";
+        }
+    }
+
+    private void HandleHelloMessage(string[] parts, string rawLine)
+    {
+        string deviceIdentity = parts.Length > 1 ? parts[1] : "Unknown";
+        string protocolVersion = parts.Length > 2 ? parts[2] : "Unknown";
+        string channelCount = parts.Length > 3 ? parts[3] : "Unknown";
+
+        if (!deviceIdentity.StartsWith(ExpectedDeviceIdentity, StringComparison.OrdinalIgnoreCase))
+        {
+            string? badPort = _serial?.PortName;
+            Log($"Rejected {badPort}: HELLO identity was '{deviceIdentity}', expected '{ExpectedDeviceIdentity}'.");
+            MarkPortRejected(badPort, "wrong device identity");
+            DisconnectSerial(sendDisconnectCommand: false, preserveLastControllerPort: true, refreshPortsAfterDisconnect: true);
+            return;
+        }
+
+        string connectedPort = _serial?.PortName ?? "unknown port";
+        bool alreadyConfirmed = _esp32HelloReceived &&
+            _activeConnectionState.Equals("Connected", StringComparison.OrdinalIgnoreCase);
+
+        _esp32Seen = true;
+        _esp32HelloReceived = true;
+        _espFirmwareName = deviceIdentity;
+        _espProtocolVersion = protocolVersion;
+        _espChannelCount = channelCount;
+        _activeConnectionState = "Connected";
+        _manualAutoReconnectSuppressionLogged = false;
+
+        SetConnectionStatus($"Connected to {connectedPort}", connected: true);
+        EspStatusTextBlock.Text = $"Connected - firmware {_espProtocolVersion} ({_espFirmwareName})";
+
+        _settings.LastComPort = connectedPort;
+        SaveSettings();
+
+        if (alreadyConfirmed)
+        {
+            UpdateVersionHeader();
+            return;
+        }
+
+        SendAllChannelStatesToDevice();
+        SendStateToDevice(force: true);
+        SendOledSettingsToDevice(logIfNotConnected: false);
+        SendPingToDevice();
+
+        UpdateVersionHeader();
+
+        Log($"ESP32 controller confirmed on {connectedPort}. Identity {_espFirmwareName}, protocol {_espProtocolVersion}, channels {_espChannelCount}.");
+    }
+
+    private void HandleEncoderMessage(string[] parts)
+    {
+        RegisterHardwareEncoderEvent(parts);
+
+        if (_controllerSleepRequested)
+        {
+            if (IsAdvancedDebugLoggingEnabled())
+            {
+                Log("Ignored encoder event while controller sleep is active.");
+            }
+            return;
+        }
+
+        if (parts.Length < 3)
+        {
+            return;
+        }
+
+        if (!int.TryParse(parts[1], out int espChannel) || espChannel < 0 || espChannel >= ExpectedChannelCount)
+        {
+            return;
+        }
+
+        if (!int.TryParse(parts[2], out int delta) || delta == 0)
+        {
+            return;
+        }
+
+        if (_safeMode)
+        {
+            if (IsAdvancedDebugLoggingEnabled())
+            {
+                Log("Safe mode: encoder event observed but audio-control write was skipped.");
+            }
+            return;
+        }
+
+        QueueSmoothedEncoderDelta(espChannel, delta);
+    }
+
+    private void QueueSmoothedEncoderDelta(int encoderChannel, int rawDelta)
+    {
+        int direction = Math.Sign(rawDelta);
+        if (direction == 0)
+        {
+            return;
+        }
+
+        DateTime now = DateTime.Now;
+
+        lock (_encoderSmoothingLock)
+        {
+            int lastDirection = _encoderLastDirection[encoderChannel];
+
+            if (lastDirection != 0 && direction != lastDirection)
+            {
+                TimeSpan sinceLastApplied = now - _encoderLastAppliedAt[encoderChannel];
+                bool insideReverseGuard = sinceLastApplied.TotalMilliseconds < EncoderReverseGuardMs;
+
+                if (insideReverseGuard)
+                {
+                    if (_encoderReverseCandidateDirection[encoderChannel] != direction ||
+                        (now - _encoderReverseCandidateStartedAt[encoderChannel]).TotalMilliseconds > EncoderReverseGuardMs)
+                    {
+                        _encoderReverseCandidateDirection[encoderChannel] = direction;
+                        _encoderReverseCandidateCount[encoderChannel] = 1;
+                        _encoderReverseCandidateStartedAt[encoderChannel] = now;
+
+                        if (IsAdvancedDebugLoggingEnabled())
+                        {
+                            Log($"Encoder {encoderChannel + 1}: ignored isolated reverse step {rawDelta}.");
+                        }
+
+                        return;
+                    }
+
+                    _encoderReverseCandidateCount[encoderChannel]++;
+
+                    if (_encoderReverseCandidateCount[encoderChannel] < EncoderReverseConfirmEvents)
+                    {
+                        if (IsAdvancedDebugLoggingEnabled())
+                        {
+                            Log($"Encoder {encoderChannel + 1}: waiting for reverse confirmation ({_encoderReverseCandidateCount[encoderChannel]}/{EncoderReverseConfirmEvents}).");
+                        }
+
+                        return;
+                    }
+                }
+            }
+            else
+            {
+                _encoderReverseCandidateDirection[encoderChannel] = 0;
+                _encoderReverseCandidateCount[encoderChannel] = 0;
+            }
+
+            _encoderPendingDeltas[encoderChannel] = Math.Clamp(
+                _encoderPendingDeltas[encoderChannel] + rawDelta,
+                -EncoderMaxCoalescedDelta,
+                EncoderMaxCoalescedDelta);
+
+            int delayMs = GetEncoderApplyDelayMsLocked(encoderChannel, now);
+
+            if (delayMs <= 0)
+            {
+                int deltaToApply = TakePendingEncoderDeltaLocked(encoderChannel, now, direction);
+                BeginApplySmoothedEncoderDelta(encoderChannel, deltaToApply);
+                return;
+            }
+
+            ScheduleEncoderCoalesceTimerLocked(encoderChannel, delayMs);
+        }
+    }
+
+    private int GetEncoderApplyDelayMsLocked(int encoderChannel, DateTime now)
+    {
+        DateTime lastApplied = _encoderLastAppliedAt[encoderChannel];
+
+        if (lastApplied == default)
+        {
+            return 0;
+        }
+
+        int elapsedMs = (int)(now - lastApplied).TotalMilliseconds;
+        return Math.Max(0, EncoderApplyIntervalMs - elapsedMs);
+    }
+
+    private int TakePendingEncoderDeltaLocked(int encoderChannel, DateTime now, int directionHint)
+    {
+        int delta = _encoderPendingDeltas[encoderChannel];
+        _encoderPendingDeltas[encoderChannel] = 0;
+        _encoderLastAppliedAt[encoderChannel] = now;
+
+        if (delta != 0)
+        {
+            _encoderLastDirection[encoderChannel] = Math.Sign(delta);
+        }
+        else if (directionHint != 0)
+        {
+            _encoderLastDirection[encoderChannel] = directionHint;
+        }
+
+        _encoderReverseCandidateDirection[encoderChannel] = 0;
+        _encoderReverseCandidateCount[encoderChannel] = 0;
+
+        return delta;
+    }
+
+    private void ScheduleEncoderCoalesceTimerLocked(int encoderChannel, int delayMs)
+    {
+        _encoderCoalesceTimers[encoderChannel]?.Dispose();
+        _encoderCoalesceTimers[encoderChannel] = new System.Threading.Timer(_ =>
+        {
+            int deltaToApply;
+
+            lock (_encoderSmoothingLock)
+            {
+                deltaToApply = TakePendingEncoderDeltaLocked(encoderChannel, DateTime.Now, 0);
+                _encoderCoalesceTimers[encoderChannel]?.Dispose();
+                _encoderCoalesceTimers[encoderChannel] = null;
+            }
+
+            if (deltaToApply != 0)
+            {
+                try
+                {
+                    Dispatcher.BeginInvoke(new Action(() => ApplySmoothedEncoderDelta(encoderChannel, deltaToApply)));
+                }
+                catch
+                {
+                }
+            }
+        }, null, delayMs, System.Threading.Timeout.Infinite);
+    }
+
+    private void BeginApplySmoothedEncoderDelta(int encoderChannel, int deltaToApply)
+    {
+        if (deltaToApply == 0)
+        {
+            return;
+        }
+
+        ApplySmoothedEncoderDelta(encoderChannel, deltaToApply);
+    }
+
+    private void ApplySmoothedEncoderDelta(int encoderChannel, int smoothedDelta)
+    {
+        if (_controllerSleepRequested || _safeMode || smoothedDelta == 0)
+        {
+            return;
+        }
+
+        if (IsAdvancedDebugLoggingEnabled())
+        {
+            Log($"Encoder {encoderChannel + 1}: applying smoothed delta {smoothedDelta}.");
+        }
+
+        ChangeChannelVolume(encoderChannel, smoothedDelta * GetVolumeStepPercentForChannel(encoderChannel));
+        RefreshAllChannelStates();
+        SendAllChannelStatesToDevice();
+        SendStateToDevice(force: true);
+    }
+
+    private void RefreshDefaultAudioDevice()
+    {
+        try
+        {
+            _defaultRenderDevice?.Dispose();
+            _defaultRenderDevice = _deviceEnumerator!.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+
+            Log($"Default output device: {_defaultRenderDevice.FriendlyName}");
+        }
+        catch (Exception ex)
+        {
+            Log($"Audio device error: {ex.Message}");
+        }
+    }
+
+    private void RefreshAudioSessions()
+    {
+        try
+        {
+            EnsureAudioDevice();
+
+            _audioTargets.Clear();
+            _audioTargets.Add(AudioTargetItem.CreateMaster());
+
+            AudioSessionManager manager = _defaultRenderDevice!.AudioSessionManager;
+
+            manager.RefreshSessions();
+
+            SessionCollection sessions = manager.Sessions;
+
+            if (sessions != null)
+            {
+                for (int i = 0; i < sessions.Count; i++)
+                {
+                    AudioTargetItem? target = TryCreateAudioTargetFromSession(sessions, i);
+
+                    if (target == null)
+                    {
+                        continue;
+                    }
+
+                    if (_audioTargets.Any(t => t.Key.Equals(target.Key, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        continue;
+                    }
+
+                    _audioTargets.Add(target);
+                }
+            }
+
+            EnsureSavedTargetsAppearInTargetList();
+            RefreshChannelAssignmentLabels();
+
+            ChannelTargetComboBox.Items.Refresh();
+            AudioSessionsListView.Items.Refresh();
+
+            _lastAudioSessionSnapshot = GetAudioTargetSnapshotFromCurrentList();
+
+            Log($"Loaded {_audioTargets.Count} target(s).");
+        }
+        catch (Exception ex)
+        {
+            Log($"Session refresh error: {ex.Message}");
+        }
+    }
+
+    private void EnsureSavedTargetsAppearInTargetList()
+    {
+        string[] savedKeys = _settings.Channels
+            .Select(channel => channel.TargetKey)
+            .Concat(_channels.Select(channel => channel.TargetKey))
+            .Where(key => !string.IsNullOrWhiteSpace(key))
+            .Where(key => !key.Equals("MASTER", StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        foreach (string key in savedKeys)
+        {
+            bool alreadyExists = _audioTargets.Any(target =>
+                target.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
+
+            if (alreadyExists)
+            {
+                continue;
+            }
+
+            string label = MakeDisplayLabelFromTargetKey(key);
+            string processName = MakeProcessNameFromTargetKey(key);
+
+            _audioTargets.Add(new AudioTargetItem
+            {
+                Key = key,
+                Label = label,
+                ProcessName = processName,
+                ProcessId = 0,
+                Session = null,
+                Volume = 0,
+                Muted = true,
+                State = "Waiting for app",
+                IsMaster = false
+            });
+        }
+    }
+
+    private void AutoRefreshAudioSessionsIfChanged()
+    {
+        try
+        {
+            string currentSnapshot = GetCurrentAudioSessionSnapshot();
+
+            if (currentSnapshot == _lastAudioSessionSnapshot)
+            {
+                return;
+            }
+
+            _lastAudioSessionSnapshot = currentSnapshot;
+
+            RefreshAudioSessions();
+            RefreshAllChannelStates();
+            SendAllChannelStatesToDevice();
+            SendStateToDevice(force: true);
+
+            Log("Audio sessions changed. Refreshed session list.");
+        }
+        catch (Exception ex)
+        {
+            Log($"Audio session auto-refresh error: {ex.Message}");
+        }
+    }
+
+    private string GetCurrentAudioSessionSnapshot()
+    {
+        EnsureAudioDevice();
+
+        AudioSessionManager manager = _defaultRenderDevice!.AudioSessionManager;
+
+        manager.RefreshSessions();
+
+        SessionCollection sessions = manager.Sessions;
+
+        List<string> keys = new()
+        {
+            "MASTER"
+        };
+
+        if (sessions != null)
+        {
+            for (int i = 0; i < sessions.Count; i++)
+            {
+                AudioTargetItem? target = TryCreateAudioTargetFromSession(sessions, i);
+
+                if (target == null)
+                {
+                    continue;
+                }
+
+                if (!keys.Contains(target.Key, StringComparer.OrdinalIgnoreCase))
+                {
+                    keys.Add(target.Key);
+                }
+            }
+        }
+
+        foreach (ChannelSettings channel in _settings.Channels)
+        {
+            if (!string.IsNullOrWhiteSpace(channel.TargetKey) &&
+                !keys.Contains(channel.TargetKey, StringComparer.OrdinalIgnoreCase))
+            {
+                keys.Add(channel.TargetKey);
+            }
+        }
+
+        keys.Sort(StringComparer.OrdinalIgnoreCase);
+
+        return string.Join("|", keys);
+    }
+
+    private string GetAudioTargetSnapshotFromCurrentList()
+    {
+        List<string> keys = _audioTargets
+            .Select(target => target.Key)
+            .Where(key => !string.IsNullOrWhiteSpace(key))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(key => key, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return string.Join("|", keys);
+    }
+
+    private void RefreshAllChannelStates()
+    {
+        foreach (ChannelMappingItem channel in _channels)
+        {
+            AudioTargetItem? target = FindTargetByKey(channel.TargetKey);
+
+            if (target == null)
+            {
+                channel.Volume = 0;
+                channel.Muted = true;
+                channel.Status = string.IsNullOrWhiteSpace(channel.TargetKey) ? "Unassigned" : "Waiting for app";
+                continue;
+            }
+
+            if (target.IsMaster)
+            {
+                channel.Volume = GetMasterVolumePercent();
+                channel.Muted = GetMasterMute();
+                channel.Status = "Active";
+            }
+            else
+            {
+                var sessions = FindSessionsForKey(target.Key).ToList();
+
+                if (sessions.Count == 0)
+                {
+                    channel.Volume = 0;
+                    channel.Muted = true;
+                    channel.Status = "Waiting for app";
+                }
+                else
+                {
+                    channel.Volume = sessions[0].Volume;
+                    channel.Muted = sessions[0].Muted;
+                    channel.Status = sessions.Count == 1 ? "Active" : $"Active x{sessions.Count}";
+                }
+            }
+        }
+
+        ChannelMappingsListView.Items.Refresh();
+        UpdateSelectedChannelUi();
+        UpdateOledPreviewPanels();
+    }
+
+    private void ChangeSelectedChannelVolume(int deltaPercent)
+    {
+        ChangeChannelVolume(_selectedChannelIndex, deltaPercent);
+    }
+
+    private void ChangeChannelVolume(int channelIndex, int deltaPercent)
+    {
+        if (channelIndex < 0 || channelIndex >= _channels.Count)
+        {
+            return;
+        }
+
+        ChannelMappingItem channel = _channels[channelIndex];
+        AudioTargetItem? target = FindTargetByKey(channel.TargetKey);
+
+        if (target == null)
+        {
+            Log($"Channel {channel.ChannelNumber} is not assigned or target is not active.");
+            return;
+        }
+
+        if (target.IsMaster)
+        {
+            int current = GetMasterVolumePercent();
+            int next = Math.Clamp(current + deltaPercent, 0, 100);
+
+            _defaultRenderDevice!.AudioEndpointVolume.MasterVolumeLevelScalar = next / 100.0f;
+
+            if (_defaultRenderDevice.AudioEndpointVolume.Mute && next > 0)
+            {
+                _defaultRenderDevice.AudioEndpointVolume.Mute = false;
+            }
+
+            if (IsAdvancedDebugLoggingEnabled())
+            {
+                Log($"Channel {channel.ChannelNumber} / Master: {next}%");
+            }
+            return;
+        }
+
+        var sessions = FindSessionsForKey(target.Key).ToList();
+
+        if (sessions.Count == 0)
+        {
+            Log($"No active audio session for {target.Label}.");
+            return;
+        }
+
+        foreach (AudioTargetItem sessionTarget in sessions)
+        {
+            if (sessionTarget.Session?.SimpleAudioVolume == null)
+            {
+                continue;
+            }
+
+            SimpleAudioVolume volume = sessionTarget.Session.SimpleAudioVolume;
+
+            int current = Math.Clamp((int)Math.Round(volume.Volume * 100), 0, 100);
+            int next = Math.Clamp(current + deltaPercent, 0, 100);
+
+            volume.Volume = next / 100.0f;
+
+            if (volume.Mute && next > 0)
+            {
+                volume.Mute = false;
+            }
+        }
+
+        if (IsAdvancedDebugLoggingEnabled())
+        {
+            Log($"Channel {channel.ChannelNumber} / {target.Label}: volume changed.");
+        }
+    }
+
+    private void ToggleSelectedChannelMute()
+    {
+        ToggleChannelMute(_selectedChannelIndex);
+    }
+
+    private void ToggleChannelMute(int channelIndex)
+    {
+        if (channelIndex < 0 || channelIndex >= _channels.Count)
+        {
+            return;
+        }
+
+        ChannelMappingItem channel = _channels[channelIndex];
+        AudioTargetItem? target = FindTargetByKey(channel.TargetKey);
+
+        if (target == null)
+        {
+            Log($"Channel {channel.ChannelNumber} is not assigned or target is not active.");
+            return;
+        }
+
+        if (target.IsMaster)
+        {
+            AudioEndpointVolume endpointVolume = _defaultRenderDevice!.AudioEndpointVolume;
+            endpointVolume.Mute = !endpointVolume.Mute;
+            Log(endpointVolume.Mute ? "Master muted" : "Master unmuted");
+            return;
+        }
+
+        var sessions = FindSessionsForKey(target.Key).ToList();
+
+        if (sessions.Count == 0)
+        {
+            Log($"No active audio session for {target.Label}.");
+            return;
+        }
+
+        bool nextMute = !sessions[0].Muted;
+
+        foreach (AudioTargetItem sessionTarget in sessions)
+        {
+            if (sessionTarget.Session?.SimpleAudioVolume != null)
+            {
+                sessionTarget.Session.SimpleAudioVolume.Mute = nextMute;
+            }
+        }
+
+        Log(nextMute ? $"{target.Label} muted" : $"{target.Label} unmuted");
+    }
+
+    private void ApplyShortButtonAction(string[] parts)
+    {
+        int channelIndex = _selectedChannelIndex;
+
+        if (parts.Length > 1 && int.TryParse(parts[1], out int parsedChannel) && parsedChannel >= 0 && parsedChannel < _channels.Count)
+        {
+            channelIndex = parsedChannel;
+        }
+
+        string action = _channels[channelIndex].ButtonAction;
+
+        switch (action)
+        {
+            case ChannelButtonActions.ToggleAssignedMute:
+                ToggleChannelMute(channelIndex);
+                RefreshAllChannelStates();
+                SendAllChannelStatesToDevice();
+                SendStateToDevice(force: true);
+                break;
+
+            case ChannelButtonActions.NoAction:
+                Log($"Channel {channelIndex + 1} button action is set to No action.");
+                break;
+
+            case ChannelButtonActions.SelectNextChannel:
+            default:
+                SelectNextChannel();
+                break;
+        }
+    }
+
+    private void UpdateSelectedChannelUi()
+    {
+        ChannelMappingItem channel = SelectedChannel;
+
+        SelectedTargetTextBlock.Text = $"Channel {channel.ChannelNumber} - {channel.DisplayLabel}";
+        SelectedTargetDetailTextBlock.Text = $"{channel.AssignedLabel} / {channel.Status}";
+        SelectedVolumeProgressBar.Value = channel.Volume;
+        SelectedVolumeTextBlock.Text = $"{channel.Volume}%";
+        SelectedMuteTextBlock.Text = channel.Muted ? "Mute: Yes" : "Mute: No";
+
+        if (ChannelSensitivitySlider != null)
+        {
+            ChannelSensitivitySlider.Value = Math.Clamp(channel.EncoderSensitivityPercent <= 0 ? _settings.EncoderSensitivityPercent : channel.EncoderSensitivityPercent, 0, MaxEncoderSensitivityPercent);
+        }
+
+        if (ChannelSensitivityValueTextBlock != null)
+        {
+            int sensitivity = Math.Clamp(channel.EncoderSensitivityPercent <= 0 ? _settings.EncoderSensitivityPercent : channel.EncoderSensitivityPercent, 0, MaxEncoderSensitivityPercent);
+            ChannelSensitivityValueTextBlock.Text = $"Channel sensitivity: {sensitivity}%";
+        }
+
+        if (ChannelButtonActionComboBox != null)
+        {
+            ChannelButtonActionComboBox.SelectedIndex = GetButtonActionIndex(channel.ButtonAction);
+        }
+    }
+
+    private void SendStateIfChanged()
+    {
+        ChannelMappingItem channel = SelectedChannel;
+
+        string label = MakeProtocolSafeLabel(channel.DisplayLabel);
+        int volume = channel.Volume;
+        bool muted = channel.Muted;
+
+        if (label != _lastSentLabel || volume != _lastSentVolume || muted != _lastSentMute)
+        {
+            SendAllChannelStatesToDevice();
+            SendStateToDevice(force: true);
+        }
+    }
+
+    private void SendStateToDevice(bool force = false)
+    {
+        try
+        {
+            if (_serial?.IsOpen != true || !_esp32HelloReceived || _controllerSleepRequested)
+            {
+                return;
+            }
+
+            ChannelMappingItem channel = SelectedChannel;
+
+            string label = MakeProtocolSafeLabel(channel.DisplayLabel);
+            int volume = channel.Volume;
+            bool mutedBool = channel.Muted;
+            int muted = mutedBool ? 1 : 0;
+
+            if (!force && label == _lastSentLabel && volume == _lastSentVolume && mutedBool == _lastSentMute)
+            {
+                return;
+            }
+
+            string message = $"STATE,{EspChannel},{label},{volume},{muted}";
+
+            WriteSerialLine(message, logOutgoing: true);
+
+            _lastSentLabel = label;
+            _lastSentVolume = volume;
+            _lastSentMute = mutedBool;
+            _lastStateSent = message;
+
+            UpdateDiagnostics();
+        }
+        catch (Exception ex)
+        {
+            Log($"State send error: {ex.Message}");
+        }
+    }
+
+    private void SendAllChannelStatesToDevice()
+    {
+        if (_serial?.IsOpen != true || !_esp32HelloReceived || _controllerSleepRequested)
+        {
+            return;
+        }
+
+        foreach (ChannelMappingItem channel in _channels)
+        {
+            string label = MakeProtocolSafeLabel(channel.DisplayLabel);
+            string status = MakeProtocolSafeLabel(channel.Status);
+            int muted = channel.Muted ? 1 : 0;
+
+            string message = $"CHSTATE,{channel.ChannelIndex},{label},{channel.Volume},{muted},{status}";
+
+            WriteSerialLine(message);
+            _lastStateSent = message;
+        }
+
+        UpdateDiagnostics();
+    }
+
+    private string GetOledDisplayModeProtocolValue()
+    {
+        return GetDisplayModeFromUi() switch
+        {
+            DisplayModes.LargeVolume => "LARGE_VOLUME",
+            DisplayModes.MuteStatus => "MUTE_STATUS",
+            DisplayModes.AppOrDeviceName => "APP_OR_DEVICE_NAME",
+            DisplayModes.BarPercent => "BAR_PERCENT",
+            _ => "APP_VOLUME"
+        };
+    }
+
+    private void SendOledSettingsToDevice(bool logIfNotConnected)
+    {
+        if (_serial?.IsOpen != true || !_esp32HelloReceived)
+        {
+            if (logIfNotConnected)
+            {
+                Log("OLED setup saved locally. Connect the controller to apply it to the physical OLED display.");
+            }
+            return;
+        }
+
+        string mode = GetOledDisplayModeProtocolValue();
+        int brightness = GetOledBrightnessPercentFromUi();
+        int disconnectedTimeout = GetOledSleepTimeoutMinutesFromUi();
+        string connectedIdleAction = GetOledConnectedIdleActionProtocolValue();
+        int connectedIdleTimeout = GetOledConnectedIdleTimeoutMinutesFromUi();
+        int antiBurnIn = IsOledAntiBurnInEnabledFromUi() ? 1 : 0;
+        string message = $"OLEDCFG,{mode},{brightness},{disconnectedTimeout},{connectedIdleAction},{connectedIdleTimeout},{antiBurnIn}";
+        WriteSerialLine(message, logOutgoing: true);
+        _lastStateSent = message;
+        UpdateDiagnostics();
+    }
+
+    private void WriteSerialLine(string message, bool logOutgoing = false)
+    {
+        AppendDebugConsole("OUT", message);
+        try
+        {
+            lock (_serialLock)
+            {
+                if (_serial != null && _serial.IsOpen)
+                {
+                    _serial.WriteLine(message);
+
+                    if (logOutgoing)
+                    {
+                        Log($"PC -> ESP32: {message}");
+                    }
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or UnauthorizedAccessException or TimeoutException)
+        {
+            BeginDisconnectAfterSerialError($"Serial write error: {ex.Message}");
+        }
+    }
+
+    private int GetVolumeStepPercent()
+    {
+        return GetVolumeStepPercentFromSensitivity(_settings.EncoderSensitivityPercent);
+    }
+
+    private int GetEncoderSensitivityPercentFromUi()
+    {
+        if (EncoderSensitivitySlider == null)
+        {
+            return _settings.EncoderSensitivityPercent;
+        }
+
+        return Math.Clamp((int)Math.Round(EncoderSensitivitySlider.Value), 0, MaxEncoderSensitivityPercent);
+    }
+
+    private int GetChannelSensitivityPercentFromUi()
+    {
+        if (ChannelSensitivitySlider == null)
+        {
+            return SelectedChannel.EncoderSensitivityPercent <= 0 ? _settings.EncoderSensitivityPercent : SelectedChannel.EncoderSensitivityPercent;
+        }
+
+        return Math.Clamp((int)Math.Round(ChannelSensitivitySlider.Value), 0, MaxEncoderSensitivityPercent);
+    }
+
+    private int GetVolumeStepPercentForChannel(int channelIndex)
+    {
+        int sensitivity = _settings.EncoderSensitivityPercent;
+
+        if (channelIndex >= 0 && channelIndex < _channels.Count)
+        {
+            int channelSensitivity = _channels[channelIndex].EncoderSensitivityPercent;
+            if (channelSensitivity > 0)
+            {
+                sensitivity = channelSensitivity;
+            }
+        }
+
+        return GetVolumeStepPercentFromSensitivity(sensitivity);
+    }
+
+    private int GetVolumeStepPercentFromSensitivity(int sensitivityPercent)
+    {
+        int sensitivity = Math.Clamp(sensitivityPercent, 0, MaxEncoderSensitivityPercent);
+
+        if (sensitivity <= 0)
+        {
+            return 1;
+        }
+
+        double multiplier = sensitivity / 50.0;
+        int step = (int)Math.Round(BaseVolumeStepPercent * multiplier);
+
+        return Math.Clamp(step, 1, MaxVolumeStepPercent);
+    }
+
+    private string GetSelectedChannelButtonActionFromUi()
+    {
+        return ChannelButtonActionComboBox?.SelectedIndex switch
+        {
+            1 => ChannelButtonActions.ToggleAssignedMute,
+            2 => ChannelButtonActions.NoAction,
+            _ => ChannelButtonActions.SelectNextChannel
+        };
+    }
+
+    private static int GetButtonActionIndex(string action)
+    {
+        return action switch
+        {
+            ChannelButtonActions.ToggleAssignedMute => 1,
+            ChannelButtonActions.NoAction => 2,
+            _ => 0
+        };
+    }
+
+    private static string GetButtonActionDisplayName(string action)
+    {
+        return action switch
+        {
+            ChannelButtonActions.ToggleAssignedMute => "Toggle assigned mute",
+            ChannelButtonActions.NoAction => "No action",
+            _ => "Select next channel"
+        };
+    }
+
+    private AudioTargetItem? FindTargetByKey(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return null;
+        }
+
+        return _audioTargets.FirstOrDefault(t => t.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string MakeProcessKey(string processName)
+    {
+        return $"PROC:{processName}";
+    }
+
+    private static string MakeDisplayLabelFromTargetKey(string key)
+    {
+        if (key.Equals("MASTER", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Master";
+        }
+
+        if (key.StartsWith("PROC:", StringComparison.OrdinalIgnoreCase))
+        {
+            return key[5..];
+        }
+
+        return key;
+    }
+
+    private static string MakeProcessNameFromTargetKey(string key)
+    {
+        if (key.StartsWith("PROC:", StringComparison.OrdinalIgnoreCase))
+        {
+            return key[5..];
+        }
+
+        return key;
+    }
+
+    private IEnumerable<AudioTargetItem> FindSessionsForKey(string key)
+    {
+        if (key.Equals("MASTER", StringComparison.OrdinalIgnoreCase))
+        {
+            yield return AudioTargetItem.CreateMaster();
+            yield break;
+        }
+
+        string processName = key.StartsWith("PROC:", StringComparison.OrdinalIgnoreCase) ? key[5..] : key;
+
+        EnsureAudioDevice();
+
+        AudioSessionManager manager = _defaultRenderDevice!.AudioSessionManager;
+        manager.RefreshSessions();
+
+        SessionCollection sessions = manager.Sessions;
+
+        if (sessions == null)
+        {
+            yield break;
+        }
+
+        for (int i = 0; i < sessions.Count; i++)
+        {
+            AudioTargetItem? item = TryCreateAudioTargetFromSession(sessions, i, processName);
+
+            if (item != null)
+            {
+                yield return item;
+            }
+        }
+    }
+
+    private static AudioTargetItem? TryCreateAudioTargetFromSession(
+        SessionCollection sessions,
+        int index,
+        string? requiredProcessName = null)
+    {
+        try
+        {
+            AudioSessionControl session = sessions[index];
+            uint pidRaw = session.GetProcessID;
+
+            if (pidRaw == 0 || session.SimpleAudioVolume == null)
+            {
+                return null;
+            }
+
+            using Process process = Process.GetProcessById((int)pidRaw);
+
+            if (!string.IsNullOrWhiteSpace(requiredProcessName) &&
+                !process.ProcessName.Equals(requiredProcessName, StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            return new AudioTargetItem
+            {
+                Key = MakeProcessKey(process.ProcessName),
+                Label = process.ProcessName,
+                ProcessName = process.ProcessName,
+                ProcessId = (int)pidRaw,
+                Session = session,
+                Volume = Math.Clamp((int)Math.Round(session.SimpleAudioVolume.Volume * 100), 0, 100),
+                Muted = session.SimpleAudioVolume.Mute,
+                State = session.State.ToString(),
+                IsMaster = false
+            };
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private void RefreshChannelAssignmentLabels()
+    {
+        foreach (ChannelMappingItem channel in _channels)
+        {
+            if (string.IsNullOrWhiteSpace(channel.TargetKey))
+            {
+                channel.AssignedLabel = "Unassigned";
+
+                if (string.IsNullOrWhiteSpace(channel.FriendlyName))
+                {
+                    channel.FriendlyName = string.Empty;
+                }
+
+                continue;
+            }
+
+            AudioTargetItem? target = FindTargetByKey(channel.TargetKey);
+
+            if (target != null)
+            {
+                channel.AssignedLabel = target.Label;
+            }
+            else
+            {
+                channel.AssignedLabel = MakeDisplayLabelFromTargetKey(channel.TargetKey);
+            }
+
+            if (string.IsNullOrWhiteSpace(channel.FriendlyName))
+            {
+                channel.FriendlyName = channel.AssignedLabel;
+            }
+        }
+    }
+
+    private int GetMasterVolumePercent()
+    {
+        EnsureAudioDevice();
+
+        float scalar = _defaultRenderDevice!.AudioEndpointVolume.MasterVolumeLevelScalar;
+        return Math.Clamp((int)Math.Round(scalar * 100), 0, 100);
+    }
+
+    private bool GetMasterMute()
+    {
+        EnsureAudioDevice();
+        return _defaultRenderDevice!.AudioEndpointVolume.Mute;
+    }
+
+    private void EnsureAudioDevice()
+    {
+        if (_defaultRenderDevice == null)
+        {
+            RefreshDefaultAudioDevice();
+        }
+    }
+
+    private static string MakeProtocolSafeLabel(string label)
+    {
+        string cleaned = label.Replace(',', ' ').Trim();
+
+        if (cleaned.Length == 0)
+        {
+            return "Unknown";
+        }
+
+        return cleaned.Length <= 18 ? cleaned : cleaned[..18];
+    }
+
+    private void SetupTrayIcon()
+    {
+        _trayIcon = new Forms.NotifyIcon
+        {
+            Icon = System.Drawing.SystemIcons.Application,
+            Text = "PC Volume Controller",
+            Visible = true,
+            ContextMenuStrip = new Forms.ContextMenuStrip()
+        };
+
+        _trayIcon.ContextMenuStrip.Items.Add("Open Dashboard", null, (_, _) => DispatchUi(RestoreFromTray));
+        _trayIcon.ContextMenuStrip.Items.Add("Connect", null, (_, _) => DispatchUi(() =>
+        {
+            _manualDisconnectRequested = false;
+            _manualAutoReconnectSuppressionLogged = false;
+            if (_serial?.IsOpen != true)
+            {
+                ConnectSerial();
+            }
+        }));
+        _trayIcon.ContextMenuStrip.Items.Add("Disconnect", null, (_, _) => DispatchUi(() =>
+        {
+            RequestManualDisconnect("Tray disconnect requested");
+        }));
+        _trayIcon.ContextMenuStrip.Items.Add("Reconnect", null, (_, _) => DispatchUi(() =>
+        {
+            _manualDisconnectRequested = false;
+            _manualAutoReconnectSuppressionLogged = false;
+            Log("Tray reconnect requested.");
+            DisconnectSerial(sendDisconnectCommand: false, preserveLastControllerPort: true, refreshPortsAfterDisconnect: true);
+            TryAutoReconnect(GetAvailableComPorts());
+        }));
+        _trayIcon.ContextMenuStrip.Items.Add("Open Log Folder", null, (_, _) => DispatchUi(OpenLogFolder));
+        _trayIcon.ContextMenuStrip.Items.Add("Exit", null, (_, _) => DispatchUi(ExitApplication));
+        _trayIcon.DoubleClick += (_, _) => DispatchUi(RestoreFromTray);
+    }
+
+    private void DispatchUi(Action action)
+    {
+        if (Dispatcher.CheckAccess())
+        {
+            action();
+        }
+        else
+        {
+            Dispatcher.BeginInvoke(action);
+        }
+    }
+
+    private void ShowTrayNotification(string title, string message, int timeoutMs = 3000)
+    {
+        try
+        {
+            if (_trayIcon == null || !_trayIcon.Visible)
+            {
+                return;
+            }
+
+            _trayIcon.BalloonTipTitle = title;
+            _trayIcon.BalloonTipText = message;
+            _trayIcon.ShowBalloonTip(timeoutMs);
+        }
+        catch
+        {
+        }
+    }
+
+    protected override void OnStateChanged(EventArgs e)
+    {
+        base.OnStateChanged(e);
+
+        bool minimizeToTray = MinimizeToTrayCheckBox?.IsChecked == true || _settings.MinimizeToTray;
+
+        if (WindowState == WindowState.Minimized && minimizeToTray)
+        {
+            HideToTray();
+        }
+    }
+
+    private void HideToTray()
+    {
+        Hide();
+        ShowInTaskbar = false;
+    }
+
+    private void RestoreFromTray()
+    {
+        Show();
+        ShowInTaskbar = true;
+        WindowState = WindowState.Normal;
+        Activate();
+    }
+
+    private void ExitApplication()
+    {
+        _reallyClose = true;
+        Close();
+    }
+
+    protected override void OnClosing(CancelEventArgs e)
+    {
+        SaveSettingsFromCurrentState();
+
+        bool minimizeToTray = MinimizeToTrayCheckBox?.IsChecked == true || _settings.MinimizeToTray;
+
+        if (!_reallyClose && minimizeToTray)
+        {
+            e.Cancel = true;
+            HideToTray();
+            return;
+        }
+
+        base.OnClosing(e);
+    }
+
+    private void ApplySettingsToUi()
+    {
+        AutoConnectCheckBox.IsChecked = _settings.AutoConnectOnLaunch;
+        ScanAllComPortsCheckBox.IsChecked = _settings.ScanAllComPortsIfRememberedMissing;
+        MinimizeToTrayCheckBox.IsChecked = _settings.MinimizeToTray;
+        StartMinimizedToTrayCheckBox.IsChecked = _settings.StartMinimizedToTray;
+        StartWithWindowsCheckBox.IsChecked = _settings.StartWithWindows;
+        AdvancedDebugLoggingCheckBox.IsChecked = _settings.AdvancedDebugLogging;
+
+        if (DisplayModeComboBox != null)
+        {
+            DisplayModeComboBox.SelectedIndex = GetDisplayModeIndex(_settings.OledDisplayMode);
+        }
+
+        if (OledBrightnessSlider != null)
+        {
+            OledBrightnessSlider.Value = Math.Clamp(_settings.OledBrightnessPercent, 0, 100);
+            UpdateOledBrightnessLabel();
+        }
+
+        if (OledSleepTimeoutSlider != null)
+        {
+            OledSleepTimeoutSlider.Value = Math.Clamp(_settings.OledSleepTimeoutMinutes, 1, 60);
+            UpdateOledSleepTimeoutLabel();
+        }
+
+        if (OledConnectedIdleActionComboBox != null)
+        {
+            OledConnectedIdleActionComboBox.SelectedIndex = GetOledConnectedIdleActionComboBoxIndex(_settings.OledConnectedIdleAction);
+        }
+
+        if (OledConnectedIdleTimeoutSlider != null)
+        {
+            OledConnectedIdleTimeoutSlider.Value = Math.Clamp(_settings.OledConnectedIdleTimeoutMinutes, 1, 60);
+            UpdateOledConnectedIdleTimeoutLabel();
+        }
+
+        if (OledAntiBurnInCheckBox != null)
+        {
+            OledAntiBurnInCheckBox.IsChecked = _settings.OledAntiBurnInEnabled;
+        }
+
+        EncoderSensitivitySlider.Value = Math.Clamp(_settings.EncoderSensitivityPercent, 0, MaxEncoderSensitivityPercent);
+        EncoderSensitivityValueTextBlock.Text = $"Sensitivity: {Math.Clamp(_settings.EncoderSensitivityPercent, 0, MaxEncoderSensitivityPercent)}%";
+
+        ThemeFollowSystemRadioButton.IsChecked = _settings.ThemeMode == ThemeModes.FollowSystem;
+        ThemeLightRadioButton.IsChecked = _settings.ThemeMode == ThemeModes.Light;
+        ThemeDarkRadioButton.IsChecked = _settings.ThemeMode == ThemeModes.Dark;
+    }
+
+    private void ApplyFirstRunWizardSettingsToUi()
+    {
+        if (WizardAutoConnectCheckBox != null)
+        {
+            WizardAutoConnectCheckBox.IsChecked = _settings.AutoConnectOnLaunch;
+        }
+
+        if (WizardStartWithWindowsCheckBox != null)
+        {
+            WizardStartWithWindowsCheckBox.IsChecked = _settings.StartWithWindows;
+        }
+
+        if (WizardMinimizeToTrayCheckBox != null)
+        {
+            WizardMinimizeToTrayCheckBox.IsChecked = _settings.MinimizeToTray;
+        }
+
+        if (WizardStartMinimizedCheckBox != null)
+        {
+            WizardStartMinimizedCheckBox.IsChecked = _settings.StartMinimizedToTray;
+        }
+
+        if (WizardScanAllCheckBox != null)
+        {
+            WizardScanAllCheckBox.IsChecked = _settings.ScanAllComPortsIfRememberedMissing;
+        }
+    }
+
+    private void UpdateFirstRunWizardStatus()
+    {
+        try
+        {
+            if (WizardStatusTextBlock == null)
+            {
+                return;
+            }
+
+            bool connected = _serial?.IsOpen == true && _esp32HelloReceived;
+            string controllerPort = connected ? (_serial?.PortName ?? "unknown") : string.IsNullOrWhiteSpace(_settings.LastComPort) ? "not remembered yet" : _settings.LastComPort;
+            string actualPorts = _lastKnownComPorts.Length == 0 ? "none" : string.Join(", ", _lastKnownComPorts);
+
+            WizardStatusTextBlock.Text = _settings.FirstRunWizardCompleted
+                ? "Wizard status: complete"
+                : "Wizard status: not completed";
+
+            WizardControllerStatusTextBlock.Text = connected
+                ? $"Controller: connected on {controllerPort}"
+                : $"Controller: not connected. Remembered controller port: {controllerPort}. Actual COM ports: {actualPorts}";
+
+            WizardFirmwareStatusTextBlock.Text = connected
+                ? $"Firmware/protocol: {_espFirmwareName}, v{_espProtocolVersion}, channels {_espChannelCount}"
+                : $"Firmware/protocol: waiting for controller. Required protocol: v{RequiredProtocolVersion}+";
+
+            WizardStartupStatusTextBlock.Text = $"Startup: auto-connect {OnOff(_settings.AutoConnectOnLaunch)}, start with Windows {OnOff(_settings.StartWithWindows)}, minimize to tray {OnOff(_settings.MinimizeToTray)}, start minimized {OnOff(_settings.StartMinimizedToTray)}, scan all ports {OnOff(_settings.ScanAllComPortsIfRememberedMissing)}";
+        }
+        catch
+        {
+        }
+    }
+
+    private static string OnOff(bool value) => value ? "on" : "off";
+
+    private void ApplySavedWindowSize()
+    {
+        const double defaultWidth = 1120;
+        const double defaultHeight = 800;
+
+        double width = _settings.WindowWidth >= defaultWidth
+            ? _settings.WindowWidth
+            : defaultWidth;
+
+        double height = _settings.WindowHeight >= defaultHeight
+            ? _settings.WindowHeight
+            : defaultHeight;
+
+        Width = Math.Max(width, MinWidth);
+        Height = Math.Max(height, MinHeight);
+    }
+
+    private void SaveSettingsFromUi()
+    {
+        _settings.SelectedChannelIndex = _selectedChannelIndex;
+
+        _settings.AutoConnectOnLaunch = AutoConnectCheckBox.IsChecked == true;
+        _settings.ScanAllComPortsIfRememberedMissing = ScanAllComPortsCheckBox.IsChecked == true;
+        _settings.MinimizeToTray = MinimizeToTrayCheckBox.IsChecked == true;
+        _settings.StartMinimizedToTray = StartMinimizedToTrayCheckBox.IsChecked == true;
+        _settings.StartWithWindows = StartWithWindowsCheckBox.IsChecked == true;
+        _settings.AdvancedDebugLogging = AdvancedDebugLoggingCheckBox.IsChecked == true;
+        _settings.OledDisplayMode = GetDisplayModeFromUi();
+        _settings.OledBrightnessPercent = GetOledBrightnessPercentFromUi();
+        _settings.OledSleepTimeoutMinutes = GetOledSleepTimeoutMinutesFromUi();
+        _settings.OledConnectedIdleAction = GetOledConnectedIdleActionFromUi();
+        _settings.OledConnectedIdleTimeoutMinutes = GetOledConnectedIdleTimeoutMinutesFromUi();
+        _settings.OledAntiBurnInEnabled = IsOledAntiBurnInEnabledFromUi();
+        _settings.EncoderSensitivityPercent = GetEncoderSensitivityPercentFromUi();
+        _settings.ThemeMode = GetThemeModeFromUi();
+
+        SaveChannelsToSettings();
+        SaveCurrentWindowSize();
+        SaveSettings();
+    }
+
+    private void DisplayModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (DisplayModeComboBox == null)
+        {
+            return;
+        }
+
+        _settings.OledDisplayMode = GetDisplayModeFromUi();
+        UpdateOledPreviewPanels();
+    }
+
+    private void OledBrightnessSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (OledBrightnessSlider == null)
+        {
+            return;
+        }
+
+        _settings.OledBrightnessPercent = GetOledBrightnessPercentFromUi();
+        UpdateOledBrightnessLabel();
+        UpdateOledPreviewPanels();
+    }
+
+    private void OledSleepTimeoutSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (OledSleepTimeoutSlider == null)
+        {
+            return;
+        }
+
+        _settings.OledSleepTimeoutMinutes = GetOledSleepTimeoutMinutesFromUi();
+        UpdateOledSleepTimeoutLabel();
+    }
+
+    private void OledConnectedIdleActionComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (OledConnectedIdleActionComboBox == null)
+        {
+            return;
+        }
+
+        _settings.OledConnectedIdleAction = GetOledConnectedIdleActionFromUi();
+        UpdateOledPreviewPanels();
+    }
+
+    private void OledConnectedIdleTimeoutSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (OledConnectedIdleTimeoutSlider == null)
+        {
+            return;
+        }
+
+        _settings.OledConnectedIdleTimeoutMinutes = GetOledConnectedIdleTimeoutMinutesFromUi();
+        UpdateOledConnectedIdleTimeoutLabel();
+        UpdateOledPreviewPanels();
+    }
+
+    private void OledAntiBurnInCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        if (OledAntiBurnInCheckBox == null)
+        {
+            return;
+        }
+
+        _settings.OledAntiBurnInEnabled = IsOledAntiBurnInEnabledFromUi();
+        UpdateOledPreviewPanels();
+    }
+
+    private int GetDisplayModeIndex(string mode)
+    {
+        return mode switch
+        {
+            DisplayModes.LargeVolume => 1,
+            DisplayModes.MuteStatus => 2,
+            DisplayModes.AppOrDeviceName => 3,
+            DisplayModes.BarPercent => 4,
+            _ => 0
+        };
+    }
+
+    private string GetDisplayModeFromUi()
+    {
+        if (DisplayModeComboBox == null)
+        {
+            return _settings.OledDisplayMode;
+        }
+
+        return DisplayModeComboBox.SelectedIndex switch
+        {
+            1 => DisplayModes.LargeVolume,
+            2 => DisplayModes.MuteStatus,
+            3 => DisplayModes.AppOrDeviceName,
+            4 => DisplayModes.BarPercent,
+            _ => DisplayModes.AppNameAndVolume
+        };
+    }
+
+    private int GetOledBrightnessPercentFromUi()
+    {
+        if (OledBrightnessSlider == null)
+        {
+            return _settings.OledBrightnessPercent;
+        }
+
+        return Math.Clamp((int)Math.Round(OledBrightnessSlider.Value), 0, 100);
+    }
+
+    private int GetOledSleepTimeoutMinutesFromUi()
+    {
+        if (OledSleepTimeoutSlider == null)
+        {
+            return _settings.OledSleepTimeoutMinutes;
+        }
+
+        return Math.Clamp((int)Math.Round(OledSleepTimeoutSlider.Value), 1, 60);
+    }
+
+    private string GetOledConnectedIdleActionFromUi()
+    {
+        if (OledConnectedIdleActionComboBox == null)
+        {
+            return _settings.OledConnectedIdleAction;
+        }
+
+        return OledConnectedIdleActionComboBox.SelectedIndex switch
+        {
+            1 => OledIdleActions.DimTo10,
+            2 => OledIdleActions.DimTo20,
+            3 => OledIdleActions.DimTo30,
+            4 => OledIdleActions.DimTo40,
+            5 => OledIdleActions.DimTo50,
+            6 => OledIdleActions.DimTo60,
+            7 => OledIdleActions.DimTo70,
+            _ => OledIdleActions.Off
+        };
+    }
+
+    private int GetOledConnectedIdleActionComboBoxIndex(string action)
+    {
+        return action switch
+        {
+            OledIdleActions.DimTo10 => 1,
+            OledIdleActions.DimTo20 => 2,
+            OledIdleActions.DimTo30 => 3,
+            OledIdleActions.DimTo40 => 4,
+            OledIdleActions.DimTo50 => 5,
+            OledIdleActions.DimTo60 => 6,
+            OledIdleActions.DimTo70 => 7,
+            _ => 0
+        };
+    }
+
+    private string GetOledConnectedIdleActionProtocolValue()
+    {
+        string action = GetOledConnectedIdleActionFromUi();
+        if (action.StartsWith("DimTo", StringComparison.OrdinalIgnoreCase) && int.TryParse(action[5..], out int dimPercent))
+        {
+            dimPercent = Math.Clamp(dimPercent, 10, 70);
+            return $"DIM_{dimPercent}";
+        }
+
+        return "OFF";
+    }
+
+    private int GetOledConnectedIdleTimeoutMinutesFromUi()
+    {
+        if (OledConnectedIdleTimeoutSlider == null)
+        {
+            return _settings.OledConnectedIdleTimeoutMinutes;
+        }
+
+        return Math.Clamp((int)Math.Round(OledConnectedIdleTimeoutSlider.Value), 1, 60);
+    }
+
+    private bool IsOledAntiBurnInEnabledFromUi()
+    {
+        return OledAntiBurnInCheckBox?.IsChecked ?? _settings.OledAntiBurnInEnabled;
+    }
+
+    private void UpdateOledBrightnessLabel()
+    {
+        if (OledBrightnessValueTextBlock != null)
+        {
+            OledBrightnessValueTextBlock.Text = $"Brightness: {GetOledBrightnessPercentFromUi()}%";
+        }
+    }
+
+    private void UpdateOledSleepTimeoutLabel()
+    {
+        if (OledSleepTimeoutValueTextBlock != null)
+        {
+            OledSleepTimeoutValueTextBlock.Text = $"Disconnected sleep timeout: {GetOledSleepTimeoutMinutesFromUi()} minute(s)";
+        }
+    }
+
+    private void UpdateOledConnectedIdleTimeoutLabel()
+    {
+        if (OledConnectedIdleTimeoutValueTextBlock != null)
+        {
+            OledConnectedIdleTimeoutValueTextBlock.Text = $"Connected idle timeout: {GetOledConnectedIdleTimeoutMinutesFromUi()} minute(s)";
+        }
+    }
+
+    private void UpdateOledPreviewPanels()
+    {
+        try
+        {
+            TextBlock[] titleBlocks = { OledPreview1Title, OledPreview2Title, OledPreview3Title, OledPreview4Title, OledPreview5Title, OledPreview6Title };
+            TextBlock[] line1Blocks = { OledPreview1Line1, OledPreview2Line1, OledPreview3Line1, OledPreview4Line1, OledPreview5Line1, OledPreview6Line1 };
+            TextBlock[] line2Blocks = { OledPreview1Line2, OledPreview2Line2, OledPreview3Line2, OledPreview4Line2, OledPreview5Line2, OledPreview6Line2 };
+            System.Windows.Controls.ProgressBar[] progressBars = { OledPreview1Progress, OledPreview2Progress, OledPreview3Progress, OledPreview4Progress, OledPreview5Progress, OledPreview6Progress };
+
+            string mode = GetDisplayModeFromUi();
+            if (OledPreviewModeTextBlock != null)
+            {
+                OledPreviewModeTextBlock.Text = $"Preview mode: {GetDisplayModeDisplayName(mode)} | Brightness: {GetOledBrightnessPercentFromUi()}% | Connected idle: {GetOledConnectedIdleTimeoutMinutesFromUi()} min / {GetOledConnectedIdleActionDisplayName(GetOledConnectedIdleActionFromUi())} | Anti-burn-in: {(IsOledAntiBurnInEnabledFromUi() ? "on" : "off")}";
+            }
+
+            for (int i = 0; i < Math.Min(_channels.Count, titleBlocks.Length); i++)
+            {
+                ChannelMappingItem channel = _channels[i];
+                string label = string.IsNullOrWhiteSpace(channel.DisplayLabel) ? $"Channel {channel.ChannelNumber}" : channel.DisplayLabel;
+                string assigned = string.IsNullOrWhiteSpace(channel.AssignedLabel) ? "Unassigned" : channel.AssignedLabel;
+                string mute = channel.Muted ? "MUTED" : "UNMUTED";
+
+                titleBlocks[i].Text = $"OLED {channel.ChannelNumber}";
+                progressBars[i].Value = Math.Clamp(channel.Volume, 0, 100);
+
+                switch (mode)
+                {
+                    case DisplayModes.LargeVolume:
+                        line1Blocks[i].Text = $"{channel.Volume}%";
+                        line2Blocks[i].Text = label;
+                        break;
+                    case DisplayModes.MuteStatus:
+                        line1Blocks[i].Text = mute;
+                        line2Blocks[i].Text = $"{label} {channel.Volume}%";
+                        break;
+                    case DisplayModes.AppOrDeviceName:
+                        line1Blocks[i].Text = label;
+                        line2Blocks[i].Text = assigned;
+                        break;
+                    case DisplayModes.BarPercent:
+                        line1Blocks[i].Text = label;
+                        line2Blocks[i].Text = $"Volume bar {channel.Volume}%";
+                        break;
+                    default:
+                        line1Blocks[i].Text = label;
+                        line2Blocks[i].Text = $"{channel.Volume}% {(channel.Muted ? "Muted" : channel.Status)}";
+                        break;
+                }
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private static string GetDisplayModeDisplayName(string mode)
+    {
+        return mode switch
+        {
+            DisplayModes.LargeVolume => "Large volume number",
+            DisplayModes.MuteStatus => "Mute status",
+            DisplayModes.AppOrDeviceName => "App/device name",
+            DisplayModes.BarPercent => "Simple bar/percentage view",
+            _ => "App name + volume"
+        };
+    }
+
+    private static string GetOledConnectedIdleActionDisplayName(string action)
+    {
+        return action switch
+        {
+            OledIdleActions.DimTo10 => "Dim brightness to 10%",
+            OledIdleActions.DimTo20 => "Dim brightness to 20%",
+            OledIdleActions.DimTo30 => "Dim brightness to 30%",
+            OledIdleActions.DimTo40 => "Dim brightness to 40%",
+            OledIdleActions.DimTo50 => "Dim brightness to 50%",
+            OledIdleActions.DimTo60 => "Dim brightness to 60%",
+            OledIdleActions.DimTo70 => "Dim brightness to 70%",
+            _ => "Turn off display"
+        };
+    }
+
+    private void QueueFullStateSend(string reason)
+    {
+        if (_serial?.IsOpen != true || !_esp32HelloReceived)
+        {
+            return;
+        }
+
+        System.Threading.Interlocked.Exchange(ref _fullStateSendQueued, 1);
+        _fullStateSendCoalesceTimer?.Dispose();
+        _fullStateSendCoalesceTimer = new System.Threading.Timer(_ =>
+        {
+            try
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (System.Threading.Interlocked.Exchange(ref _fullStateSendQueued, 0) == 1)
+                    {
+                        RefreshAllChannelStates();
+                        SendAllChannelStatesToDevice();
+                        SendStateToDevice(force: true);
+                        if (IsAdvancedDebugLoggingEnabled())
+                        {
+                            Log($"Coalesced STATE update sent after {reason}.");
+                        }
+                    }
+                }));
+            }
+            catch
+            {
+                System.Threading.Interlocked.Exchange(ref _fullStateSendQueued, 0);
+            }
+        }, null, 180, System.Threading.Timeout.Infinite);
+    }
+
+    private bool CanSendSleepWakeTestCommand(string commandName)
+    {
+        DateTime now = DateTime.Now;
+        if ((now - _lastSleepWakeTestCommandAt).TotalMilliseconds < 1000)
+        {
+            Log($"Ignored repeated {commandName} test command; wait a moment before sending another sleep/wake test.");
+            return false;
+        }
+
+        _lastSleepWakeTestCommandAt = now;
+        return true;
+    }
+
+    private void ApplyStartupSetting()
+    {
+        try
+        {
+            using RegistryKey? key = Registry.CurrentUser.OpenSubKey(
+                @"Software\Microsoft\Windows\CurrentVersion\Run",
+                writable: true);
+
+            if (key == null)
+            {
+                Log("Could not open Windows startup registry key.");
+                return;
+            }
+
+            if (_settings.StartWithWindows)
+            {
+                string? exePath = Environment.ProcessPath;
+
+                if (string.IsNullOrWhiteSpace(exePath))
+                {
+                    exePath = Process.GetCurrentProcess().MainModule?.FileName;
+                }
+
+                if (string.IsNullOrWhiteSpace(exePath) || !File.Exists(exePath))
+                {
+                    Log("Could not determine app path for startup.");
+                    return;
+                }
+
+                key.SetValue(StartupRegistryName, $"\"{exePath}\"");
+                Log($"Windows startup enabled: {exePath}");
+            }
+            else
+            {
+                key.DeleteValue(StartupRegistryName, throwOnMissingValue: false);
+                Log("Windows startup disabled.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"Startup setting error: {ex.Message}");
+        }
+    }
+
+    private void LoadSettings()
+    {
+        try
+        {
+            string path = GetSettingsPath();
+
+            if (!File.Exists(path))
+            {
+                _settings = DashboardSettings.CreateDefault();
+                return;
+            }
+
+            string json = File.ReadAllText(path);
+            _settings = JsonSerializer.Deserialize<DashboardSettings>(json) ?? DashboardSettings.CreateDefault();
+
+            NormalizeSettings(_settings);
+
+            if (_settings.ChannelTargetKeys != null && _settings.ChannelTargetKeys.Length == ChannelCount)
+            {
+                bool channelsLookEmpty = _settings.Channels.All(channel => string.IsNullOrWhiteSpace(channel.TargetKey));
+
+                if (channelsLookEmpty)
+                {
+                    for (int i = 0; i < ChannelCount; i++)
+                    {
+                        _settings.Channels[i].TargetKey = _settings.ChannelTargetKeys[i] ?? string.Empty;
+                        _settings.Channels[i].FriendlyName = MakeDisplayLabelFromTargetKey(_settings.Channels[i].TargetKey);
+                    }
+                }
+            }
+        }
+        catch
+        {
+            _settings = DashboardSettings.CreateDefault();
+        }
+    }
+
+    private void ApplySettingsToChannels()
+    {
+        if (_settings.Channels.Length != ChannelCount)
+        {
+            _settings.Channels = DashboardSettings.CreateDefaultChannels();
+        }
+
+        for (int i = 0; i < ChannelCount; i++)
+        {
+            _channels[i].TargetKey = _settings.Channels[i].TargetKey ?? string.Empty;
+            _channels[i].FriendlyName = _settings.Channels[i].FriendlyName ?? string.Empty;
+            _channels[i].EncoderSensitivityPercent = Math.Clamp(_settings.Channels[i].EncoderSensitivityPercent <= 0 ? _settings.EncoderSensitivityPercent : _settings.Channels[i].EncoderSensitivityPercent, 0, MaxEncoderSensitivityPercent);
+            _channels[i].ButtonAction = ChannelButtonActions.IsValid(_settings.Channels[i].ButtonAction) ? _settings.Channels[i].ButtonAction : ChannelButtonActions.SelectNextChannel;
+        }
+
+        RefreshChannelAssignmentLabels();
+        RefreshAllChannelStates();
+    }
+
+    private void SaveSettingsFromCurrentState()
+    {
+        _settings.SelectedChannelIndex = _selectedChannelIndex;
+
+        if (AutoConnectCheckBox != null)
+        {
+            _settings.AutoConnectOnLaunch = AutoConnectCheckBox.IsChecked == true;
+        }
+
+        if (ScanAllComPortsCheckBox != null)
+        {
+            _settings.ScanAllComPortsIfRememberedMissing = ScanAllComPortsCheckBox.IsChecked == true;
+        }
+
+        if (MinimizeToTrayCheckBox != null)
+        {
+            _settings.MinimizeToTray = MinimizeToTrayCheckBox.IsChecked == true;
+        }
+
+        if (StartMinimizedToTrayCheckBox != null)
+        {
+            _settings.StartMinimizedToTray = StartMinimizedToTrayCheckBox.IsChecked == true;
+        }
+
+        if (StartWithWindowsCheckBox != null)
+        {
+            _settings.StartWithWindows = StartWithWindowsCheckBox.IsChecked == true;
+        }
+
+        if (AdvancedDebugLoggingCheckBox != null)
+        {
+            _settings.AdvancedDebugLogging = AdvancedDebugLoggingCheckBox.IsChecked == true;
+        }
+
+        if (DisplayModeComboBox != null)
+        {
+            _settings.OledDisplayMode = GetDisplayModeFromUi();
+        }
+
+        if (OledBrightnessSlider != null)
+        {
+            _settings.OledBrightnessPercent = GetOledBrightnessPercentFromUi();
+        }
+
+        if (OledSleepTimeoutSlider != null)
+        {
+            _settings.OledSleepTimeoutMinutes = GetOledSleepTimeoutMinutesFromUi();
+        }
+
+        if (OledConnectedIdleActionComboBox != null)
+        {
+            _settings.OledConnectedIdleAction = GetOledConnectedIdleActionFromUi();
+        }
+
+        if (OledConnectedIdleTimeoutSlider != null)
+        {
+            _settings.OledConnectedIdleTimeoutMinutes = GetOledConnectedIdleTimeoutMinutesFromUi();
+        }
+
+        if (OledAntiBurnInCheckBox != null)
+        {
+            _settings.OledAntiBurnInEnabled = IsOledAntiBurnInEnabledFromUi();
+        }
+
+        if (EncoderSensitivitySlider != null)
+        {
+            _settings.EncoderSensitivityPercent = GetEncoderSensitivityPercentFromUi();
+        }
+
+        if (ThemeFollowSystemRadioButton != null)
+        {
+            _settings.ThemeMode = GetThemeModeFromUi();
+        }
+
+        SaveChannelsToSettings();
+        SaveCurrentWindowSize();
+        SaveSettings();
+    }
+
+    private void SaveChannelsToSettings()
+    {
+        _settings.Channels = _channels.Select(channel => new ChannelSettings
+        {
+            TargetKey = channel.TargetKey,
+            FriendlyName = channel.FriendlyName,
+            EncoderSensitivityPercent = Math.Clamp(channel.EncoderSensitivityPercent <= 0 ? _settings.EncoderSensitivityPercent : channel.EncoderSensitivityPercent, 0, MaxEncoderSensitivityPercent),
+            ButtonAction = ChannelButtonActions.IsValid(channel.ButtonAction) ? channel.ButtonAction : ChannelButtonActions.SelectNextChannel
+        }).ToArray();
+
+        _settings.ChannelTargetKeys = _settings.Channels.Select(channel => channel.TargetKey).ToArray();
+    }
+
+    private void SaveCurrentWindowSize()
+    {
+        double widthToSave;
+        double heightToSave;
+
+        if (WindowState == WindowState.Normal)
+        {
+            widthToSave = Width;
+            heightToSave = Height;
+        }
+        else
+        {
+            widthToSave = RestoreBounds.Width;
+            heightToSave = RestoreBounds.Height;
+        }
+
+        if (widthToSave >= MinWidth && heightToSave >= MinHeight)
+        {
+            _settings.WindowWidth = widthToSave;
+            _settings.WindowHeight = heightToSave;
+        }
+    }
+
+    private void SaveSettings()
+    {
+        try
+        {
+            string path = GetSettingsPath();
+            string? directory = Path.GetDirectoryName(path);
+
+            if (!string.IsNullOrWhiteSpace(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            string json = JsonSerializer.Serialize(_settings, new JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
+
+            File.WriteAllText(path, json);
+        }
+        catch (Exception ex)
+        {
+            Log($"Settings save error: {ex.Message}");
+        }
+    }
+
+    private static string GetSettingsPath()
+    {
+        string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        return Path.Combine(appData, "PcVolumeController", "settings.json");
+    }
+
+    private string GetThemeModeFromUi()
+    {
+        if (ThemeLightRadioButton.IsChecked == true)
+        {
+            return ThemeModes.Light;
+        }
+
+        if (ThemeDarkRadioButton.IsChecked == true)
+        {
+            return ThemeModes.Dark;
+        }
+
+        return ThemeModes.FollowSystem;
+    }
+
+    private void UpdateDiagnostics()
+    {
+        bool portOpen = _serial?.IsOpen == true;
+        bool connected = portOpen && _esp32HelloReceived;
+        string comPort = portOpen ? (_serial?.PortName ?? "--") : "--";
+
+        DiagConnectionTextBlock.Text = connected ? "ESP32 connection: Connected" : portOpen ? "ESP32 connection: Identifying" : "ESP32 connection: Disconnected";
+        DiagComPortTextBlock.Text = $"COM port: {comPort}";
+
+        if (_lastEspMessageTime.HasValue)
+        {
+            TimeSpan age = DateTime.Now - _lastEspMessageTime.Value;
+            DiagLastHeartbeatTextBlock.Text = $"Last message: {age.TotalSeconds:0.0}s ago";
+        }
+        else
+        {
+            DiagLastHeartbeatTextBlock.Text = "Last message: --";
+        }
+
+        DiagFirmwareTextBlock.Text = $"Firmware: {_espFirmwareName}";
+        DiagProtocolTextBlock.Text = $"Protocol: {_espProtocolVersion} / Required {RequiredProtocolVersion}";
+        DiagLastMessageTextBlock.Text = $"Last ESP32 message: {_lastEspMessage}";
+        DiagLastStateSentTextBlock.Text = $"Last state sent: {_lastStateSent}";
+
+        bool protocolOk =
+            IsEspProtocolCompatible(_espProtocolVersion) &&
+            _espChannelCount.Equals(ExpectedChannelCount.ToString(), StringComparison.OrdinalIgnoreCase);
+
+        if (!portOpen)
+        {
+            DiagProtocolStatusTextBlock.Text = "Protocol status: Waiting for ESP32";
+            DiagProtocolStatusTextBlock.Foreground = Resources["SecondaryForeground"] as WpfBrush;
+        }
+        else if (!connected)
+        {
+            DiagProtocolStatusTextBlock.Text = "Protocol status: Identifying controller";
+            DiagProtocolStatusTextBlock.Foreground = Resources["WarningForeground"] as WpfBrush;
+        }
+        else if (protocolOk)
+        {
+            DiagProtocolStatusTextBlock.Text = "Protocol status: OK";
+            DiagProtocolStatusTextBlock.Foreground = Resources["ConnectionGoodForeground"] as WpfBrush;
+        }
+        else
+        {
+            DiagProtocolStatusTextBlock.Text = $"Protocol status: Warning - ESP32 reports protocol {_espProtocolVersion}, channels {_espChannelCount}; requires v{RequiredProtocolVersion}+ and {ExpectedChannelCount} channels";
+            DiagProtocolStatusTextBlock.Foreground = Resources["WarningForeground"] as WpfBrush;
+        }
+
+        UpdateFirstRunWizardStatus();
+    }
+
+    private static bool IsEspProtocolCompatible(string reportedProtocol)
+    {
+        if (string.IsNullOrWhiteSpace(reportedProtocol) || reportedProtocol.Equals("Unknown", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return CompareVersionParts(reportedProtocol, RequiredProtocolVersion) >= 0;
+    }
+
+    private static int CompareVersionParts(string left, string right)
+    {
+        int[] leftParts = ParseVersionParts(left);
+        int[] rightParts = ParseVersionParts(right);
+        int count = Math.Max(leftParts.Length, rightParts.Length);
+
+        for (int i = 0; i < count; i++)
+        {
+            int leftValue = i < leftParts.Length ? leftParts[i] : 0;
+            int rightValue = i < rightParts.Length ? rightParts[i] : 0;
+
+            if (leftValue != rightValue)
+            {
+                return leftValue.CompareTo(rightValue);
+            }
+        }
+
+        return 0;
+    }
+
+    private static int[] ParseVersionParts(string version)
+    {
+        string cleaned = version.Trim().TrimStart('v', 'V');
+        StringBuilder builder = new();
+
+        foreach (char c in cleaned)
+        {
+            builder.Append(char.IsDigit(c) ? c : '.');
+        }
+
+        return builder.ToString()
+            .Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(part => int.TryParse(part, out int value) ? value : 0)
+            .ToArray();
+    }
+
+    private void ApplyTheme()
+    {
+        string mode = _settings.ThemeMode;
+
+        if (mode == ThemeModes.FollowSystem)
+        {
+            mode = IsWindowsUsingLightTheme() ? ThemeModes.Light : ThemeModes.Dark;
+        }
+
+        bool dark = mode == ThemeModes.Dark;
+
+        WpfBrush appBackground = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(30, 30, 30))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(255, 255, 255));
+
+        WpfBrush cardBackground = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(43, 43, 43))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(255, 255, 255));
+
+        WpfBrush appForeground = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(245, 245, 245))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(17, 17, 17));
+
+        WpfBrush secondaryForeground = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(190, 190, 190))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(100, 100, 100));
+
+        WpfBrush cardBorder = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(85, 85, 85))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(221, 221, 221));
+
+        WpfBrush buttonBackground = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(48, 48, 52))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(238, 238, 238));
+
+        WpfBrush buttonHoverBackground = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(56, 56, 60))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(226, 226, 226));
+
+        WpfBrush buttonPressedBackground = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(42, 42, 46))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(214, 214, 214));
+
+        WpfBrush buttonForeground = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(245, 245, 245))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(17, 17, 17));
+
+        WpfBrush buttonBorder = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(95, 95, 100))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(136, 136, 136));
+
+        WpfBrush listBackground = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(35, 35, 35))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(255, 255, 255));
+
+        WpfBrush headerBackground = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(52, 52, 52))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(242, 242, 242));
+
+        WpfBrush selectedBackground = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(58, 78, 96))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(221, 238, 255));
+
+        WpfBrush selectedForeground = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(255, 255, 255))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(17, 17, 17));
+
+        WpfBrush inputBackground = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(50, 50, 54))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(255, 255, 255));
+
+        WpfBrush popupBackground = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(45, 45, 48))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(255, 255, 255));
+
+        WpfBrush tabSelectedBackground = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(58, 58, 62))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(255, 255, 255));
+
+        WpfBrush tabSelectedForeground = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(245, 245, 245))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(17, 17, 17));
+
+        WpfBrush tabUnselectedBackground = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(43, 43, 43))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(233, 233, 233));
+
+        WpfBrush tabUnselectedForeground = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(230, 230, 230))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(17, 17, 17));
+
+        WpfBrush connectionGood = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(95, 220, 120))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(0, 120, 20));
+
+        WpfBrush previewSurfaceBackground = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(37, 37, 40))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(247, 247, 247));
+
+        WpfBrush previewSurfaceBorder = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(78, 78, 82))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(200, 200, 200));
+
+        WpfBrush previewEncoderOuterFill = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(70, 70, 74))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(239, 239, 239));
+
+        WpfBrush previewEncoderInnerFill = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(92, 92, 96))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(250, 250, 250));
+
+        WpfBrush previewEncoderStroke = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(205, 205, 205))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(68, 68, 68));
+
+        WpfBrush previewEncoderActiveBackground = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(58, 78, 96))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(221, 238, 255));
+
+        WpfBrush connectionBad = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(255, 120, 120))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(170, 31, 31));
+
+        WpfBrush warning = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(255, 190, 100))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(176, 96, 0));
+
+        Resources["AppBackground"] = appBackground;
+        Resources["CardBackground"] = cardBackground;
+        Resources["AppForeground"] = appForeground;
+        Resources["SecondaryForeground"] = secondaryForeground;
+        Resources["CardBorder"] = cardBorder;
+        Resources["PreviewSurfaceBackground"] = previewSurfaceBackground;
+        Resources["PreviewSurfaceBorder"] = previewSurfaceBorder;
+        Resources["PreviewEncoderOuterFill"] = previewEncoderOuterFill;
+        Resources["PreviewEncoderInnerFill"] = previewEncoderInnerFill;
+        Resources["PreviewEncoderStroke"] = previewEncoderStroke;
+        Resources["PreviewEncoderActiveBackground"] = previewEncoderActiveBackground;
+
+        Resources["ButtonBackground"] = buttonBackground;
+        Resources["ButtonHoverBackground"] = buttonHoverBackground;
+        Resources["ButtonPressedBackground"] = buttonPressedBackground;
+        Resources["ButtonForeground"] = buttonForeground;
+        Resources["ButtonBorder"] = buttonBorder;
+
+        Resources["ListBackground"] = listBackground;
+        Resources["HeaderBackground"] = headerBackground;
+        Resources["HeaderForeground"] = appForeground;
+        Resources["SelectedBackground"] = selectedBackground;
+        Resources["SelectedForeground"] = selectedForeground;
+        Resources["InputBackground"] = inputBackground;
+        Resources["InputForeground"] = appForeground;
+        Resources["PopupBackground"] = popupBackground;
+        Resources["TabSelectedBackground"] = tabSelectedBackground;
+        Resources["TabSelectedForeground"] = tabSelectedForeground;
+        Resources["TabUnselectedBackground"] = tabUnselectedBackground;
+        Resources["TabUnselectedForeground"] = tabUnselectedForeground;
+        Resources["TabBorderBrush"] = cardBorder;
+        Resources["ConnectionGoodForeground"] = connectionGood;
+        Resources["ConnectionBadForeground"] = connectionBad;
+        Resources["WarningForeground"] = warning;
+
+        Background = appBackground;
+        Foreground = appForeground;
+
+        Resources[WpfSystemColors.WindowBrushKey] = appBackground;
+        Resources[WpfSystemColors.ControlBrushKey] = cardBackground;
+        Resources[WpfSystemColors.ControlTextBrushKey] = appForeground;
+        Resources[WpfSystemColors.WindowTextBrushKey] = appForeground;
+        Resources[WpfSystemColors.MenuTextBrushKey] = appForeground;
+        Resources[WpfSystemColors.ControlLightBrushKey] = cardBorder;
+        Resources[WpfSystemColors.ControlDarkBrushKey] = cardBorder;
+        Resources[WpfSystemColors.HighlightBrushKey] = selectedBackground;
+        Resources[WpfSystemColors.HighlightTextBrushKey] = selectedForeground;
+
+        if (ConnectionStatusTextBlock != null)
+        {
+            if (ConnectionStatusTextBlock.Text.StartsWith("Connected", StringComparison.OrdinalIgnoreCase))
+            {
+                ConnectionStatusTextBlock.Foreground = connectionGood;
+            }
+            else
+            {
+                ConnectionStatusTextBlock.Foreground = connectionBad;
+            }
+        }
+
+        UpdateDiagnostics();
+        ApplyWindowChromeTheme(dark);
+    }
+
+    private void ApplyWindowChromeTheme(bool dark)
+    {
+        try
+        {
+            IntPtr hwnd = new WindowInteropHelper(this).Handle;
+
+            if (hwnd == IntPtr.Zero)
+            {
+                return;
+            }
+
+            int useDark = dark ? 1 : 0;
+            DwmSetWindowAttribute(hwnd, DwmwaUseImmersiveDarkMode, ref useDark, Marshal.SizeOf<int>());
+        }
+        catch
+        {
+        }
+    }
+
+    private static bool IsWindowsUsingLightTheme()
+    {
+        try
+        {
+            using RegistryKey? key = Registry.CurrentUser.OpenSubKey(
+                @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+                writable: false);
+
+            object? value = key?.GetValue("AppsUseLightTheme");
+            return value is int intValue ? intValue != 0 : true;
+        }
+        catch
+        {
+            return true;
+        }
+    }
+
+
+    private bool IsAdvancedDebugLoggingEnabled()
+    {
+        try
+        {
+            return _settings.AdvancedDebugLogging || AdvancedDebugLoggingCheckBox?.IsChecked == true;
+        }
+        catch
+        {
+            return _settings.AdvancedDebugLogging;
+        }
+    }
+
+    private void AppendDebugConsole(string direction, string message)
+    {
+        try
+        {
+            bool isHeartbeat = message.Equals("PING", StringComparison.OrdinalIgnoreCase) || message.Equals("PONG", StringComparison.OrdinalIgnoreCase);
+            bool showHeartbeat = ShowHeartbeatDebugCheckBox?.IsChecked == true;
+            bool advanced = IsAdvancedDebugLoggingEnabled();
+
+            if (isHeartbeat && !showHeartbeat && !advanced)
+            {
+                return;
+            }
+
+            string line = $"{DateTime.Now:HH:mm:ss.fff} {direction} {message}";
+            _debugConsoleLines.Add(line);
+
+            while (_debugConsoleLines.Count > DebugConsoleMaxLines)
+            {
+                _debugConsoleLines.RemoveAt(0);
+            }
+
+            if (DebugConsoleTextBox != null)
+            {
+                DebugConsoleTextBox.Text = string.Join(Environment.NewLine, _debugConsoleLines);
+                DebugConsoleTextBox.ScrollToEnd();
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private void ClearDebugConsoleButton_Click(object sender, RoutedEventArgs e)
+    {
+        _debugConsoleLines.Clear();
+        DebugConsoleTextBox?.Clear();
+    }
+
+    private void CopyDebugConsoleButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            System.Windows.Clipboard.SetText(DebugConsoleTextBox?.Text ?? string.Empty);
+            Log("Copied debug console to clipboard.");
+        }
+        catch (Exception ex)
+        {
+            Log($"Could not copy debug console: {ex.Message}");
+        }
+    }
+
+    private void SaveDebugSnapshotButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            string file = Path.Combine(GetLogDirectory(), $"debug-snapshot-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
+            File.WriteAllText(file, DebugConsoleTextBox?.Text ?? string.Empty);
+            Log($"Saved debug snapshot: {file}");
+        }
+        catch (Exception ex)
+        {
+            Log($"Could not save debug snapshot: {ex.Message}");
+        }
+    }
+
+    private void OpenCurrentLogFileButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Directory.CreateDirectory(GetLogDirectory());
+            if (!File.Exists(_logPath))
+            {
+                File.WriteAllText(_logPath, string.Empty);
+            }
+            Process.Start(new ProcessStartInfo { FileName = _logPath, UseShellExecute = true });
+            Log($"Opened current log file: {_logPath}");
+        }
+        catch (Exception ex)
+        {
+            Log($"Failed to open current log file: {ex.Message}");
+            System.Windows.MessageBox.Show(this, $"Could not open the current log file.\n\n{ex.Message}", "Open Current Log", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private void CopyLogFolderPathButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            System.Windows.Clipboard.SetText(GetLogDirectory());
+            Log("Copied log folder path to clipboard.");
+        }
+        catch (Exception ex)
+        {
+            Log($"Failed to copy log folder path: {ex.Message}");
+        }
+    }
+
+    private void ExportDiagnosticsZipButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            string exportFolder = Path.Combine(GetLogDirectory(), "exports");
+            Directory.CreateDirectory(exportFolder);
+            string zipPath = Path.Combine(exportFolder, $"pc-volume-controller-diagnostics-{DateTime.Now:yyyyMMdd-HHmmss}.zip");
+
+            using FileStream zipStream = File.Create(zipPath);
+            using ZipArchive archive = new(zipStream, ZipArchiveMode.Create);
+            HashSet<string> addedEntries = new(StringComparer.OrdinalIgnoreCase);
+
+            AddTextToZip(archive, "diagnostics-summary.txt", BuildDiagnosticsSummary());
+            addedEntries.Add("diagnostics-summary.txt");
+
+            string settingsPath = GetSettingsPath();
+            if (File.Exists(settingsPath))
+            {
+                string entryName = "settings.json";
+                archive.CreateEntryFromFile(settingsPath, entryName);
+                addedEntries.Add(entryName);
+            }
+
+            if (File.Exists(_logPath))
+            {
+                string entryName = ToZipEntryPath("logs", Path.GetFileName(_logPath));
+                archive.CreateEntryFromFile(_logPath, entryName);
+                addedEntries.Add(entryName);
+            }
+
+            foreach (string logFile in Directory.GetFiles(GetLogDirectory(), "dashboard-*.log").OrderByDescending(File.GetLastWriteTime).Take(10))
+            {
+                string entryName = ToZipEntryPath("logs", Path.GetFileName(logFile));
+                if (addedEntries.Add(entryName))
+                {
+                    archive.CreateEntryFromFile(logFile, entryName);
+                }
+            }
+
+            Log($"Exported diagnostics zip: {zipPath}");
+            Process.Start(new ProcessStartInfo { FileName = exportFolder, UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            Log($"Diagnostics export failed: {ex.Message}");
+            System.Windows.MessageBox.Show(this, $"Diagnostics export failed.\n\n{ex.Message}", "Export Diagnostics", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private void AddTextToZip(ZipArchive archive, string entryName, string text)
+    {
+        ZipArchiveEntry entry = archive.CreateEntry(entryName);
+        using StreamWriter writer = new(entry.Open());
+        writer.Write(text);
+    }
+
+    private static string ToZipEntryPath(params string[] parts)
+    {
+        return string.Join("/", parts.Where(part => !string.IsNullOrWhiteSpace(part)));
+    }
+
+    private string BuildDiagnosticsSummary()
+    {
+        StringBuilder sb = new();
+        sb.AppendLine($"Dashboard version: v{DashboardVersion}");
+        sb.AppendLine($"Required ESP32 protocol: v{RequiredProtocolVersion}");
+        sb.AppendLine($"Connected ESP32 firmware: {_espFirmwareName}");
+        sb.AppendLine($"Connected ESP32 protocol: {_espProtocolVersion}");
+        sb.AppendLine($"Connected ESP32 channels: {_espChannelCount}");
+        sb.AppendLine($"Active COM port: {(_serial?.IsOpen == true ? _serial.PortName : "none")}");
+        sb.AppendLine($"Remembered controller port: {(string.IsNullOrWhiteSpace(_settings.LastComPort) ? "none" : _settings.LastComPort)}");
+        string[] ports = GetAvailableComPorts();
+        sb.AppendLine($"Actual COM ports: {(ports.Length == 0 ? "none" : string.Join(", ", ports))}");
+        sb.AppendLine($"Auto-connect: {_settings.AutoConnectOnLaunch}");
+        sb.AppendLine($"Scan all if remembered missing: {_settings.ScanAllComPortsIfRememberedMissing}");
+        sb.AppendLine($"Manual disconnect requested: {_manualDisconnectRequested}");
+        sb.AppendLine($"Safe mode: {_safeMode}");
+        sb.AppendLine($"Active log: {_logPath}");
+        sb.AppendLine($"Settings path: {GetSettingsPath()}");
+        return sb.ToString();
+    }
+
+
+    private void ExportSetupButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            SaveSettingsFromCurrentState();
+            Microsoft.Win32.SaveFileDialog dialog = new()
+            {
+                Title = "Export PC Volume Controller setup",
+                Filter = "JSON setup file (*.json)|*.json|All files (*.*)|*.*",
+                FileName = $"PcVolumeController-setup-v{DashboardVersion}-{DateTime.Now:yyyyMMdd-HHmmss}.json"
+            };
+
+            if (dialog.ShowDialog(this) != true)
+            {
+                return;
+            }
+
+            string json = JsonSerializer.Serialize(_settings, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(dialog.FileName, json);
+            Log($"Exported setup to: {dialog.FileName}");
+            System.Windows.MessageBox.Show(this, "Setup exported successfully.", "Export Setup", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            Log($"Setup export failed: {ex.Message}");
+            System.Windows.MessageBox.Show(this, $"Setup export failed.\n\n{ex.Message}", "Export Setup", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private void ImportSetupButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Microsoft.Win32.OpenFileDialog dialog = new()
+            {
+                Title = "Import PC Volume Controller setup",
+                Filter = "JSON setup file (*.json)|*.json|All files (*.*)|*.*"
+            };
+
+            if (dialog.ShowDialog(this) != true)
+            {
+                return;
+            }
+
+            string json = File.ReadAllText(dialog.FileName);
+            DashboardSettings imported = JsonSerializer.Deserialize<DashboardSettings>(json) ?? throw new InvalidDataException("The selected file did not contain valid setup data.");
+            NormalizeSettings(imported);
+
+            MessageBoxResult result = System.Windows.MessageBox.Show(this,
+                "Import this setup? A backup of the current setup will be created first.",
+                "Import Setup",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
+            BackupCurrentSettingsFile("before-import");
+            _settings = imported;
+            SaveSettings();
+            ApplySettingsToUi();
+            ApplyStartupSetting();
+            ApplyTheme();
+            BuildChannels();
+            BuildLogicalChannelComboBox();
+            ApplySettingsToChannels();
+            SelectChannel(Math.Clamp(_settings.SelectedChannelIndex, 0, ChannelCount - 1));
+            ForceRefreshComPorts("setup import", preserveSelection: false);
+            RefreshAudioSessions();
+            RefreshAllChannelStates();
+            QueueFullStateSend("setup import");
+            Log($"Imported setup from: {dialog.FileName}");
+        }
+        catch (Exception ex)
+        {
+            Log($"Setup import failed: {ex.Message}");
+            System.Windows.MessageBox.Show(this, $"Setup import failed.\n\n{ex.Message}", "Import Setup", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private void BackupCurrentSettingsFile(string reason)
+    {
+        try
+        {
+            string settingsPath = GetSettingsPath();
+            if (!File.Exists(settingsPath))
+            {
+                return;
+            }
+
+            string backupDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PcVolumeController", "setup_backups");
+            Directory.CreateDirectory(backupDirectory);
+            string backupPath = Path.Combine(backupDirectory, $"settings-{reason}-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            File.Copy(settingsPath, backupPath, overwrite: false);
+            Log($"Backed up current setup to: {backupPath}");
+        }
+        catch (Exception ex)
+        {
+            Log($"Setup backup failed: {ex.Message}");
+        }
+    }
+
+    private static void NormalizeSettings(DashboardSettings settings)
+    {
+        if (settings.Channels == null || settings.Channels.Length != ChannelCount)
+        {
+            settings.Channels = DashboardSettings.CreateDefaultChannels();
+        }
+
+        settings.ChannelTargetKeys ??= settings.Channels.Select(channel => channel.TargetKey).ToArray();
+
+        if (string.IsNullOrWhiteSpace(settings.ThemeMode))
+        {
+            settings.ThemeMode = ThemeModes.FollowSystem;
+        }
+
+        settings.EncoderSensitivityPercent = Math.Clamp(settings.EncoderSensitivityPercent, 0, MaxEncoderSensitivityPercent);
+        foreach (ChannelSettings channel in settings.Channels)
+        {
+            channel.EncoderSensitivityPercent = Math.Clamp(channel.EncoderSensitivityPercent <= 0 ? settings.EncoderSensitivityPercent : channel.EncoderSensitivityPercent, 0, MaxEncoderSensitivityPercent);
+            if (!ChannelButtonActions.IsValid(channel.ButtonAction))
+            {
+                channel.ButtonAction = ChannelButtonActions.SelectNextChannel;
+            }
+        }
+
+        settings.OledBrightnessPercent = Math.Clamp(settings.OledBrightnessPercent <= 0 ? 80 : settings.OledBrightnessPercent, 0, 100);
+        settings.OledSleepTimeoutMinutes = Math.Clamp(settings.OledSleepTimeoutMinutes <= 0 ? 2 : settings.OledSleepTimeoutMinutes, 1, 60);
+        settings.OledConnectedIdleTimeoutMinutes = Math.Clamp(settings.OledConnectedIdleTimeoutMinutes <= 0 ? 10 : settings.OledConnectedIdleTimeoutMinutes, 1, 60);
+        if (string.IsNullOrWhiteSpace(settings.OledConnectedIdleAction))
+        {
+            settings.OledConnectedIdleAction = OledIdleActions.DimTo30;
+        }
+        if (!OledIdleActions.IsValid(settings.OledConnectedIdleAction))
+        {
+            settings.OledConnectedIdleAction = OledIdleActions.DimTo30;
+        }
+        if (string.IsNullOrWhiteSpace(settings.OledDisplayMode))
+        {
+            settings.OledDisplayMode = DisplayModes.AppNameAndVolume;
+        }
+        settings.SelectedChannelIndex = Math.Clamp(settings.SelectedChannelIndex, 0, ChannelCount - 1);
+    }
+
+    private void ClearRememberedControllerButton_Click(object sender, RoutedEventArgs e)
+    {
+        _settings.LastComPort = string.Empty;
+        _rejectedComPorts.Clear();
+        _phantomComPorts.Clear();
+        SaveSettings();
+        ForceRefreshComPorts("clear remembered controller", preserveSelection: false);
+        Log("Cleared remembered controller COM port and temporary COM-port cooldowns.");
+    }
+
+    private void FactoryResetSetupButton_Click(object sender, RoutedEventArgs e)
+    {
+        MessageBoxResult result = System.Windows.MessageBox.Show(this, "Reset setup to defaults? This clears channel mappings, remembered controller port, startup settings, and reconnect preferences.", "Factory Reset Setup", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+        if (result != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        BackupCurrentSettingsFile("before-factory-reset");
+        _settings = DashboardSettings.CreateDefault();
+        SaveSettings();
+        ApplySettingsToUi();
+        ApplySettingsToChannels();
+        ForceRefreshComPorts("factory reset setup", preserveSelection: false);
+        QueueFullStateSend("factory reset setup");
+        Log("Factory reset setup completed.");
+    }
+
+    private void RegisterHardwareEncoderEvent(string[] parts)
+    {
+        try
+        {
+            if (parts.Length < 3 || !int.TryParse(parts[1], out int channel) || !int.TryParse(parts[2], out int delta))
+            {
+                return;
+            }
+            if (channel < 0 || channel >= _hardwareEncoderCounts.Length)
+            {
+                return;
+            }
+            _hardwareEncoderCounts[channel] += delta;
+            HighlightEncoderPreview(channel);
+            UpdateHardwareTestSummary($"Encoder {channel + 1}: {(delta > 0 ? "+" : "")}{delta}");
+        }
+        catch
+        {
+        }
+    }
+
+
+    private void HighlightEncoderPreview(int channel)
+    {
+        try
+        {
+            Border?[] borders =
+            {
+                EncoderPreview1Highlight,
+                EncoderPreview2Highlight,
+                EncoderPreview3Highlight,
+                EncoderPreview4Highlight,
+                EncoderPreview5Highlight,
+                EncoderPreview6Highlight
+            };
+
+            if (channel < 0 || channel >= borders.Length || borders[channel] == null)
+            {
+                return;
+            }
+
+            Border border = borders[channel]!;
+            border.Background = Resources["PreviewEncoderActiveBackground"] as WpfBrush;
+            border.BorderBrush = Resources["SelectedBackground"] as WpfBrush;
+
+            WpfDispatcherTimer timer = new()
+            {
+                Interval = TimeSpan.FromMilliseconds(180)
+            };
+            timer.Tick += (_, _) =>
+            {
+                timer.Stop();
+                border.Background = WpfBrushes.Transparent;
+                border.BorderBrush = Resources["CardBorder"] as WpfBrush;
+            };
+            timer.Start();
+        }
+        catch
+        {
+        }
+    }
+
+    private void RegisterHardwareButtonEvent(string[] parts)
+    {
+        try
+        {
+            int channel = 0;
+            if (parts.Length > 1)
+            {
+                int.TryParse(parts[1], out channel);
+            }
+            if (channel < 0 || channel >= _hardwareButtonSeen.Length)
+            {
+                channel = 0;
+            }
+            _hardwareButtonSeen[channel] = true;
+            UpdateHardwareTestSummary($"Button {channel + 1}: pressed");
+        }
+        catch
+        {
+        }
+    }
+
+    private void UpdateHardwareTestSummary(string latestEvent)
+    {
+        if (HardwareTestStatusTextBlock == null)
+        {
+            return;
+        }
+        StringBuilder sb = new();
+        sb.AppendLine($"Latest event: {latestEvent}");
+        sb.AppendLine();
+        for (int i = 0; i < ExpectedChannelCount; i++)
+        {
+            sb.AppendLine($"Channel {i + 1}: encoder count {_hardwareEncoderCounts[i]}, button seen {(_hardwareButtonSeen[i] ? "yes" : "no")}");
+        }
+        HardwareTestStatusTextBlock.Text = sb.ToString();
+    }
+
+    private void ResetHardwareTestButton_Click(object sender, RoutedEventArgs e)
+    {
+        Array.Clear(_hardwareEncoderCounts, 0, _hardwareEncoderCounts.Length);
+        Array.Clear(_hardwareButtonSeen, 0, _hardwareButtonSeen.Length);
+        UpdateHardwareTestSummary("Reset");
+        Log("Hardware test counters reset.");
+    }
+
+    private void SendHardwareTestPatternButton_Click(object sender, RoutedEventArgs e)
+    {
+        WriteSerialLine("TEST_DISPLAY", logOutgoing: true);
+    }
+
+    private void SendHardwareSleepButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (CanSendSleepWakeTestCommand("SLEEP"))
+        {
+            WriteSerialLine("SLEEP,TEST", logOutgoing: true);
+        }
+    }
+
+    private void SendHardwareWakeButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (CanSendSleepWakeTestCommand("WAKE"))
+        {
+            WriteSerialLine("WAKE,TEST", logOutgoing: true);
+        }
+    }
+
+    private void SelectFirmwareBinButton_Click(object sender, RoutedEventArgs e)
+    {
+        Microsoft.Win32.OpenFileDialog dialog = new()
+        {
+            Title = "Select ESP32 firmware .bin file",
+            Filter = "ESP32 firmware binary (*.bin)|*.bin|All files (*.*)|*.*"
+        };
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        _selectedFirmwareBinPath = dialog.FileName;
+        UpdateSelectedFirmwareBinDisplay();
+        Log($"Selected firmware .bin file: {_selectedFirmwareBinPath}");
+    }
+
+    private async void FlashFirmwareButton_Click(object sender, RoutedEventArgs e)
+    {
+        await RunFirmwareFlashAsync();
+    }
+
+    private async Task RunFirmwareFlashAsync()
+    {
+        FirmwareFlashOutputTextBox.Text = string.Empty;
+
+        string? firmwareBin = ResolveFirmwareBinPath();
+        if (string.IsNullOrWhiteSpace(firmwareBin) || !File.Exists(firmwareBin))
+        {
+            AppendFirmwareFlashOutput("No firmware .bin file selected or bundled.");
+            AppendFirmwareFlashOutput("Use Select .bin File, or add a compiled firmware binary to firmware_bin/.");
+            Log("Firmware flash cancelled: no firmware .bin file available.");
+            return;
+        }
+
+        string esptoolPath = ResolveEsptoolPath();
+        if (string.IsNullOrWhiteSpace(esptoolPath) || !File.Exists(esptoolPath))
+        {
+            AppendFirmwareFlashOutput("esptool was not found.");
+            AppendFirmwareFlashOutput("Expected location: tools/esptool.exe");
+            AppendFirmwareFlashOutput("See tools/esptool_setup_instructions.txt for setup instructions.");
+            Log("Firmware flash cancelled: tools/esptool.exe was not found.");
+            return;
+        }
+
+        string port = _settings.LastComPort;
+        if (_serial?.IsOpen == true)
+        {
+            port = _serial.PortName;
+            Log("Firmware flash requested. Disconnecting dashboard serial first.");
+            DisconnectSerial(sendDisconnectCommand: false, preserveLastControllerPort: true, refreshPortsAfterDisconnect: true);
+        }
+
+        if (string.IsNullOrWhiteSpace(port))
+        {
+            port = ComPortComboBox.SelectedItem as string ?? string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(port))
+        {
+            AppendFirmwareFlashOutput("No COM port is selected or remembered for flashing.");
+            Log("Firmware flash cancelled: no COM port available.");
+            return;
+        }
+
+        _manualDisconnectRequested = true;
+        AppendFirmwareFlashOutput($"Flashing {Path.GetFileName(firmwareBin)} to {port}.");
+        AppendFirmwareFlashOutput("Auto-reconnect is paused while flashing.");
+        Log($"Starting firmware flash. Port={port}, Bin={firmwareBin}, Tool={esptoolPath}");
+
+        try
+        {
+            ProcessStartInfo psi = new()
+            {
+                FileName = esptoolPath,
+                Arguments = $"--chip esp32s3 --port {port} --baud 921600 write_flash 0x10000 \"{firmwareBin}\"",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+
+            using Process process = new() { StartInfo = psi, EnableRaisingEvents = true };
+            process.OutputDataReceived += (_, args) => { if (args.Data != null) Dispatcher.BeginInvoke(new Action(() => AppendFirmwareFlashOutput(args.Data))); };
+            process.ErrorDataReceived += (_, args) => { if (args.Data != null) Dispatcher.BeginInvoke(new Action(() => AppendFirmwareFlashOutput(args.Data))); };
+
+            process.Start();
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            await process.WaitForExitAsync();
+
+            AppendFirmwareFlashOutput(process.ExitCode == 0 ? "Firmware flash completed." : $"Firmware flash failed with exit code {process.ExitCode}.");
+            Log($"Firmware flash process exited with code {process.ExitCode}.");
+            ShowTrayNotification(
+                process.ExitCode == 0 ? "Firmware update complete" : "Firmware update failed",
+                process.ExitCode == 0 ? "ESP32 flashing completed successfully." : $"ESP32 flashing failed with exit code {process.ExitCode}.");
+
+            if (process.ExitCode == 0)
+            {
+                AppendFirmwareFlashOutput("Waiting for controller to reboot, then reconnecting...");
+                _manualDisconnectRequested = false;
+                Dispatcher.BeginInvoke(new Action(() => TryAutoReconnect(GetAvailableComPorts())));
+            }
+        }
+        catch (Exception ex)
+        {
+            AppendFirmwareFlashOutput($"Firmware flash error: {ex.Message}");
+            Log($"Firmware flash error: {ex.Message}");
+            ShowTrayNotification("Firmware update failed", ex.Message);
+        }
+    }
+
+    private string? ResolveFirmwareBinPath()
+    {
+        if (!string.IsNullOrWhiteSpace(_selectedFirmwareBinPath) && File.Exists(_selectedFirmwareBinPath))
+        {
+            return _selectedFirmwareBinPath;
+        }
+
+        string firmwareDirectory = Path.Combine(AppContext.BaseDirectory, "firmware_bin");
+        if (!Directory.Exists(firmwareDirectory))
+        {
+            firmwareDirectory = Path.Combine(Environment.CurrentDirectory, "firmware_bin");
+        }
+
+        if (!Directory.Exists(firmwareDirectory))
+        {
+            return null;
+        }
+
+        return Directory.GetFiles(firmwareDirectory, "*.bin", SearchOption.TopDirectoryOnly)
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .FirstOrDefault();
+    }
+
+    private string ResolveEsptoolPath()
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "tools", "esptool.exe");
+        if (File.Exists(path))
+        {
+            return path;
+        }
+
+        return Path.Combine(Environment.CurrentDirectory, "tools", "esptool.exe");
+    }
+
+    private void UpdateSelectedFirmwareBinDisplay()
+    {
+        if (SelectedFirmwareBinTextBlock == null)
+        {
+            return;
+        }
+
+        SelectedFirmwareBinTextBlock.Text = string.IsNullOrWhiteSpace(_selectedFirmwareBinPath)
+            ? "Selected .bin file: none"
+            : $"Selected .bin file: {_selectedFirmwareBinPath}";
+    }
+
+    private void AppendFirmwareFlashOutput(string line)
+    {
+        if (FirmwareFlashOutputTextBox != null)
+        {
+            FirmwareFlashOutputTextBox.AppendText($"{DateTime.Now:HH:mm:ss}  {line}{Environment.NewLine}");
+            FirmwareFlashOutputTextBox.ScrollToEnd();
+        }
+    }
+
+private void OpenLogFolderButton_Click(object sender, RoutedEventArgs e)
+{
+    OpenLogFolder();
+}
+
+private void OpenLogFolder()
+{
+    try
+    {
+        string logDirectory = GetLogDirectory();
+        Directory.CreateDirectory(logDirectory);
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = logDirectory,
+            UseShellExecute = true
+        });
+        Log($"Opened log folder: {logDirectory}");
+    }
+    catch (Exception ex)
+    {
+        Log($"Failed to open log folder: {ex.Message}");
+        System.Windows.MessageBox.Show(this, $"Could not open the log folder.\n\n{ex.Message}", "Open Log Folder", MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+}
+
+    private void UpdateVersionHeader()
+    {
+        try
+        {
+            if (SettingsDashboardVersionTextBlock != null)
+            {
+                SettingsDashboardVersionTextBlock.Text = $"Dashboard version: v{DashboardVersion}";
+            }
+
+            if (SettingsExpectedProtocolTextBlock != null)
+            {
+                SettingsExpectedProtocolTextBlock.Text = $"Required ESP32 protocol: v{RequiredProtocolVersion}";
+            }
+
+            if (SettingsFirmwareVersionTextBlock != null)
+            {
+                string firmwareText;
+
+                if (_serial?.IsOpen != true)
+                {
+                    firmwareText = "Connected ESP32 firmware: Not connected";
+                }
+                else if (_esp32HelloReceived)
+                {
+                    firmwareText = $"Connected ESP32 firmware: {_espFirmwareName}, protocol v{_espProtocolVersion}";
+                }
+                else if (_esp32Seen)
+                {
+                    firmwareText = "Connected ESP32 firmware: Unknown - hello not received";
+                }
+                else
+                {
+                    firmwareText = "Connected ESP32 firmware: Waiting for hello";
+                }
+
+                SettingsFirmwareVersionTextBlock.Text = firmwareText;
+            }
+
+            if (SettingsBuildTypeTextBlock != null)
+            {
+#if DEBUG
+                SettingsBuildTypeTextBlock.Text = "Build type: Debug";
+#else
+                SettingsBuildTypeTextBlock.Text = "Build type: Release";
+#endif
+            }
+
+            if (SettingsActiveLogFileTextBlock != null)
+            {
+                SettingsActiveLogFileTextBlock.Text = $"Active log file: {_logPath}";
+            }
+            if (SettingsLogFolderButton != null)
+            {
+                SettingsLogFolderButton.Content = GetLogDirectory();
+                SettingsLogFolderButton.ToolTip = "Open log folder";
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private void LogStartupHeader()
+    {
+        Log("------------------------------------------------------------");
+        Log("PC Volume Controller Dashboard started.");
+        Log($"Dashboard version: v{DashboardVersion}");
+        Log($"Required ESP32 protocol: v{RequiredProtocolVersion}");
+        Log($"Last remembered controller port: {(string.IsNullOrWhiteSpace(_settings.LastComPort) ? "none" : _settings.LastComPort)}");
+        string[] startupPorts = GetAvailableComPorts();
+        Log($"Actual COM ports at startup: {(startupPorts.Length == 0 ? "none" : string.Join(", ", startupPorts))}");
+        Log($"Auto-connect on launch: {_settings.AutoConnectOnLaunch}");
+        Log($"Scan all COM ports if remembered controller is missing: {_settings.ScanAllComPortsIfRememberedMissing}");
+        Log($"Manual disconnect lockout: {_manualDisconnectRequested}");
+        Log($"First-run wizard completed: {_settings.FirstRunWizardCompleted}");
+        Log($"Safe mode: {_safeMode}");
+        Log($"Active log file: {_logPath}");
+        Log($"Started at: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+        Log("------------------------------------------------------------");
+    }
+
+    private void CleanupOldLogs()
+    {
+        try
+        {
+            string logDirectory = GetLogDirectory();
+
+            if (!Directory.Exists(logDirectory))
+            {
+                Directory.CreateDirectory(logDirectory);
+                return;
+            }
+
+            DateTime cutoff = DateTime.Now.Date.AddDays(-LogRetentionDays);
+            int deletedCount = 0;
+
+            foreach (string file in Directory.GetFiles(logDirectory, "dashboard-*.log", SearchOption.TopDirectoryOnly))
+            {
+                try
+                {
+                    FileInfo info = new(file);
+
+                    if (info.LastWriteTime.Date < cutoff)
+                    {
+                        info.Delete();
+                        deletedCount++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log($"Log cleanup could not delete {Path.GetFileName(file)}: {ex.Message}");
+                }
+            }
+
+            Log(deletedCount == 0
+                ? $"Log cleanup complete. No logs older than {LogRetentionDays} days found."
+                : $"Log cleanup complete. Deleted {deletedCount} log file(s) older than {LogRetentionDays} days.");
+        }
+        catch (Exception ex)
+        {
+            Log($"Log cleanup error: {ex.Message}");
+        }
+    }
+
+    private void Log(string message)
+    {
+        string line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}  {message}";
+
+        try
+        {
+            string? directory = Path.GetDirectoryName(_logPath);
+
+            if (!string.IsNullOrWhiteSpace(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            lock (_logFileLock)
+            {
+                File.AppendAllText(_logPath, line + Environment.NewLine);
+            }
+        }
+        catch
+        {
+        }
+
+        void UpdateUi()
+        {
+            if (LogTextBlock != null)
+            {
+                LogTextBlock.Text = $"{DateTime.Now:HH:mm:ss}  {message}  |  Log: {_logPath}";
+            }
+        }
+
+        try
+        {
+            if (Dispatcher.CheckAccess())
+            {
+                UpdateUi();
+            }
+            else
+            {
+                Dispatcher.BeginInvoke(new Action(UpdateUi));
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private static string GetLogDirectory()
+    {
+        string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        return Path.Combine(appData, "PcVolumeController", "logs");
+    }
+
+    private static string GetLogPath()
+    {
+        string timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+        return Path.Combine(GetLogDirectory(), $"dashboard-{timestamp}.log");
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _statePollTimer?.Dispose();
+        _heartbeatTimer?.Dispose();
+        _audioSessionRefreshTimer?.Dispose();
+        _comPortRefreshTimer?.Dispose();
+        _fullStateSendCoalesceTimer?.Dispose();
+
+        for (int i = 0; i < _encoderCoalesceTimers.Length; i++)
+        {
+            _encoderCoalesceTimers[i]?.Dispose();
+        }
+
+        SystemEvents.SessionSwitch -= OnSessionSwitch;
+        SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+
+        DisconnectSerial();
+
+        _defaultRenderDevice?.Dispose();
+        _deviceEnumerator?.Dispose();
+
+        if (_trayIcon != null)
+        {
+            _trayIcon.Visible = false;
+            _trayIcon.Dispose();
+            _trayIcon = null;
+        }
+
+        base.OnClosed(e);
+    }
+}
+
+public static class ThemeModes
+{
+    public const string FollowSystem = "FollowSystem";
+    public const string Light = "Light";
+    public const string Dark = "Dark";
+}
+
+public static class ChannelButtonActions
+{
+    public const string SelectNextChannel = "SelectNextChannel";
+    public const string ToggleAssignedMute = "ToggleAssignedMute";
+    public const string NoAction = "NoAction";
+
+    public static bool IsValid(string? action)
+    {
+        return action is SelectNextChannel or ToggleAssignedMute or NoAction;
+    }
+}
+
+public static class OledIdleActions
+{
+    public const string Off = "Off";
+    public const string DimTo10 = "DimTo10";
+    public const string DimTo20 = "DimTo20";
+    public const string DimTo30 = "DimTo30";
+    public const string DimTo40 = "DimTo40";
+    public const string DimTo50 = "DimTo50";
+    public const string DimTo60 = "DimTo60";
+    public const string DimTo70 = "DimTo70";
+
+    public static bool IsValid(string action)
+    {
+        return action is Off or DimTo10 or DimTo20 or DimTo30 or DimTo40 or DimTo50 or DimTo60 or DimTo70;
+    }
+}
+
+public static class DisplayModes
+{
+    public const string AppNameAndVolume = "AppNameAndVolume";
+    public const string LargeVolume = "LargeVolume";
+    public const string MuteStatus = "MuteStatus";
+    public const string AppOrDeviceName = "AppOrDeviceName";
+    public const string BarPercent = "BarPercent";
+}
+
+public sealed class DashboardSettings
+{
+    public string LastComPort { get; set; } = string.Empty;
+    public bool AutoConnectOnLaunch { get; set; }
+    public bool FirstRunWizardCompleted { get; set; }
+    public bool ScanAllComPortsIfRememberedMissing { get; set; }
+    public bool MinimizeToTray { get; set; }
+    public bool StartMinimizedToTray { get; set; }
+    public bool StartWithWindows { get; set; }
+    public bool AdvancedDebugLogging { get; set; }
+    public int SelectedChannelIndex { get; set; }
+
+    public int EncoderSensitivityPercent { get; set; } = 50;
+    public string ThemeMode { get; set; } = ThemeModes.FollowSystem;
+    public string OledDisplayMode { get; set; } = DisplayModes.AppNameAndVolume;
+    public int OledBrightnessPercent { get; set; } = 80;
+    public int OledSleepTimeoutMinutes { get; set; } = 2;
+    public string OledConnectedIdleAction { get; set; } = OledIdleActions.DimTo30;
+    public int OledConnectedIdleTimeoutMinutes { get; set; } = 10;
+    public bool OledAntiBurnInEnabled { get; set; } = true;
+
+    public double WindowWidth { get; set; } = 1120;
+    public double WindowHeight { get; set; } = 800;
+
+    public ChannelSettings[] Channels { get; set; } = CreateDefaultChannels();
+
+    public string[] ChannelTargetKeys { get; set; } = Array.Empty<string>();
+
+    public static DashboardSettings CreateDefault()
+    {
+        return new DashboardSettings
+        {
+            Channels = CreateDefaultChannels(),
+            ChannelTargetKeys = CreateDefaultChannels().Select(channel => channel.TargetKey).ToArray()
+        };
+    }
+
+    public static ChannelSettings[] CreateDefaultChannels()
+    {
+        return new[]
+        {
+            new ChannelSettings { TargetKey = "MASTER", FriendlyName = "Master", EncoderSensitivityPercent = 50, ButtonAction = ChannelButtonActions.SelectNextChannel },
+            new ChannelSettings { TargetKey = "PROC:chrome", FriendlyName = "Browser", EncoderSensitivityPercent = 50, ButtonAction = ChannelButtonActions.SelectNextChannel },
+            new ChannelSettings { TargetKey = "PROC:Spotify", FriendlyName = "Music", EncoderSensitivityPercent = 50, ButtonAction = ChannelButtonActions.SelectNextChannel },
+            new ChannelSettings { TargetKey = "PROC:Discord", FriendlyName = "Discord", EncoderSensitivityPercent = 50, ButtonAction = ChannelButtonActions.SelectNextChannel },
+            new ChannelSettings { TargetKey = "", FriendlyName = "", EncoderSensitivityPercent = 50, ButtonAction = ChannelButtonActions.SelectNextChannel },
+            new ChannelSettings { TargetKey = "", FriendlyName = "", EncoderSensitivityPercent = 50, ButtonAction = ChannelButtonActions.SelectNextChannel }
+        };
+    }
+}
+
+public sealed class ChannelSettings
+{
+    public string TargetKey { get; set; } = string.Empty;
+    public string FriendlyName { get; set; } = string.Empty;
+    public int EncoderSensitivityPercent { get; set; } = 50;
+    public string ButtonAction { get; set; } = ChannelButtonActions.SelectNextChannel;
+}
+
+public sealed class AudioTargetItem
+{
+    public string Key { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public string ProcessName { get; set; } = string.Empty;
+    public int ProcessId { get; set; }
+    public AudioSessionControl? Session { get; set; }
+    public int Volume { get; set; }
+    public bool Muted { get; set; }
+    public string State { get; set; } = string.Empty;
+    public bool IsMaster { get; set; }
+
+    public bool IsActiveOrMaster => IsMaster || Session != null;
+
+    public string VolumeDisplay => $"{Volume}%";
+    public string MuteDisplay => Muted ? "Yes" : "No";
+
+    public override string ToString()
+    {
+        return Label;
+    }
+
+    public static AudioTargetItem CreateMaster()
+    {
+        return new AudioTargetItem
+        {
+            Key = "MASTER",
+            Label = "Master",
+            ProcessName = "Windows",
+            ProcessId = 0,
+            Volume = 0,
+            Muted = false,
+            State = "Active",
+            IsMaster = true
+        };
+    }
+}
+
+public sealed class ChannelMappingItem
+{
+    public int ChannelIndex { get; set; }
+    public int ChannelNumber { get; set; }
+    public string TargetKey { get; set; } = string.Empty;
+    public string AssignedLabel { get; set; } = "Unassigned";
+    public string FriendlyName { get; set; } = string.Empty;
+    public int EncoderSensitivityPercent { get; set; } = 50;
+    public string ButtonAction { get; set; } = ChannelButtonActions.SelectNextChannel;
+    public int Volume { get; set; }
+    public bool Muted { get; set; } = true;
+    public string Status { get; set; } = "Unassigned";
+
+    public string ChannelDisplay => ChannelNumber.ToString();
+
+    public string DisplayLabel
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(FriendlyName))
+            {
+                return FriendlyName;
+            }
+
+            if (!string.IsNullOrWhiteSpace(AssignedLabel))
+            {
+                return AssignedLabel;
+            }
+
+            return "Unassigned";
+        }
+    }
+
+    public string VolumeDisplay => $"{Volume}%";
+    public string MuteDisplay => Muted ? "Yes" : "No";
+}

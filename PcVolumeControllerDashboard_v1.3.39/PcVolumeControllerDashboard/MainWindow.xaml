@@ -1,0 +1,1507 @@
+﻿<Window x:Class="PcVolumeControllerDashboard.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="PC Volume Controller Dashboard v1.3.39"
+        Height="800"
+        Width="1120"
+        MinHeight="680"
+        MinWidth="980"
+        ResizeMode="CanResize"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource AppBackground}"
+        Foreground="{DynamicResource AppForeground}">
+
+    <Window.Resources>
+        <SolidColorBrush x:Key="AppBackground" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="CardBackground" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="AppForeground" Color="#111111" />
+        <SolidColorBrush x:Key="SecondaryForeground" Color="#666666" />
+        <SolidColorBrush x:Key="CardBorder" Color="#DDDDDD" />
+        <SolidColorBrush x:Key="PreviewSurfaceBackground" Color="#F7F7F7" />
+        <SolidColorBrush x:Key="PreviewSurfaceBorder" Color="#C8C8C8" />
+        <SolidColorBrush x:Key="PreviewEncoderOuterFill" Color="#EFEFEF" />
+        <SolidColorBrush x:Key="PreviewEncoderInnerFill" Color="#FAFAFA" />
+        <SolidColorBrush x:Key="PreviewEncoderStroke" Color="#444444" />
+        <SolidColorBrush x:Key="PreviewEncoderActiveBackground" Color="#DDEEFF" />
+
+        <SolidColorBrush x:Key="ButtonBackground" Color="#EEEEEE" />
+        <SolidColorBrush x:Key="ButtonHoverBackground" Color="#E2E2E2" />
+        <SolidColorBrush x:Key="ButtonPressedBackground" Color="#D6D6D6" />
+        <SolidColorBrush x:Key="ButtonForeground" Color="#111111" />
+        <SolidColorBrush x:Key="ButtonBorder" Color="#888888" />
+
+        <SolidColorBrush x:Key="ListBackground" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="HeaderBackground" Color="#F2F2F2" />
+        <SolidColorBrush x:Key="HeaderForeground" Color="#111111" />
+        <SolidColorBrush x:Key="SelectedBackground" Color="#DDEEFF" />
+        <SolidColorBrush x:Key="SelectedForeground" Color="#111111" />
+        <SolidColorBrush x:Key="InputBackground" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="InputForeground" Color="#111111" />
+        <SolidColorBrush x:Key="PopupBackground" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="TabSelectedBackground" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="TabSelectedForeground" Color="#111111" />
+        <SolidColorBrush x:Key="TabUnselectedBackground" Color="#E9E9E9" />
+        <SolidColorBrush x:Key="TabUnselectedForeground" Color="#111111" />
+        <SolidColorBrush x:Key="TabBorderBrush" Color="#999999" />
+        <SolidColorBrush x:Key="ConnectionGoodForeground" Color="#0B7A18" />
+        <SolidColorBrush x:Key="ConnectionBadForeground" Color="#AA1F1F" />
+        <SolidColorBrush x:Key="WarningForeground" Color="#B06000" />
+
+        <Style TargetType="{x:Type TextBlock}">
+            <Setter Property="Foreground" Value="{DynamicResource AppForeground}" />
+        </Style>
+
+        <Style TargetType="{x:Type Border}">
+            <Setter Property="Background" Value="{DynamicResource CardBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource CardBorder}" />
+        </Style>
+
+        <Style TargetType="{x:Type Button}">
+            <Setter Property="Background" Value="{DynamicResource ButtonBackground}" />
+            <Setter Property="Foreground" Value="{DynamicResource ButtonForeground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource ButtonBorder}" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="Cursor" Value="Hand" />
+
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border x:Name="ButtonBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              RecognizesAccessKey="True" />
+                        </Border>
+
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonBorder"
+                                        Property="Background"
+                                        Value="{DynamicResource ButtonHoverBackground}" />
+                                <Setter TargetName="ButtonBorder"
+                                        Property="BorderBrush"
+                                        Value="{DynamicResource SelectedBackground}" />
+                            </Trigger>
+
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ButtonBorder"
+                                        Property="Background"
+                                        Value="{DynamicResource ButtonPressedBackground}" />
+                                <Setter TargetName="ButtonBorder"
+                                        Property="BorderBrush"
+                                        Value="{DynamicResource SelectedBackground}" />
+                            </Trigger>
+
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="ButtonBorder"
+                                        Property="Opacity"
+                                        Value="0.45" />
+                                <Setter Property="Cursor" Value="Arrow" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="{x:Type CheckBox}">
+            <Setter Property="Foreground" Value="{DynamicResource AppForeground}" />
+        </Style>
+
+        <Style TargetType="{x:Type RadioButton}">
+            <Setter Property="Foreground" Value="{DynamicResource AppForeground}" />
+        </Style>
+
+        <Style TargetType="{x:Type TextBox}">
+            <Setter Property="Background" Value="{DynamicResource InputBackground}" />
+            <Setter Property="Foreground" Value="{DynamicResource InputForeground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource ButtonBorder}" />
+            <Setter Property="Padding" Value="5,3" />
+        </Style>
+
+        <Style TargetType="{x:Type ComboBoxItem}">
+            <Setter Property="Foreground" Value="{DynamicResource InputForeground}" />
+            <Setter Property="Background" Value="{DynamicResource PopupBackground}" />
+            <Setter Property="Padding" Value="6,4" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ComboBoxItem}">
+                        <Border x:Name="ItemBorder"
+                                Background="{TemplateBinding Background}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                        </Border>
+
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="ItemBorder"
+                                        Property="Background"
+                                        Value="{DynamicResource SelectedBackground}" />
+                                <Setter Property="Foreground"
+                                        Value="{DynamicResource SelectedForeground}" />
+                            </Trigger>
+
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="ItemBorder"
+                                        Property="Background"
+                                        Value="{DynamicResource SelectedBackground}" />
+                                <Setter Property="Foreground"
+                                        Value="{DynamicResource SelectedForeground}" />
+                            </Trigger>
+
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.6" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <ControlTemplate x:Key="ComboBoxToggleButtonTemplate" TargetType="{x:Type ToggleButton}">
+            <Border x:Name="ToggleBorder"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="1">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="30" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="1"
+                            Background="{DynamicResource ButtonBackground}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="1,0,0,0">
+                        <Path HorizontalAlignment="Center"
+                              VerticalAlignment="Center"
+                              Fill="{DynamicResource ButtonForeground}"
+                              Data="M 0 0 L 4 4 L 8 0 Z" />
+                    </Border>
+                </Grid>
+            </Border>
+
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter TargetName="ToggleBorder"
+                            Property="BorderBrush"
+                            Value="{DynamicResource SelectedBackground}" />
+                </Trigger>
+
+                <Trigger Property="IsChecked" Value="True">
+                    <Setter TargetName="ToggleBorder"
+                            Property="BorderBrush"
+                            Value="{DynamicResource SelectedBackground}" />
+                </Trigger>
+
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter TargetName="ToggleBorder"
+                            Property="Opacity"
+                            Value="0.6" />
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+
+        <Style TargetType="{x:Type ComboBox}">
+            <Setter Property="Foreground" Value="{DynamicResource InputForeground}" />
+            <Setter Property="Background" Value="{DynamicResource InputBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource ButtonBorder}" />
+            <Setter Property="Padding" Value="6,3" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="OverridesDefaultStyle" Value="True" />
+            <Setter Property="ItemContainerStyle">
+                <Setter.Value>
+                    <Style TargetType="{x:Type ComboBoxItem}" BasedOn="{StaticResource {x:Type ComboBoxItem}}" />
+                </Setter.Value>
+            </Setter>
+
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ComboBox}">
+                        <Grid>
+                            <ToggleButton x:Name="ToggleButton"
+                                          Background="{TemplateBinding Background}"
+                                          BorderBrush="{TemplateBinding BorderBrush}"
+                                          Focusable="False"
+                                          ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                          Template="{StaticResource ComboBoxToggleButtonTemplate}" />
+
+                            <ContentPresenter x:Name="ContentSite"
+                                              Margin="8,3,32,3"
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Left"
+                                              IsHitTestVisible="False"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" />
+
+                            <Popup x:Name="PART_Popup"
+                                   Placement="Bottom"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   AllowsTransparency="True"
+                                   Focusable="False"
+                                   PopupAnimation="Slide">
+                                <Border Background="{DynamicResource PopupBackground}"
+                                        BorderBrush="{DynamicResource ButtonBorder}"
+                                        BorderThickness="1"
+                                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
+                                    <ScrollViewer Margin="0"
+                                                  SnapsToDevicePixels="True"
+                                                  CanContentScroll="True">
+                                        <StackPanel IsItemsHost="True"
+                                                    KeyboardNavigation.DirectionalNavigation="Contained" />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="HasItems" Value="False">
+                                <Setter TargetName="PART_Popup"
+                                        Property="MinHeight"
+                                        Value="30" />
+                            </Trigger>
+
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.6" />
+                            </Trigger>
+
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter Property="BorderBrush"
+                                        Value="{DynamicResource SelectedBackground}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="{x:Type TabControl}">
+            <Setter Property="Background" Value="{DynamicResource AppBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource CardBorder}" />
+        </Style>
+
+        <Style TargetType="{x:Type TabItem}">
+            <Setter Property="Foreground" Value="{DynamicResource TabUnselectedForeground}" />
+            <Setter Property="Background" Value="{DynamicResource TabUnselectedBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource TabBorderBrush}" />
+            <Setter Property="Padding" Value="12,5" />
+            <Setter Property="Margin" Value="0,0,2,0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type TabItem}">
+                        <Border x:Name="TabBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1,1,1,0"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter ContentSource="Header"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="TabBorder"
+                                        Property="Background"
+                                        Value="{DynamicResource TabSelectedBackground}" />
+                                <Setter Property="Foreground"
+                                        Value="{DynamicResource TabSelectedForeground}" />
+                                <Setter Property="Panel.ZIndex" Value="10" />
+                            </Trigger>
+
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="TabBorder"
+                                        Property="Background"
+                                        Value="{DynamicResource SelectedBackground}" />
+                                <Setter Property="Foreground"
+                                        Value="{DynamicResource SelectedForeground}" />
+                            </Trigger>
+
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.6" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="{x:Type ListView}">
+            <Setter Property="Background" Value="{DynamicResource ListBackground}" />
+            <Setter Property="Foreground" Value="{DynamicResource AppForeground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource CardBorder}" />
+        </Style>
+
+        <Style TargetType="{x:Type ListViewItem}">
+            <Setter Property="Background" Value="{DynamicResource ListBackground}" />
+            <Setter Property="Foreground" Value="{DynamicResource AppForeground}" />
+            <Setter Property="Padding" Value="4,2" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ListViewItem}">
+                        <Border x:Name="RowBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="Transparent"
+                                BorderThickness="1"
+                                Padding="{TemplateBinding Padding}">
+                            <GridViewRowPresenter VerticalAlignment="Center" />
+                        </Border>
+
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="RowBorder"
+                                        Property="Background"
+                                        Value="{DynamicResource SelectedBackground}" />
+                                <Setter TargetName="RowBorder"
+                                        Property="BorderBrush"
+                                        Value="{DynamicResource SelectedForeground}" />
+                                <Setter Property="Foreground"
+                                        Value="{DynamicResource SelectedForeground}" />
+                            </Trigger>
+
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="RowBorder"
+                                        Property="Background"
+                                        Value="{DynamicResource SelectedBackground}" />
+                                <Setter Property="Foreground"
+                                        Value="{DynamicResource SelectedForeground}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="{x:Type GridViewColumnHeader}">
+            <Setter Property="Background" Value="{DynamicResource HeaderBackground}" />
+            <Setter Property="Foreground" Value="{DynamicResource HeaderForeground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource CardBorder}" />
+            <Setter Property="Padding" Value="6,3" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type GridViewColumnHeader}">
+                        <Border x:Name="HeaderBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="0,0,1,1"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                        </Border>
+
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="HeaderBorder"
+                                        Property="Background"
+                                        Value="{DynamicResource HeaderBackground}" />
+                            </Trigger>
+
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="HeaderBorder"
+                                        Property="Background"
+                                        Value="{DynamicResource SelectedBackground}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0" Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="PC Volume Controller Dashboard"
+                           FontSize="26"
+                           FontWeight="SemiBold" />
+
+                <TextBlock Text="v1.3.39 - per-channel controls and stability polish"
+                           Foreground="{DynamicResource SecondaryForeground}"
+                           Margin="0,4,0,0" />
+            </StackPanel>
+
+            <Button Grid.Column="1"
+                    x:Name="CloseAppButton"
+                    Content="Shutdown App"
+                    Width="110"
+                    Height="34"
+                    Margin="16,0,0,0"
+                    VerticalAlignment="Top"
+                    Click="CloseAppButton_Click" />
+        </Grid>
+
+        <TabControl x:Name="MainTabs" Grid.Row="1">
+            <TabItem Header="Audio">
+                <Grid Margin="0,12,0,0" Background="{DynamicResource AppBackground}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <Border Grid.Row="0"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="12"
+                            Margin="0,0,0,12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="180" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0"
+                                       Text="COM Port:"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,8,0" />
+
+                            <ComboBox Grid.Row="0" Grid.Column="1"
+                                      x:Name="ComPortComboBox"
+                                      Height="30"
+                                      Margin="0,0,8,0" />
+
+                            <Button Grid.Row="0" Grid.Column="2"
+                                    x:Name="RefreshPortsButton"
+                                    Content="Refresh"
+                                    Width="90"
+                                    Height="30"
+                                    Margin="0,0,8,0"
+                                    Click="RefreshPortsButton_Click" />
+
+                            <Button Grid.Row="0" Grid.Column="3"
+                                    x:Name="ConnectButton"
+                                    Content="Connect"
+                                    Width="110"
+                                    Height="30"
+                                    Click="ConnectButton_Click" />
+
+                            <TextBlock Grid.Row="0" Grid.Column="4"
+                                       x:Name="ConnectionStatusTextBlock"
+                                       Text="Disconnected"
+                                       VerticalAlignment="Center"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource ConnectionBadForeground}"
+                                       Margin="16,0,0,0" />
+
+                            <TextBlock Grid.Row="1" Grid.Column="0"
+                                       Text="Controller:"
+                                       VerticalAlignment="Center"
+                                       Margin="0,10,8,0" />
+
+                            <TextBlock Grid.Row="1" Grid.Column="1"
+                                       Grid.ColumnSpan="4"
+                                       x:Name="EspStatusTextBlock"
+                                       Text="No device connected"
+                                       VerticalAlignment="Center"
+                                       Margin="0,10,0,0"
+                                       Foreground="{DynamicResource SecondaryForeground}" />
+                        </Grid>
+                    </Border>
+
+                    <Grid Grid.Row="1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="1.22*" />
+                            <ColumnDefinition Width="16" />
+                            <ColumnDefinition Width="1*" />
+                        </Grid.ColumnDefinitions>
+
+                        <Border Grid.Column="0"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="12">
+                            <DockPanel>
+                                <StackPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+                                    <TextBlock Text="Channel Mapping"
+                                               FontSize="18"
+                                               FontWeight="SemiBold" />
+
+                                    <TextBlock Text="Saved app targets stay visible even when the app is not currently open."
+                                               Foreground="{DynamicResource SecondaryForeground}"
+                                               Margin="0,4,0,8"
+                                               TextWrapping="Wrap" />
+
+                                    <Grid Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="120" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="210" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="160" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <TextBlock Grid.Column="0"
+                                                   Text="Channel:"
+                                                   VerticalAlignment="Center"
+                                                   Margin="0,0,8,0" />
+
+                                        <ComboBox Grid.Column="1"
+                                                  x:Name="LogicalChannelComboBox"
+                                                  Height="30"
+                                                  Margin="0,0,12,0"
+                                                  SelectionChanged="LogicalChannelComboBox_SelectionChanged" />
+
+                                        <TextBlock Grid.Column="2"
+                                                   Text="Assign to:"
+                                                   VerticalAlignment="Center"
+                                                   Margin="0,0,8,0" />
+
+                                        <ComboBox Grid.Column="3"
+                                                  x:Name="ChannelTargetComboBox"
+                                                  Height="30"
+                                                  Margin="0,0,12,0"
+                                                  DisplayMemberPath="Label" />
+
+                                        <TextBlock Grid.Column="4"
+                                                   Text="Display:"
+                                                   VerticalAlignment="Center"
+                                                   Margin="0,0,8,0" />
+
+                                        <TextBox Grid.Column="5"
+                                                 x:Name="ChannelDisplayNameTextBox"
+                                                 Height="30"
+                                                 Margin="0,0,12,0" />
+
+                                        <Button Grid.Column="6"
+                                                x:Name="AssignChannelButton"
+                                                Content="Assign"
+                                                Width="80"
+                                                Height="30"
+                                                Margin="0,0,8,0"
+                                                Click="AssignChannelButton_Click" />
+
+                                        <Button Grid.Column="7"
+                                                x:Name="SaveDisplayNameButton"
+                                                Content="Save Name"
+                                                Width="90"
+                                                Height="30"
+                                                Click="SaveDisplayNameButton_Click" />
+                                    </Grid>
+                                </StackPanel>
+
+                                <ListView x:Name="ChannelMappingsListView"
+                                          HorizontalContentAlignment="Stretch"
+                                          VerticalContentAlignment="Stretch"
+                                          ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                          ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                          SelectionChanged="ChannelMappingsListView_SelectionChanged">
+                                    <ListView.View>
+                                        <GridView>
+                                            <GridViewColumn Header="Ch" Width="42" DisplayMemberBinding="{Binding ChannelDisplay}" />
+                                            <GridViewColumn Header="Display Name" Width="135" DisplayMemberBinding="{Binding DisplayLabel}" />
+                                            <GridViewColumn Header="Assigned Target" Width="145" DisplayMemberBinding="{Binding AssignedLabel}" />
+                                            <GridViewColumn Header="Volume" Width="70" DisplayMemberBinding="{Binding VolumeDisplay}" />
+                                            <GridViewColumn Header="Mute" Width="60" DisplayMemberBinding="{Binding MuteDisplay}" />
+                                            <GridViewColumn Header="Status" Width="130" DisplayMemberBinding="{Binding Status}" />
+                                        </GridView>
+                                    </ListView.View>
+                                </ListView>
+                            </DockPanel>
+                        </Border>
+
+                        <Border Grid.Column="2"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="12">
+                            <DockPanel>
+                                <StackPanel DockPanel.Dock="Top">
+                                    <TextBlock Text="Selected Channel"
+                                               FontSize="18"
+                                               FontWeight="SemiBold" />
+
+                                    <TextBlock x:Name="SelectedTargetTextBlock"
+                                               Text="Channel 1 - Master"
+                                               FontSize="22"
+                                               FontWeight="SemiBold"
+                                               Margin="0,14,0,4" />
+
+                                    <TextBlock x:Name="SelectedTargetDetailTextBlock"
+                                               Text="Windows master volume"
+                                               Foreground="{DynamicResource SecondaryForeground}"
+                                               Margin="0,0,0,14" />
+
+                                    <Grid Margin="0,0,0,14">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <ProgressBar Grid.Column="0"
+                                                     x:Name="SelectedVolumeProgressBar"
+                                                     Minimum="0"
+                                                     Maximum="100"
+                                                     Height="24"
+                                                     Value="0"
+                                                     Margin="0,0,12,0" />
+
+                                        <TextBlock Grid.Column="1"
+                                                   x:Name="SelectedVolumeTextBlock"
+                                                   Text="0%"
+                                                   Width="52"
+                                                   VerticalAlignment="Center"
+                                                   FontWeight="SemiBold" />
+                                    </Grid>
+
+                                    <TextBlock x:Name="SelectedMuteTextBlock"
+                                               Text="Mute: No"
+                                               Margin="0,0,0,14" />
+
+                                    <Border BorderThickness="1"
+                                            CornerRadius="8"
+                                            Padding="10"
+                                            Margin="0,0,0,14">
+                                        <StackPanel>
+                                            <TextBlock Text="Per-Channel Controls"
+                                                       FontSize="16"
+                                                       FontWeight="SemiBold"
+                                                       Margin="0,0,0,6" />
+
+                                            <TextBlock Text="These settings apply to the currently selected physical encoder/channel."
+                                                       Foreground="{DynamicResource SecondaryForeground}"
+                                                       TextWrapping="Wrap"
+                                                       Margin="0,0,0,8" />
+
+                                            <Grid Width="360" HorizontalAlignment="Left" Margin="0,0,0,8">
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="Auto" />
+                                                </Grid.RowDefinitions>
+
+                                                <Slider Grid.Row="0"
+                                                        x:Name="ChannelSensitivitySlider"
+                                                        Minimum="0"
+                                                        Maximum="500"
+                                                        TickFrequency="10"
+                                                        IsSnapToTickEnabled="False"
+                                                        ValueChanged="ChannelSensitivitySlider_ValueChanged"
+                                                        PreviewMouseLeftButtonDown="Slider_PreviewMouseLeftButtonDown"
+                                                        PreviewMouseMove="Slider_PreviewMouseMove"
+                                                        PreviewMouseLeftButtonUp="Slider_PreviewMouseLeftButtonUp"
+                                                        LostMouseCapture="Slider_LostMouseCapture"
+                                                        Width="360"
+                                                        HorizontalAlignment="Left" />
+
+                                                <Grid Grid.Row="1" Margin="0,2,0,0">
+                                                    <TextBlock Text="0%" HorizontalAlignment="Left" />
+                                                    <TextBlock Text="500%" HorizontalAlignment="Right" />
+                                                </Grid>
+                                            </Grid>
+
+                                            <TextBlock x:Name="ChannelSensitivityValueTextBlock"
+                                                       Text="Channel sensitivity: 50%"
+                                                       FontWeight="SemiBold"
+                                                       Margin="0,0,0,8" />
+
+                                            <Grid Width="360" HorizontalAlignment="Left">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0"
+                                                           Text="Button action:"
+                                                           VerticalAlignment="Center"
+                                                           Margin="0,0,8,0" />
+                                                <ComboBox Grid.Column="1"
+                                                          x:Name="ChannelButtonActionComboBox"
+                                                          Height="30"
+                                                          SelectionChanged="ChannelButtonActionComboBox_SelectionChanged">
+                                                    <ComboBoxItem Content="Select next channel" />
+                                                    <ComboBoxItem Content="Toggle assigned mute" />
+                                                    <ComboBoxItem Content="No action" />
+                                                </ComboBox>
+                                            </Grid>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <WrapPanel Margin="0,0,0,18">
+                                        <Button x:Name="PreviousChannelButton"
+                                                Content="Prev Channel"
+                                                Width="110"
+                                                Height="34"
+                                                Margin="0,0,8,8"
+                                                Click="PreviousChannelButton_Click" />
+
+                                        <Button x:Name="NextChannelButton"
+                                                Content="Next Channel"
+                                                Width="110"
+                                                Height="34"
+                                                Margin="0,0,8,8"
+                                                Click="NextChannelButton_Click" />
+
+                                        <Button x:Name="VolumeDownButton"
+                                                Content="Volume -"
+                                                Width="90"
+                                                Height="34"
+                                                Margin="0,0,8,8"
+                                                Click="VolumeDownButton_Click" />
+
+                                        <Button x:Name="VolumeUpButton"
+                                                Content="Volume +"
+                                                Width="90"
+                                                Height="34"
+                                                Margin="0,0,8,8"
+                                                Click="VolumeUpButton_Click" />
+
+                                        <Button x:Name="MuteButton"
+                                                Content="Mute / Unmute"
+                                                Width="130"
+                                                Height="34"
+                                                Margin="0,0,8,8"
+                                                Click="MuteButton_Click" />
+                                    </WrapPanel>
+
+                                    <Separator Margin="0,0,0,14" />
+
+                                    <TextBlock Text="Detected Audio Sessions"
+                                               FontSize="18"
+                                               FontWeight="SemiBold" />
+
+                                    <TextBlock Text="Includes active sessions and saved targets waiting for their app."
+                                               Foreground="{DynamicResource SecondaryForeground}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,4,0,8" />
+
+                                    <Button x:Name="RefreshSessionsButton"
+                                            Content="Refresh Sessions"
+                                            Width="140"
+                                            Height="30"
+                                            HorizontalAlignment="Left"
+                                            Margin="0,0,0,8"
+                                            Click="RefreshSessionsButton_Click" />
+                                </StackPanel>
+
+                                <ListView x:Name="AudioSessionsListView"
+                                          Margin="0,0,0,0"
+                                          MinHeight="150"
+                                          ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                    <ListView.View>
+                                        <GridView>
+                                            <GridViewColumn Header="Target" Width="130" DisplayMemberBinding="{Binding Label}" />
+                                            <GridViewColumn Header="Vol" Width="60" DisplayMemberBinding="{Binding VolumeDisplay}" />
+                                            <GridViewColumn Header="Mute" Width="60" DisplayMemberBinding="{Binding MuteDisplay}" />
+                                            <GridViewColumn Header="State" Width="110" DisplayMemberBinding="{Binding State}" />
+                                        </GridView>
+                                    </ListView.View>
+                                </ListView>
+                            </DockPanel>
+                        </Border>
+                    </Grid>
+                </Grid>
+
+            </TabItem>
+            <TabItem Header="OLED Setup">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Background="{DynamicResource AppBackground}">
+                    <StackPanel Margin="0,12,0,0">
+                        <Border BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="12"
+                                Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="OLED Display Settings"
+                                           FontSize="18"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,8" />
+
+                                <TextBlock Text="These settings drive the dashboard controller preview and are sent to the ESP32 when you save OLED setup."
+                                           Foreground="{DynamicResource SecondaryForeground}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,0,0,10" />
+
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="260" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Display mode:" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                    <ComboBox Grid.Column="1" x:Name="DisplayModeComboBox" Height="30" SelectionChanged="DisplayModeComboBox_SelectionChanged">
+                                        <ComboBoxItem Content="App name + volume" />
+                                        <ComboBoxItem Content="Large volume number" />
+                                        <ComboBoxItem Content="Mute status" />
+                                        <ComboBoxItem Content="App/device name" />
+                                        <ComboBoxItem Content="Simple bar/percentage view" />
+                                    </ComboBox>
+                                </Grid>
+
+                                <TextBlock x:Name="OledBrightnessValueTextBlock"
+                                           Text="Brightness: 80%"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,4" />
+                                <Slider x:Name="OledBrightnessSlider"
+                                        Minimum="0"
+                                        Maximum="100"
+                                        TickFrequency="5"
+                                        IsSnapToTickEnabled="False"
+                                        ValueChanged="OledBrightnessSlider_ValueChanged"
+                                        PreviewMouseLeftButtonDown="Slider_PreviewMouseLeftButtonDown"
+                                        PreviewMouseMove="Slider_PreviewMouseMove"
+                                        PreviewMouseLeftButtonUp="Slider_PreviewMouseLeftButtonUp"
+                                        LostMouseCapture="Slider_LostMouseCapture"
+                                        Width="420"
+                                        HorizontalAlignment="Left"
+                                        Margin="0,0,0,10" />
+
+                                <TextBlock x:Name="OledSleepTimeoutValueTextBlock"
+                                           Text="Disconnected sleep timeout: 2 minute(s)"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,4" />
+                                <Slider x:Name="OledSleepTimeoutSlider"
+                                        Minimum="1"
+                                        Maximum="60"
+                                        TickFrequency="1"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="OledSleepTimeoutSlider_ValueChanged"
+                                        PreviewMouseLeftButtonDown="Slider_PreviewMouseLeftButtonDown"
+                                        PreviewMouseMove="Slider_PreviewMouseMove"
+                                        PreviewMouseLeftButtonUp="Slider_PreviewMouseLeftButtonUp"
+                                        LostMouseCapture="Slider_LostMouseCapture"
+                                        Width="420"
+                                        HorizontalAlignment="Left"
+                                        Margin="0,0,0,14" />
+
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="260" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Connected idle action:" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                    <ComboBox Grid.Column="1" x:Name="OledConnectedIdleActionComboBox" Height="30" SelectionChanged="OledConnectedIdleActionComboBox_SelectionChanged">
+                                        <ComboBoxItem Content="Turn off display" />
+                                        <ComboBoxItem Content="Dim brightness to 10%" />
+                                        <ComboBoxItem Content="Dim brightness to 20%" />
+                                        <ComboBoxItem Content="Dim brightness to 30%" />
+                                        <ComboBoxItem Content="Dim brightness to 40%" />
+                                        <ComboBoxItem Content="Dim brightness to 50%" />
+                                        <ComboBoxItem Content="Dim brightness to 60%" />
+                                        <ComboBoxItem Content="Dim brightness to 70%" />
+                                    </ComboBox>
+                                </Grid>
+
+                                <TextBlock x:Name="OledConnectedIdleTimeoutValueTextBlock"
+                                           Text="Connected idle timeout: 10 minute(s)"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,4" />
+                                <Slider x:Name="OledConnectedIdleTimeoutSlider"
+                                        Minimum="1"
+                                        Maximum="60"
+                                        TickFrequency="1"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="OledConnectedIdleTimeoutSlider_ValueChanged"
+                                        PreviewMouseLeftButtonDown="Slider_PreviewMouseLeftButtonDown"
+                                        PreviewMouseMove="Slider_PreviewMouseMove"
+                                        PreviewMouseLeftButtonUp="Slider_PreviewMouseLeftButtonUp"
+                                        LostMouseCapture="Slider_LostMouseCapture"
+                                        Width="420"
+                                        HorizontalAlignment="Left"
+                                        Margin="0,0,0,14" />
+
+                                <CheckBox x:Name="OledAntiBurnInCheckBox"
+                                          Content="Enable anti-burn-in pixel shifting"
+                                          IsChecked="True"
+                                          Checked="OledAntiBurnInCheckBox_Changed"
+                                          Unchecked="OledAntiBurnInCheckBox_Changed"
+                                          Margin="0,0,0,0" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Whole Controller Preview" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,8" />
+                                <TextBlock Text="This preview shows the full six-channel controller layout, with the six OLEDs across the top and the six encoder positions underneath. Each OLED still renders a 128x64 logical canvas, scaled up on screen for readability." TextWrapping="Wrap" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,8" />
+                                <TextBlock x:Name="OledPreviewModeTextBlock" Text="Preview mode: App name + volume" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,10" />
+
+                                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                                    <Border BorderThickness="1" CornerRadius="10" Padding="18" Background="{DynamicResource PreviewSurfaceBackground}" BorderBrush="{DynamicResource PreviewSurfaceBorder}" MinWidth="1320">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+
+                                            <UniformGrid Grid.Row="0" Columns="6" Rows="1" Margin="0,0,0,18">
+                                                <StackPanel HorizontalAlignment="Center" Margin="6,0">
+                                                    <TextBlock x:Name="OledPreview1Title" Text="OLED 1" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
+                                                    <Viewbox Width="192" Height="96" Stretch="Uniform" HorizontalAlignment="Center">
+                                                        <Border Width="128" Height="64" Background="#111111" BorderBrush="#333333" BorderThickness="1" Padding="4" SnapsToDevicePixels="True">
+                                                            <Grid>
+                                                                <Grid.RowDefinitions>
+                                                                    <RowDefinition Height="Auto" />
+                                                                    <RowDefinition Height="*" />
+                                                                    <RowDefinition Height="Auto" />
+                                                                </Grid.RowDefinitions>
+                                                                <TextBlock x:Name="OledPreview1Line1" Grid.Row="0" Text="Master" Foreground="White" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                                <TextBlock x:Name="OledPreview1Line2" Grid.Row="1" Text="0%" Foreground="White" FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                                <ProgressBar x:Name="OledPreview1Progress" Grid.Row="2" Minimum="0" Maximum="100" Height="6" Margin="0,2,0,0" />
+                                                            </Grid>
+                                                        </Border>
+                                                    </Viewbox>
+                                                </StackPanel>
+                                                <StackPanel HorizontalAlignment="Center" Margin="6,0">
+                                                    <TextBlock x:Name="OledPreview2Title" Text="OLED 2" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
+                                                    <Viewbox Width="192" Height="96" Stretch="Uniform" HorizontalAlignment="Center">
+                                                        <Border Width="128" Height="64" Background="#111111" BorderBrush="#333333" BorderThickness="1" Padding="4" SnapsToDevicePixels="True">
+                                                            <Grid>
+                                                                <Grid.RowDefinitions>
+                                                                    <RowDefinition Height="Auto" />
+                                                                    <RowDefinition Height="*" />
+                                                                    <RowDefinition Height="Auto" />
+                                                                </Grid.RowDefinitions>
+                                                                <TextBlock x:Name="OledPreview2Line1" Grid.Row="0" Text="Browser" Foreground="White" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                                <TextBlock x:Name="OledPreview2Line2" Grid.Row="1" Text="0%" Foreground="White" FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                                <ProgressBar x:Name="OledPreview2Progress" Grid.Row="2" Minimum="0" Maximum="100" Height="6" Margin="0,2,0,0" />
+                                                            </Grid>
+                                                        </Border>
+                                                    </Viewbox>
+                                                </StackPanel>
+                                                <StackPanel HorizontalAlignment="Center" Margin="6,0">
+                                                    <TextBlock x:Name="OledPreview3Title" Text="OLED 3" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
+                                                    <Viewbox Width="192" Height="96" Stretch="Uniform" HorizontalAlignment="Center">
+                                                        <Border Width="128" Height="64" Background="#111111" BorderBrush="#333333" BorderThickness="1" Padding="4" SnapsToDevicePixels="True">
+                                                            <Grid>
+                                                                <Grid.RowDefinitions>
+                                                                    <RowDefinition Height="Auto" />
+                                                                    <RowDefinition Height="*" />
+                                                                    <RowDefinition Height="Auto" />
+                                                                </Grid.RowDefinitions>
+                                                                <TextBlock x:Name="OledPreview3Line1" Grid.Row="0" Text="Music" Foreground="White" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                                <TextBlock x:Name="OledPreview3Line2" Grid.Row="1" Text="0%" Foreground="White" FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                                <ProgressBar x:Name="OledPreview3Progress" Grid.Row="2" Minimum="0" Maximum="100" Height="6" Margin="0,2,0,0" />
+                                                            </Grid>
+                                                        </Border>
+                                                    </Viewbox>
+                                                </StackPanel>
+                                                <StackPanel HorizontalAlignment="Center" Margin="6,0">
+                                                    <TextBlock x:Name="OledPreview4Title" Text="OLED 4" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
+                                                    <Viewbox Width="192" Height="96" Stretch="Uniform" HorizontalAlignment="Center">
+                                                        <Border Width="128" Height="64" Background="#111111" BorderBrush="#333333" BorderThickness="1" Padding="4" SnapsToDevicePixels="True">
+                                                            <Grid>
+                                                                <Grid.RowDefinitions>
+                                                                    <RowDefinition Height="Auto" />
+                                                                    <RowDefinition Height="*" />
+                                                                    <RowDefinition Height="Auto" />
+                                                                </Grid.RowDefinitions>
+                                                                <TextBlock x:Name="OledPreview4Line1" Grid.Row="0" Text="Discord" Foreground="White" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                                <TextBlock x:Name="OledPreview4Line2" Grid.Row="1" Text="0%" Foreground="White" FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                                <ProgressBar x:Name="OledPreview4Progress" Grid.Row="2" Minimum="0" Maximum="100" Height="6" Margin="0,2,0,0" />
+                                                            </Grid>
+                                                        </Border>
+                                                    </Viewbox>
+                                                </StackPanel>
+                                                <StackPanel HorizontalAlignment="Center" Margin="6,0">
+                                                    <TextBlock x:Name="OledPreview5Title" Text="OLED 5" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
+                                                    <Viewbox Width="192" Height="96" Stretch="Uniform" HorizontalAlignment="Center">
+                                                        <Border Width="128" Height="64" Background="#111111" BorderBrush="#333333" BorderThickness="1" Padding="4" SnapsToDevicePixels="True">
+                                                            <Grid>
+                                                                <Grid.RowDefinitions>
+                                                                    <RowDefinition Height="Auto" />
+                                                                    <RowDefinition Height="*" />
+                                                                    <RowDefinition Height="Auto" />
+                                                                </Grid.RowDefinitions>
+                                                                <TextBlock x:Name="OledPreview5Line1" Grid.Row="0" Text="Unassigned" Foreground="White" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                                <TextBlock x:Name="OledPreview5Line2" Grid.Row="1" Text="0%" Foreground="White" FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                                <ProgressBar x:Name="OledPreview5Progress" Grid.Row="2" Minimum="0" Maximum="100" Height="6" Margin="0,2,0,0" />
+                                                            </Grid>
+                                                        </Border>
+                                                    </Viewbox>
+                                                </StackPanel>
+                                                <StackPanel HorizontalAlignment="Center" Margin="6,0">
+                                                    <TextBlock x:Name="OledPreview6Title" Text="OLED 6" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
+                                                    <Viewbox Width="192" Height="96" Stretch="Uniform" HorizontalAlignment="Center">
+                                                        <Border Width="128" Height="64" Background="#111111" BorderBrush="#333333" BorderThickness="1" Padding="4" SnapsToDevicePixels="True">
+                                                            <Grid>
+                                                                <Grid.RowDefinitions>
+                                                                    <RowDefinition Height="Auto" />
+                                                                    <RowDefinition Height="*" />
+                                                                    <RowDefinition Height="Auto" />
+                                                                </Grid.RowDefinitions>
+                                                                <TextBlock x:Name="OledPreview6Line1" Grid.Row="0" Text="Unassigned" Foreground="White" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                                <TextBlock x:Name="OledPreview6Line2" Grid.Row="1" Text="0%" Foreground="White" FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                                <ProgressBar x:Name="OledPreview6Progress" Grid.Row="2" Minimum="0" Maximum="100" Height="6" Margin="0,2,0,0" />
+                                                            </Grid>
+                                                        </Border>
+                                                    </Viewbox>
+                                                </StackPanel>
+                                            </UniformGrid>
+
+                                            <UniformGrid Grid.Row="1" Columns="6" Rows="1">
+                                                <StackPanel HorizontalAlignment="Center" Margin="6,0">
+                                                    <TextBlock Text="Encoder 1" HorizontalAlignment="Center" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,6" />
+                                                    <Border x:Name="EncoderPreview1Highlight" CornerRadius="8" BorderThickness="2" BorderBrush="{DynamicResource CardBorder}" Background="Transparent" Padding="4">
+                                                        <Grid Width="86" Height="86">
+                                                        <Ellipse Stroke="{DynamicResource PreviewEncoderStroke}" Fill="{DynamicResource PreviewEncoderOuterFill}" StrokeThickness="1.2" Margin="9" />
+                                                        <Ellipse Stroke="{DynamicResource PreviewEncoderStroke}" Fill="{DynamicResource PreviewEncoderInnerFill}" StrokeThickness="1.2" Margin="17" />
+                                                        <Line X1="43" Y1="4" X2="43" Y2="22" Stroke="{DynamicResource PreviewEncoderStroke}" StrokeThickness="1" />
+                                                        <Line X1="43" Y1="64" X2="43" Y2="82" Stroke="{DynamicResource PreviewEncoderStroke}" StrokeThickness="1" />
+                                                        <Line X1="4" Y1="43" X2="22" Y2="43" Stroke="{DynamicResource PreviewEncoderStroke}" StrokeThickness="1" />
+                                                        <Line X1="64" Y1="43" X2="82" Y2="43" Stroke="{DynamicResource PreviewEncoderStroke}" StrokeThickness="1" />
+                                                        <TextBlock Text="+" FontSize="26" Foreground="{DynamicResource PreviewEncoderStroke}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                        </Grid>
+                                                    </Border>
+                                                </StackPanel>
+                                                <StackPanel HorizontalAlignment="Center" Margin="6,0">
+                                                    <TextBlock Text="Encoder 2" HorizontalAlignment="Center" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,6" />
+                                                    <Border x:Name="EncoderPreview2Highlight" CornerRadius="8" BorderThickness="2" BorderBrush="{DynamicResource CardBorder}" Background="Transparent" Padding="4">
+                                                        <Grid Width="86" Height="86">
+                                                        <Ellipse Stroke="{DynamicResource PreviewEncoderStroke}" Fill="{DynamicResource PreviewEncoderOuterFill}" StrokeThickness="1.2" Margin="9" />
+                                                        <Ellipse Stroke="{DynamicResource PreviewEncoderStroke}" Fill="{DynamicResource PreviewEncoderInnerFill}" StrokeThickness="1.2" Margin="17" />
+                                                        <Line X1="43" Y1="4" X2="43" Y2="22" Stroke="{DynamicResource PreviewEncoderStroke}" StrokeThickness="1" />
+                                                        <Line X1="43" Y1="64" X2="43" Y2="82" Stroke="{DynamicResource PreviewEncoderStroke}" StrokeThickness="1" />
+                                                        <Line X1="4" Y1="43" X2="22" Y2="43" Stroke="{DynamicResource PreviewEncoderStroke}" StrokeThickness="1" />
+                                                        <Line X1="64" Y1="43" X2="82" Y2="43" Stroke="{DynamicResource PreviewEncoderStroke}" StrokeThickness="1" />
+                                                        <TextBlock Text="+" FontSize="26" Foreground="{DynamicResource PreviewEncoderStroke}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                        </Grid>
+                                                    </Border>
+                                                </StackPanel>
+                                                <StackPanel HorizontalAlignment="Center" Margin="6,0">
+                                                    <TextBlock Text="Encoder 3" HorizontalAlignment="Center" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,6" />
+                                                    <Border x:Name="EncoderPreview3Highlight" CornerRadius="8" BorderThickness="2" BorderBrush="{DynamicResource CardBorder}" Background="Transparent" Padding="4">
+                                                        <Grid Width="86" Height="86">
+                                                        <Ellipse Stroke="{DynamicResource PreviewEncoderStroke}" Fill="{DynamicResource PreviewEncoderOuterFill}" StrokeThickness="1.2" Margin="9" />
+                                                        <Ellipse Stroke="{DynamicResource PreviewEncoderStroke}" Fill="{DynamicResource PreviewEncoderInnerFill}" StrokeThickness="1.2" Margin="17" />
+                                                        <Line X1="43" Y1="4" X2="43" Y2="22" Stroke="{DynamicResource PreviewEncoderStroke}" StrokeThickness="1" />
+                                                        <Line X1="43" Y1="64" X2="43" Y2="82" Stroke="{DynamicResource PreviewEncoderStroke}" StrokeThickness="1" />
+                                                        <Line X1="4" Y1="43" X2="22" Y2="43" Stroke="{DynamicResource PreviewEncoderStroke}" StrokeThickness="1" />
+                                                        <Line X1="64" Y1="43" X2="82" Y2="43" Stroke="{DynamicResource PreviewEncoderStroke}" StrokeThickness="1" />
+                                                        <TextBlock Text="+" FontSize="26" Foreground="{DynamicResource PreviewEncoderStroke}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                        </Grid>
+                                                    </Border>
+                                                </StackPanel>
+                                                <StackPanel HorizontalAlignment="Center" Margin="6,0">
+                                                    <TextBlock Text="Encoder 4" HorizontalAlignment="Center" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,6" />
+                                                    <Border x:Name="EncoderPreview4Highlight" CornerRadius="8" BorderThickness="2" BorderBrush="{DynamicResource CardBorder}" Background="Transparent" Padding="4">
+                                                        <Grid Width="86" Height="86">
+                                                        <Ellipse Stroke="{DynamicResource PreviewEncoderStroke}" Fill="{DynamicResource PreviewEncoderOuterFill}" StrokeThickness="1.2" Margin="9" />
+                                                        <Ellipse Stroke="{DynamicResource PreviewEncoderStroke}" Fill="{DynamicResource PreviewEncoderInnerFill}" StrokeThickness="1.2" Margin="17" />
+                                                        <Line X1="43" Y1="4" X2="43" Y2="22" Stroke="{DynamicResource PreviewEncoderStroke}" StrokeThickness="1" />
+                                                        <Line X1="43" Y1="64" X2="43" Y2="82" Stroke="{DynamicResource PreviewEncoderStroke}" StrokeThickness="1" />
+                                                        <Line X1="4" Y1="43" X2="22" Y2="43" Stroke="{DynamicResource PreviewEncoderStroke}" StrokeThickness="1" />
+                                                        <Line X1="64" Y1="43" X2="82" Y2="43" Stroke="{DynamicResource PreviewEncoderStroke}" StrokeThickness="1" />
+                                                        <TextBlock Text="+" FontSize="26" Foreground="{DynamicResource PreviewEncoderStroke}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                        </Grid>
+                                                    </Border>
+                                                </StackPanel>
+                                                <StackPanel HorizontalAlignment="Center" Margin="6,0">
+                                                    <TextBlock Text="Encoder 5" HorizontalAlignment="Center" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,6" />
+                                                    <Border x:Name="EncoderPreview5Highlight" CornerRadius="8" BorderThickness="2" BorderBrush="{DynamicResource CardBorder}" Background="Transparent" Padding="4">
+                                                        <Grid Width="86" Height="86">
+                                                        <Ellipse Stroke="{DynamicResource PreviewEncoderStroke}" Fill="{DynamicResource PreviewEncoderOuterFill}" StrokeThickness="1.2" Margin="9" />
+                                                        <Ellipse Stroke="{DynamicResource PreviewEncoderStroke}" Fill="{DynamicResource PreviewEncoderInnerFill}" StrokeThickness="1.2" Margin="17" />
+                                                        <Line X1="43" Y1="4" X2="43" Y2="22" Stroke="{DynamicResource PreviewEncoderStroke}" StrokeThickness="1" />
+                                                        <Line X1="43" Y1="64" X2="43" Y2="82" Stroke="{DynamicResource PreviewEncoderStroke}" StrokeThickness="1" />
+                                                        <Line X1="4" Y1="43" X2="22" Y2="43" Stroke="{DynamicResource PreviewEncoderStroke}" StrokeThickness="1" />
+                                                        <Line X1="64" Y1="43" X2="82" Y2="43" Stroke="{DynamicResource PreviewEncoderStroke}" StrokeThickness="1" />
+                                                        <TextBlock Text="+" FontSize="26" Foreground="{DynamicResource PreviewEncoderStroke}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                        </Grid>
+                                                    </Border>
+                                                </StackPanel>
+                                                <StackPanel HorizontalAlignment="Center" Margin="6,0">
+                                                    <TextBlock Text="Encoder 6" HorizontalAlignment="Center" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,6" />
+                                                    <Border x:Name="EncoderPreview6Highlight" CornerRadius="8" BorderThickness="2" BorderBrush="{DynamicResource CardBorder}" Background="Transparent" Padding="4">
+                                                        <Grid Width="86" Height="86">
+                                                        <Ellipse Stroke="{DynamicResource PreviewEncoderStroke}" Fill="{DynamicResource PreviewEncoderOuterFill}" StrokeThickness="1.2" Margin="9" />
+                                                        <Ellipse Stroke="{DynamicResource PreviewEncoderStroke}" Fill="{DynamicResource PreviewEncoderInnerFill}" StrokeThickness="1.2" Margin="17" />
+                                                        <Line X1="43" Y1="4" X2="43" Y2="22" Stroke="{DynamicResource PreviewEncoderStroke}" StrokeThickness="1" />
+                                                        <Line X1="43" Y1="64" X2="43" Y2="82" Stroke="{DynamicResource PreviewEncoderStroke}" StrokeThickness="1" />
+                                                        <Line X1="4" Y1="43" X2="22" Y2="43" Stroke="{DynamicResource PreviewEncoderStroke}" StrokeThickness="1" />
+                                                        <Line X1="64" Y1="43" X2="82" Y2="43" Stroke="{DynamicResource PreviewEncoderStroke}" StrokeThickness="1" />
+                                                        <TextBlock Text="+" FontSize="26" Foreground="{DynamicResource PreviewEncoderStroke}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                        </Grid>
+                                                    </Border>
+                                                </StackPanel>
+                                            </UniformGrid>
+                                        </Grid>
+                                    </Border>
+                                </ScrollViewer>
+                            </StackPanel>
+                        </Border>
+
+                        <Button x:Name="SaveOledSetupButton"
+                                Content="Save OLED Setup"
+                                Width="160"
+                                Height="34"
+                                HorizontalAlignment="Left"
+                                Margin="0,0,0,12"
+                                Click="SaveOledSetupButton_Click" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+
+            <TabItem Header="Setup">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              Background="{DynamicResource AppBackground}">
+                    <StackPanel Margin="0,12,0,0">
+                        <Border BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="12"
+                                Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="PC Volume Controller"
+                                           FontSize="20"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,8" />
+
+                                <TextBlock x:Name="SettingsDashboardVersionTextBlock"
+                                           Text="Dashboard version: v1.3.39"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,4" />
+
+                                <TextBlock x:Name="SettingsExpectedProtocolTextBlock"
+                                           Text="Required ESP32 protocol: v1.3.38 Beta 7"
+                                           Margin="0,0,0,4" />
+
+                                <TextBlock x:Name="SettingsFirmwareVersionTextBlock"
+                                           Text="Connected ESP32 firmware: Not connected"
+                                           Margin="0,0,0,4" />
+
+                                <TextBlock x:Name="SettingsBuildTypeTextBlock"
+                                           Text="Build type: Unknown"
+                                           Margin="0,0,0,4" />
+
+                                <TextBlock x:Name="SettingsActiveLogFileTextBlock"
+                                           Text="Active log file:"
+                                           TextWrapping="Wrap"
+                                           Margin="0,0,0,4"
+                                           Foreground="{DynamicResource SecondaryForeground}" />
+<StackPanel Orientation="Horizontal" Margin="0,0,0,0">
+    <TextBlock Text="Log folder: "
+               Foreground="{DynamicResource SecondaryForeground}"
+               VerticalAlignment="Center" />
+    <Button x:Name="SettingsLogFolderButton"
+            Content="Open log folder"
+            Padding="0"
+            BorderThickness="0"
+            Background="Transparent"
+            Foreground="#0066CC"
+            Cursor="Hand"
+            Click="OpenLogFolderButton_Click" />
+</StackPanel>
+
+                                <WrapPanel Margin="0,8,0,0">
+                                    <Button x:Name="OpenCurrentLogFileButton" Content="Open Current Log" Width="140" Height="30" Margin="0,0,8,8" Click="OpenCurrentLogFileButton_Click" />
+                                    <Button x:Name="CopyLogFolderPathButton" Content="Copy Log Folder Path" Width="170" Height="30" Margin="0,0,8,8" Click="CopyLogFolderPathButton_Click" />
+                                    <Button x:Name="ExportDiagnosticsZipButton" Content="Export Diagnostics Zip" Width="170" Height="30" Margin="0,0,8,8" Click="ExportDiagnosticsZipButton_Click" />
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="12"
+                                Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Application Setup"
+                                           FontSize="18"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,8" />
+
+                                <CheckBox x:Name="AutoConnectCheckBox"
+                                          Content="Auto-connect on launch"
+                                          Margin="0,0,0,8" />
+
+                                <CheckBox x:Name="ScanAllComPortsCheckBox"
+                                          Content="Scan all COM ports if remembered controller is missing"
+                                          Margin="0,0,0,8" />
+
+                                <TextBlock Text="Leave this off for daily use so the dashboard waits for the remembered controller port instead of probing unrelated COM ports."
+                                           Foreground="{DynamicResource SecondaryForeground}"
+                                           TextWrapping="Wrap"
+                                           Margin="22,-4,0,8" />
+
+                                <CheckBox x:Name="MinimizeToTrayCheckBox"
+                                          Content="Minimize to system tray"
+                                          Margin="0,0,0,8" />
+
+                                <CheckBox x:Name="StartMinimizedToTrayCheckBox"
+                                          Content="Start minimized to tray"
+                                          Margin="0,0,0,8" />
+
+                                <CheckBox x:Name="StartWithWindowsCheckBox"
+                                          Content="Start program on Windows startup"
+                                          Margin="0,0,0,8" />
+
+                                <CheckBox x:Name="AdvancedDebugLoggingCheckBox"
+                                          Content="Advanced debug logging"
+                                          Margin="0,0,0,8" />
+
+                                <TextBlock Text="Startup now restores saved channels and friendly names before apps are opened."
+                                           Foreground="{DynamicResource SecondaryForeground}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,4,0,0" />
+                            </StackPanel>
+                        </Border>
+
+
+
+
+                        <Border BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="12"
+                                Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Encoder Sensitivity"
+                                           FontSize="18"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,8" />
+
+                                <TextBlock Text="Controls how much the volume changes for each encoder click. 50% is the default; higher values allow much faster changes."
+                                           Foreground="{DynamicResource SecondaryForeground}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,0,0,10" />
+
+                                <Grid Width="420" HorizontalAlignment="Left">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <Slider Grid.Row="0"
+                                            x:Name="EncoderSensitivitySlider"
+                                            Minimum="0"
+                                            Maximum="500"
+                                            TickFrequency="10"
+                                            IsSnapToTickEnabled="False"
+                                            ValueChanged="EncoderSensitivitySlider_ValueChanged"
+                                            PreviewMouseLeftButtonDown="Slider_PreviewMouseLeftButtonDown"
+                                            PreviewMouseMove="Slider_PreviewMouseMove"
+                                            PreviewMouseLeftButtonUp="Slider_PreviewMouseLeftButtonUp"
+                                            LostMouseCapture="Slider_LostMouseCapture"
+                                            Width="420"
+                                            HorizontalAlignment="Left" />
+
+                                    <Grid Grid.Row="1" Margin="0,2,0,0">
+                                        <TextBlock Text="0%" HorizontalAlignment="Left" />
+                                        <TextBlock Text="500%" HorizontalAlignment="Right" />
+                                    </Grid>
+                                </Grid>
+
+                                <TextBlock x:Name="EncoderSensitivityValueTextBlock"
+                                           Text="Sensitivity: 50%"
+                                           FontWeight="SemiBold"
+                                           Margin="0,8,0,0" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="12"
+                                Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Style Settings"
+                                           FontSize="18"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,8" />
+
+                                <RadioButton x:Name="ThemeFollowSystemRadioButton"
+                                             Content="Follow System"
+                                             GroupName="ThemeMode"
+                                             Margin="0,0,0,8"
+                                             Checked="ThemeRadioButton_Checked" />
+
+                                <RadioButton x:Name="ThemeLightRadioButton"
+                                             Content="Light Mode"
+                                             GroupName="ThemeMode"
+                                             Margin="0,0,0,8"
+                                             Checked="ThemeRadioButton_Checked" />
+
+                                <RadioButton x:Name="ThemeDarkRadioButton"
+                                             Content="Dark Mode"
+                                             GroupName="ThemeMode"
+                                             Margin="0,0,0,8"
+                                             Checked="ThemeRadioButton_Checked" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="12"
+                                Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Device Diagnostics"
+                                           FontSize="18"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,8" />
+
+                                <TextBlock x:Name="DiagConnectionTextBlock" Text="ESP32 connection: Disconnected" Margin="0,0,0,4" />
+                                <TextBlock x:Name="DiagComPortTextBlock" Text="COM port: --" Margin="0,0,0,4" />
+                                <TextBlock x:Name="DiagLastHeartbeatTextBlock" Text="Last message: --" Margin="0,0,0,4" />
+                                <TextBlock x:Name="DiagFirmwareTextBlock" Text="Firmware: Unknown" Margin="0,0,0,4" />
+                                <TextBlock x:Name="DiagProtocolTextBlock" Text="Protocol: Unknown / Required 1.3" Margin="0,0,0,4" />
+                                <TextBlock x:Name="DiagProtocolStatusTextBlock" Text="Protocol status: Waiting for ESP32" Margin="0,0,0,4" />
+                                <TextBlock x:Name="DiagLastMessageTextBlock" Text="Last ESP32 message: --" Margin="0,0,0,4" TextWrapping="Wrap" />
+                                <TextBlock x:Name="DiagLastStateSentTextBlock" Text="Last state sent: --" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
+                        <WrapPanel Margin="0,0,0,12">
+                            <Button x:Name="ExportSetupButton" Content="Export Setup" Width="130" Height="34" Margin="0,0,8,8" Click="ExportSetupButton_Click" />
+                            <Button x:Name="ImportSetupButton" Content="Import Setup" Width="130" Height="34" Margin="0,0,8,8" Click="ImportSetupButton_Click" />
+                            <Button x:Name="ClearRememberedControllerButton" Content="Clear Remembered Controller" Width="210" Height="34" Margin="0,0,8,8" Click="ClearRememberedControllerButton_Click" />
+                            <Button x:Name="FactoryResetSetupButton" Content="Factory Reset Setup" Width="170" Height="34" Margin="0,0,8,8" Click="FactoryResetSetupButton_Click" />
+                        </WrapPanel>
+
+                        <Button x:Name="SaveSettingsButton"
+                                Content="Save Setup"
+                                Width="130"
+                                Height="34"
+                                HorizontalAlignment="Left"
+                                Click="SaveSettingsButton_Click" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem Header="Firmware">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Background="{DynamicResource AppBackground}">
+                    <StackPanel Margin="0,12,0,0">
+                        <Border BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="ESP32 Firmware Update" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,8" />
+                                <TextBlock Text="Use bundled firmware binaries when available, or select a manually built ESP32 .bin file. The dashboard looks for esptool in the tools folder." TextWrapping="Wrap" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,10" />
+                                <TextBlock Text="Bundled firmware source: Computer_Volume_Controller_v1.3.38_Beta_7" Margin="0,0,0,4" />
+                                <TextBlock x:Name="FirmwareStatusTextBlock" Text="Compiled binaries: see firmware_bin/build_instructions.txt if binaries are not present" Margin="0,0,0,6" TextWrapping="Wrap" />
+                                <TextBlock x:Name="SelectedFirmwareBinTextBlock" Text="Selected .bin file: none" Margin="0,0,0,10" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryForeground}" />
+                                <WrapPanel Margin="0,0,0,8">
+                                    <Button x:Name="SelectFirmwareBinButton" Content="Select .bin File" Width="130" Height="34" Margin="0,0,8,8" Click="SelectFirmwareBinButton_Click" />
+                                    <Button x:Name="FlashFirmwareButton" Content="Flash ESP32 Firmware" Width="180" Height="34" Margin="0,0,8,8" Click="FlashFirmwareButton_Click" />
+                                </WrapPanel>
+                                <TextBox x:Name="FirmwareFlashOutputTextBox" Margin="0,12,0,0" MinHeight="180" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" IsReadOnly="True" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Hardware Test">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Background="{DynamicResource AppBackground}">
+                    <StackPanel Margin="0,12,0,0">
+                        <Border BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Hardware Test Mode" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,8" />
+                                <TextBlock Text="Use this to verify encoder direction, button presses, and display commands before relying on Windows audio control." TextWrapping="Wrap" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,10" />
+                                <WrapPanel Margin="0,0,0,10">
+                                    <Button Content="Send Display Test" Width="140" Height="30" Margin="0,0,8,8" Click="SendHardwareTestPatternButton_Click" />
+                                    <Button Content="Sleep Display" Width="120" Height="30" Margin="0,0,8,8" Click="SendHardwareSleepButton_Click" />
+                                    <Button Content="Wake Display" Width="120" Height="30" Margin="0,0,8,8" Click="SendHardwareWakeButton_Click" />
+                                    <Button Content="Reset Counters" Width="130" Height="30" Margin="0,0,8,8" Click="ResetHardwareTestButton_Click" />
+                                </WrapPanel>
+                                <TextBlock x:Name="HardwareTestStatusTextBlock" Text="No hardware events received yet." TextWrapping="Wrap" FontFamily="Consolas" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Debug">
+                <Grid Margin="0,12,0,0" Background="{DynamicResource AppBackground}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Border Grid.Row="0" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12">
+                        <StackPanel>
+                            <TextBlock Text="Serial / Debug Console" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,8" />
+                            <WrapPanel>
+                                <CheckBox x:Name="ShowHeartbeatDebugCheckBox" Content="Show PING/PONG heartbeat" Margin="0,0,16,8" />
+                                <Button Content="Clear" Width="80" Height="30" Margin="0,0,8,8" Click="ClearDebugConsoleButton_Click" />
+                                <Button Content="Copy" Width="80" Height="30" Margin="0,0,8,8" Click="CopyDebugConsoleButton_Click" />
+                                <Button Content="Save Snapshot" Width="130" Height="30" Margin="0,0,8,8" Click="SaveDebugSnapshotButton_Click" />
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+                    <TextBox Grid.Row="1" x:Name="DebugConsoleTextBox" FontFamily="Consolas" AcceptsReturn="True" TextWrapping="NoWrap" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" IsReadOnly="True" />
+                </Grid>
+            </TabItem>
+            <TabItem x:Name="FirstRunWizardTab" Header="First Run">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Background="{DynamicResource AppBackground}">
+                    <StackPanel Margin="0,12,0,0">
+                        <Border BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="First-Run Setup Wizard" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,8" />
+                                <TextBlock Text="Use this page to confirm the controller, choose startup behaviour, and then jump to the Audio page to assign channels." TextWrapping="Wrap" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,12" />
+                                <TextBlock x:Name="WizardStatusTextBlock" Text="Wizard status: not checked" Margin="0,0,0,4" FontWeight="SemiBold" />
+                                <TextBlock x:Name="WizardControllerStatusTextBlock" Text="Controller: not checked" Margin="0,0,0,4" TextWrapping="Wrap" />
+                                <TextBlock x:Name="WizardFirmwareStatusTextBlock" Text="Firmware/protocol: not checked" Margin="0,0,0,4" TextWrapping="Wrap" />
+                                <TextBlock x:Name="WizardStartupStatusTextBlock" Text="Startup: not checked" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryForeground}" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="1. Detect the controller" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,8" />
+                                <TextBlock Text="Plug in the PC Volume Controller, then click Detect Controller. The dashboard will verify the ESP32 identity before accepting the COM port." TextWrapping="Wrap" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,10" />
+                                <Button Content="Detect Controller" Width="150" Height="34" HorizontalAlignment="Left" Click="WizardDetectControllerButton_Click" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="2. Choose daily-use startup behaviour" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,8" />
+                                <CheckBox x:Name="WizardAutoConnectCheckBox" Content="Auto-connect to the controller when the dashboard opens" Margin="0,0,0,8" />
+                                <CheckBox x:Name="WizardStartWithWindowsCheckBox" Content="Start dashboard when Windows starts" Margin="0,0,0,8" />
+                                <CheckBox x:Name="WizardMinimizeToTrayCheckBox" Content="Minimize to system tray" Margin="0,0,0,8" />
+                                <CheckBox x:Name="WizardStartMinimizedCheckBox" Content="Start minimized to tray" Margin="0,0,0,8" />
+                                <CheckBox x:Name="WizardScanAllCheckBox" Content="Scan all COM ports if the remembered controller is missing" Margin="0,0,0,8" />
+                                <TextBlock Text="Recommended daily-use setup: auto-connect on, start with Windows on, minimize to tray on, start minimized on, scan all COM ports off." TextWrapping="Wrap" Foreground="{DynamicResource SecondaryForeground}" Margin="0,4,0,10" />
+                                <WrapPanel>
+                                    <Button Content="Apply Recommended" Width="150" Height="34" Margin="0,0,8,8" Click="WizardApplyRecommendedButton_Click" />
+                                    <Button Content="Save Wizard Choices" Width="160" Height="34" Margin="0,0,8,8" Click="WizardSaveSetupButton_Click" />
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="3. Assign channels" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,8" />
+                                <TextBlock Text="Open the Audio page to assign each encoder to Master volume, an app, or leave it unassigned." TextWrapping="Wrap" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,10" />
+                                <WrapPanel>
+                                    <Button Content="Open Audio Page" Width="140" Height="34" Margin="0,0,8,8" Click="WizardOpenAudioPageButton_Click" />
+                                    <Button Content="Mark Wizard Complete" Width="170" Height="34" Margin="0,0,8,8" Click="WizardCompleteButton_Click" />
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+        </TabControl>
+
+        <Border Grid.Row="2"
+                BorderThickness="1"
+                CornerRadius="8"
+                Padding="8"
+                Margin="0,12,0,0">
+            <TextBlock x:Name="LogTextBlock"
+                       Text="Ready."
+                       TextWrapping="Wrap" />
+        </Border>
+    </Grid>
+</Window>
