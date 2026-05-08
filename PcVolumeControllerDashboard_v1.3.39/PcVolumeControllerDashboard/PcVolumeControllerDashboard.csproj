@@ -7,6 +7,21 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
+
+    <!-- Assembly identity — visible in Windows Explorer → Properties -->
+    <Version>1.3.39</Version>
+    <AssemblyVersion>1.3.39.0</AssemblyVersion>
+    <FileVersion>1.3.39.0</FileVersion>
+    <Product>PC Volume Controller Dashboard</Product>
+    <Description>Dashboard for the PC Volume Controller hardware device</Description>
+    <Copyright>Copyright © 2026</Copyright>
+    <AssemblyName>PcVolumeControllerDashboard</AssemblyName>
+
+    <!-- Publish configuration for a standalone Windows x64 .exe:
+         dotnet publish -c Release -r win-x64 --self-contained true
+         Add PublishSingleFile=true to bundle into one file. -->
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
 
   <ItemGroup>

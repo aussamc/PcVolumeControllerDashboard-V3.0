@@ -58,9 +58,11 @@ public partial class MainWindow : Window
     private const int RememberedPortMissingBeforeScanAllMs = 30000;
     private const int UserIdleSleepMs = 10 * 60 * 1000;
     private const int DebugConsoleMaxLines = 500;
+    private const int SerialReceiveBufferMaxBytes = 4096;
     private const int ChannelCount = 6;
     private const string StartupRegistryName = "PcVolumeControllerDashboard";
     private const int DwmwaUseImmersiveDarkMode = 20;
+    private static readonly JsonSerializerOptions JsonWriteOptions = new() { WriteIndented = true };
     private const int WmDeviceChange = 0x0219;
     private const int DbtDeviceArrival = 0x8000;
     private const int DbtDeviceRemoveComplete = 0x8004;
@@ -95,6 +97,7 @@ public partial class MainWindow : Window
     private readonly int[] _encoderReverseCandidateCount = new int[ExpectedChannelCount];
     private readonly DateTime[] _encoderReverseCandidateStartedAt = new DateTime[ExpectedChannelCount];
     private readonly System.Threading.Timer?[] _encoderCoalesceTimers = new System.Threading.Timer?[ExpectedChannelCount];
+    private readonly WpfDispatcherTimer?[] _encoderHighlightTimers = new WpfDispatcherTimer?[ExpectedChannelCount];
 
     private DashboardSettings _settings = new();
     private int _selectedChannelIndex = 0;
@@ -1803,6 +1806,14 @@ public partial class MainWindow : Window
             {
                 _serialReceiveBuffer += received.Replace("\r", "\n");
 
+                if (_serialReceiveBuffer.Length > SerialReceiveBufferMaxBytes)
+                {
+                    int newlineIndex = _serialReceiveBuffer.IndexOf('\n', _serialReceiveBuffer.Length - (SerialReceiveBufferMaxBytes / 2));
+                    _serialReceiveBuffer = newlineIndex >= 0
+                        ? _serialReceiveBuffer[(newlineIndex + 1)..]
+                        : string.Empty;
+                }
+
                 while (true)
                 {
                     int newlineIndex = _serialReceiveBuffer.IndexOf('\n');
@@ -1850,14 +1861,14 @@ public partial class MainWindow : Window
 
         try
         {
-            Dispatcher.BeginInvoke(new Action(() => DisconnectSerialDueToError(message)));
+            Dispatcher.BeginInvoke(new Action(DisconnectSerialDueToError));
         }
         catch
         {
         }
     }
 
-    private void DisconnectSerialDueToError(string message)
+    private void DisconnectSerialDueToError()
     {
         DisconnectSerial(sendDisconnectCommand: false);
         ForceRefreshComPorts("disconnect/error", preserveSelection: true);
@@ -2514,6 +2525,7 @@ public partial class MainWindow : Window
 
         if (target.IsMaster)
         {
+            EnsureAudioDevice();
             int current = GetMasterVolumePercent();
             int next = Math.Clamp(current + deltaPercent, 0, 100);
 
@@ -2946,8 +2958,6 @@ public partial class MainWindow : Window
         EnsureAudioDevice();
 
         AudioSessionManager manager = _defaultRenderDevice!.AudioSessionManager;
-        manager.RefreshSessions();
-
         SessionCollection sessions = manager.Sessions;
 
         if (sessions == null)
@@ -3903,11 +3913,7 @@ public partial class MainWindow : Window
                 Directory.CreateDirectory(directory);
             }
 
-            string json = JsonSerializer.Serialize(_settings, new JsonSerializerOptions
-            {
-                WriteIndented = true
-            });
-
+            string json = JsonSerializer.Serialize(_settings, JsonWriteOptions);
             File.WriteAllText(path, json);
         }
         catch (Exception ex)
@@ -4291,14 +4297,26 @@ public partial class MainWindow : Window
             string line = $"{DateTime.Now:HH:mm:ss.fff} {direction} {message}";
             _debugConsoleLines.Add(line);
 
-            while (_debugConsoleLines.Count > DebugConsoleMaxLines)
-            {
-                _debugConsoleLines.RemoveAt(0);
-            }
-
             if (DebugConsoleTextBox != null)
             {
-                DebugConsoleTextBox.Text = string.Join(Environment.NewLine, _debugConsoleLines);
+                if (_debugConsoleLines.Count > DebugConsoleMaxLines)
+                {
+                    int removeCount = _debugConsoleLines.Count - DebugConsoleMaxLines;
+                    _debugConsoleLines.RemoveRange(0, removeCount);
+                    DebugConsoleTextBox.Text = string.Join(Environment.NewLine, _debugConsoleLines);
+                }
+                else
+                {
+                    if (DebugConsoleTextBox.Text.Length > 0)
+                    {
+                        DebugConsoleTextBox.AppendText(Environment.NewLine + line);
+                    }
+                    else
+                    {
+                        DebugConsoleTextBox.Text = line;
+                    }
+                }
+
                 DebugConsoleTextBox.ScrollToEnd();
             }
         }
@@ -4349,7 +4367,7 @@ public partial class MainWindow : Window
             {
                 File.WriteAllText(_logPath, string.Empty);
             }
-            Process.Start(new ProcessStartInfo { FileName = _logPath, UseShellExecute = true });
+            Process.Start(new ProcessStartInfo { FileName = _logPath, UseShellExecute = true })?.Dispose();
             Log($"Opened current log file: {_logPath}");
         }
         catch (Exception ex)
@@ -4412,7 +4430,7 @@ public partial class MainWindow : Window
             }
 
             Log($"Exported diagnostics zip: {zipPath}");
-            Process.Start(new ProcessStartInfo { FileName = exportFolder, UseShellExecute = true });
+            Process.Start(new ProcessStartInfo { FileName = exportFolder, UseShellExecute = true })?.Dispose();
         }
         catch (Exception ex)
         {
@@ -4472,7 +4490,7 @@ public partial class MainWindow : Window
                 return;
             }
 
-            string json = JsonSerializer.Serialize(_settings, new JsonSerializerOptions { WriteIndented = true });
+            string json = JsonSerializer.Serialize(_settings, JsonWriteOptions);
             File.WriteAllText(dialog.FileName, json);
             Log($"Exported setup to: {dialog.FileName}");
             System.Windows.MessageBox.Show(this, "Setup exported successfully.", "Export Setup", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -4674,17 +4692,20 @@ public partial class MainWindow : Window
             border.Background = Resources["PreviewEncoderActiveBackground"] as WpfBrush;
             border.BorderBrush = Resources["SelectedBackground"] as WpfBrush;
 
-            WpfDispatcherTimer timer = new()
+            if (_encoderHighlightTimers[channel] == null)
             {
-                Interval = TimeSpan.FromMilliseconds(180)
-            };
-            timer.Tick += (_, _) =>
-            {
-                timer.Stop();
-                border.Background = WpfBrushes.Transparent;
-                border.BorderBrush = Resources["CardBorder"] as WpfBrush;
-            };
-            timer.Start();
+                WpfDispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(180) };
+                timer.Tick += (_, _) =>
+                {
+                    timer.Stop();
+                    border.Background = WpfBrushes.Transparent;
+                    border.BorderBrush = Resources["CardBorder"] as WpfBrush;
+                };
+                _encoderHighlightTimers[channel] = timer;
+            }
+
+            _encoderHighlightTimers[channel]!.Stop();
+            _encoderHighlightTimers[channel]!.Start();
         }
         catch
         {
@@ -4783,6 +4804,7 @@ public partial class MainWindow : Window
     private async Task RunFirmwareFlashAsync()
     {
         FirmwareFlashOutputTextBox.Text = string.Empty;
+        if (FlashFirmwareButton != null) FlashFirmwareButton.IsEnabled = false;
 
         string? firmwareBin = ResolveFirmwareBinPath();
         if (string.IsNullOrWhiteSpace(firmwareBin) || !File.Exists(firmwareBin))
@@ -4859,7 +4881,7 @@ public partial class MainWindow : Window
             {
                 AppendFirmwareFlashOutput("Waiting for controller to reboot, then reconnecting...");
                 _manualDisconnectRequested = false;
-                Dispatcher.BeginInvoke(new Action(() => TryAutoReconnect(GetAvailableComPorts())));
+                _ = Dispatcher.BeginInvoke(new Action(() => TryAutoReconnect(GetAvailableComPorts())));
             }
         }
         catch (Exception ex)
@@ -4867,6 +4889,10 @@ public partial class MainWindow : Window
             AppendFirmwareFlashOutput($"Firmware flash error: {ex.Message}");
             Log($"Firmware flash error: {ex.Message}");
             ShowTrayNotification("Firmware update failed", ex.Message);
+        }
+        finally
+        {
+            if (FlashFirmwareButton != null) FlashFirmwareButton.IsEnabled = true;
         }
     }
 
@@ -4925,30 +4951,30 @@ public partial class MainWindow : Window
         }
     }
 
-private void OpenLogFolderButton_Click(object sender, RoutedEventArgs e)
-{
-    OpenLogFolder();
-}
+    private void OpenLogFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        OpenLogFolder();
+    }
 
-private void OpenLogFolder()
-{
-    try
+    private void OpenLogFolder()
     {
-        string logDirectory = GetLogDirectory();
-        Directory.CreateDirectory(logDirectory);
-        Process.Start(new ProcessStartInfo
+        try
         {
-            FileName = logDirectory,
-            UseShellExecute = true
-        });
-        Log($"Opened log folder: {logDirectory}");
+            string logDirectory = GetLogDirectory();
+            Directory.CreateDirectory(logDirectory);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = logDirectory,
+                UseShellExecute = true
+            })?.Dispose();
+            Log($"Opened log folder: {logDirectory}");
+        }
+        catch (Exception ex)
+        {
+            Log($"Failed to open log folder: {ex.Message}");
+            System.Windows.MessageBox.Show(this, $"Could not open the log folder.\n\n{ex.Message}", "Open Log Folder", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
-    catch (Exception ex)
-    {
-        Log($"Failed to open log folder: {ex.Message}");
-        System.Windows.MessageBox.Show(this, $"Could not open the log folder.\n\n{ex.Message}", "Open Log Folder", MessageBoxButton.OK, MessageBoxImage.Warning);
-    }
-}
 
     private void UpdateVersionHeader()
     {
