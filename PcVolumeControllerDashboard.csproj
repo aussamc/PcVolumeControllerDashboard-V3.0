@@ -19,7 +19,7 @@
 
     <!-- Publish configuration for a standalone Windows x64 .exe:
          dotnet publish -c Release -r win-x64 -p:SelfContained=true
-         Add -p:PublishSingleFile=true to bundle into one file. -->
+         Add PublishSingleFile=true to bundle into one file. -->
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
