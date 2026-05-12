@@ -29,4 +29,13 @@
     <PackageReference Include="System.IO.Ports" Version="10.0.0" />
   </ItemGroup>
 
+  <!-- Exclude any old-version project directories that may exist on disk.
+       The SDK default glob (** /*.cs) would otherwise pick up generated
+       AssemblyInfo files in their obj/ trees and cause duplicate-attribute errors. -->
+  <ItemGroup>
+    <Compile Remove="Old Versions\**" />
+    <EmbeddedResource Remove="Old Versions\**" />
+    <None Remove="Old Versions\**" />
+  </ItemGroup>
+
 </Project>

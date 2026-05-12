@@ -3745,7 +3745,7 @@ public partial class MainWindow : Window
             string json = File.ReadAllText(path);
             _settings = JsonSerializer.Deserialize<DashboardSettings>(json) ?? DashboardSettings.CreateDefault();
 
-            NormalizeSettings(_settings);
+            bool migrated = NormalizeSettings(_settings);
 
             if (_settings.ChannelTargetKeys != null && _settings.ChannelTargetKeys.Length == ChannelCount)
             {
@@ -3759,6 +3759,11 @@ public partial class MainWindow : Window
                         _settings.Channels[i].FriendlyName = MakeDisplayLabelFromTargetKey(_settings.Channels[i].TargetKey);
                     }
                 }
+            }
+
+            if (migrated)
+            {
+                SaveSettings();
             }
         }
         catch
@@ -4577,8 +4582,23 @@ public partial class MainWindow : Window
         }
     }
 
-    private static void NormalizeSettings(DashboardSettings settings)
+    // Returns true if a version migration was applied (caller should persist the updated settings).
+    private static bool NormalizeSettings(DashboardSettings settings)
     {
+        bool migrated = false;
+
+        // v0 → v1: auto-connect, first-run wizard, and scan-all were accidentally
+        // defaulted to false. Correct them on first run of any build that includes
+        // this migration so existing users get the right out-of-box behaviour.
+        if (settings.SettingsVersion < 1)
+        {
+            settings.AutoConnectOnLaunch = true;
+            settings.FirstRunWizardCompleted = true;
+            settings.ScanAllComPortsIfRememberedMissing = true;
+            settings.SettingsVersion = 1;
+            migrated = true;
+        }
+
         if (settings.Channels == null || settings.Channels.Length != ChannelCount)
         {
             settings.Channels = DashboardSettings.CreateDefaultChannels();
@@ -4617,6 +4637,8 @@ public partial class MainWindow : Window
             settings.OledDisplayMode = DisplayModes.AppNameAndVolume;
         }
         settings.SelectedChannelIndex = Math.Clamp(settings.SelectedChannelIndex, 0, ChannelCount - 1);
+
+        return migrated;
     }
 
     private void ClearRememberedControllerButton_Click(object sender, RoutedEventArgs e)
@@ -5237,10 +5259,14 @@ public static class DisplayModes
 
 public sealed class DashboardSettings
 {
+    // Incremented whenever a migration runs in NormalizeSettings so future
+    // migrations can be gated on the previous version number.
+    public int SettingsVersion { get; set; } = 0;
+
     public string LastComPort { get; set; } = string.Empty;
-    public bool AutoConnectOnLaunch { get; set; }
-    public bool FirstRunWizardCompleted { get; set; }
-    public bool ScanAllComPortsIfRememberedMissing { get; set; }
+    public bool AutoConnectOnLaunch { get; set; } = true;
+    public bool FirstRunWizardCompleted { get; set; } = true;
+    public bool ScanAllComPortsIfRememberedMissing { get; set; } = true;
     public bool MinimizeToTray { get; set; }
     public bool StartMinimizedToTray { get; set; }
     public bool StartWithWindows { get; set; }
@@ -5267,6 +5293,10 @@ public sealed class DashboardSettings
     {
         return new DashboardSettings
         {
+            SettingsVersion = 1,
+            AutoConnectOnLaunch = true,
+            FirstRunWizardCompleted = true,
+            ScanAllComPortsIfRememberedMissing = true,
             Channels = CreateDefaultChannels(),
             ChannelTargetKeys = CreateDefaultChannels().Select(channel => channel.TargetKey).ToArray()
         };
