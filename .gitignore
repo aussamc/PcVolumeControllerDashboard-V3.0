@@ -15,3 +15,6 @@ diagnostics_extracted/
 
 # User-specific settings overrides
 *.local.json
+
+# Old version archives (kept locally, not tracked in git)
+Old Versions/
