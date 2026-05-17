@@ -644,6 +644,10 @@ void handleSerialLine(String line) {
     showDisplayTestPattern();
     return;
   }
+  if (line == "SHOW_IDENT") {
+    showOledIdentScreen();
+    return;
+  }
   if (line == "SCAN_I2C") {
     scanI2cBus();
     return;

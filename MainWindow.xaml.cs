@@ -29,7 +29,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.0";
+    private const string DashboardVersion = "2.2";
     private const string RequiredProtocolVersion = "2.0";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -4788,6 +4788,11 @@ public partial class MainWindow : Window
     private void SendHardwareTestPatternButton_Click(object sender, RoutedEventArgs e)
     {
         WriteSerialLine("TEST_DISPLAY", logOutgoing: true);
+    }
+
+    private void SendShowOledIdentButton_Click(object sender, RoutedEventArgs e)
+    {
+        WriteSerialLine("SHOW_IDENT", logOutgoing: true);
     }
 
     private void SendHardwareSleepButton_Click(object sender, RoutedEventArgs e)
