@@ -1,28 +1,33 @@
-﻿ESP32 firmware binary build instructions
+ESP32 firmware binary build instructions
 ======================================
 
-This release includes the ESP32 Arduino source project:
+The ESP32 Arduino source project is located at:
 
-Computer_Volume_Controller_v1.3.38_Beta_6/
-  Computer_Volume_Controller_v1.3.38_Beta_6.ino
+  Computer_Volume_Controller_v2.0/
+    Computer_Volume_Controller_v2.0.ino
 
-The .bin firmware files were not generated in this environment because Arduino CLI and the ESP32 Arduino core are not installed here.
+Target board: ESP32-S3-DevKitC-1-N16R8
 
-To build locally with Arduino CLI:
+Required Arduino libraries:
+  - Adafruit GFX Library
+  - Adafruit SSD1306
+
+To build with Arduino CLI:
 
 1. Install Arduino CLI.
-2. Install the ESP32 Arduino core.
+2. Install the ESP32 Arduino core:
+     arduino-cli core install esp32:esp32
 3. Install required libraries:
-   - Adafruit GFX Library
-   - Adafruit SSD1306
-4. Compile for the ESP32-S3 DevKit settings used by this project.
+     arduino-cli lib install "Adafruit GFX Library"
+     arduino-cli lib install "Adafruit SSD1306"
+4. Compile:
+     arduino-cli compile --fqbn esp32:esp32:esp32s3 --output-dir firmware_bin Computer_Volume_Controller_v2.0
 
-Example command, adjust FQBN/options to match your ESP32-S3-DevKitC-1-N16R8 setup:
+Expected output files:
+  - bootloader.bin
+  - partitions.bin
+  - boot_app0.bin
+  - Computer_Volume_Controller_v2.0.ino.bin
 
-arduino-cli compile --fqbn esp32:esp32:esp32s3 --output-dir firmware_bin Computer_Volume_Controller_v1.3.38_Beta_6
-
-Expected useful outputs normally include:
-- bootloader.bin
-- partitions.bin
-- boot_app0.bin
-- Computer_Volume_Controller_v1.3.38_Beta_6.ino.bin
+Alternatively, open Computer_Volume_Controller_v2.0.ino in Arduino IDE,
+select "ESP32S3 Dev Module" as the board, and use Sketch > Export Compiled Binary.
