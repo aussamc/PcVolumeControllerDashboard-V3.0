@@ -22,6 +22,16 @@
 #define CHANNEL_COUNT    6
 
 // =============================================================================
+// Startup options
+//   SHOW_OLED_IDENT_SCREEN — set true to show "OLED-N" on each display for
+//   OLED_IDENT_HOLD_MS milliseconds before the normal boot splash.
+//   Useful for confirming mux channel <→ physical display mapping during testing.
+//   Set false for production builds.
+// =============================================================================
+#define SHOW_OLED_IDENT_SCREEN true
+#define OLED_IDENT_HOLD_MS     2000
+
+// =============================================================================
 // Hardware pins — ESP32-S3-DevKitC-1-N16R8 carrier PCB v1.4
 //
 // I2C:   SDA=9, SCL=10  (shared by all OLEDs through TCA9548A mux)
@@ -823,6 +833,38 @@ void setupDefaultChannelStates() {
 }
 
 // =============================================================================
+// OLED identification screen
+//   Shows "OLED-N" in large text on each display so you can confirm that
+//   mux channel N is wired to the correct physical display.
+//   Controlled by SHOW_OLED_IDENT_SCREEN at the top of the file.
+// =============================================================================
+void showOledIdentScreen() {
+  for (int ch = 0; ch < CHANNEL_COUNT; ch++) {
+    if (!displayOk[ch]) continue;
+    applyOledBrightnessToChannel(ch, oledBrightnessPercent);
+    selectMuxChannel(ch);
+    display.clearDisplay();
+    display.setTextColor(SSD1306_WHITE);
+
+    // Large channel label centred vertically
+    String label = "OLED-" + String(ch + 1);
+    display.setTextSize(3);
+    int16_t x1, y1; uint16_t w, h;
+    display.getTextBounds(label, 0, 0, &x1, &y1, &w, &h);
+    display.setCursor((SCREEN_WIDTH - (int)w) / 2, (SCREEN_HEIGHT - (int)h) / 2 - 6);
+    display.print(label);
+
+    // Small firmware version at the bottom
+    display.setTextSize(1);
+    drawCenteredSmall("v" PROTOCOL_VERSION, 54);
+
+    display.display();
+  }
+
+  delay(OLED_IDENT_HOLD_MS);
+}
+
+// =============================================================================
 // Setup
 // =============================================================================
 void setup() {
@@ -859,6 +901,12 @@ void setup() {
   }
 
   setupDefaultChannelStates();
+
+  // Optional: show OLED-N ident screen before boot splash
+  // (controlled by SHOW_OLED_IDENT_SCREEN near the top of the file)
+#if SHOW_OLED_IDENT_SCREEN
+  showOledIdentScreen();
+#endif
 
   // Show per-channel splash screen
   for (int ch = 0; ch < CHANNEL_COUNT; ch++) {
