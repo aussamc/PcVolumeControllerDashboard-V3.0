@@ -49,7 +49,7 @@ public partial class MainWindow : Window
     private const int AudioSessionRefreshCheckMs = 2500;
     private const int ComPortRefreshMs = 1000;
     private const int DeviceMessageTimeoutMs = 5000;
-    private const int HelloTimeoutMs = 5000;
+    private const int HelloTimeoutMs = 12000;
     private const int AutoReconnectCooldownMs = 3000;
     private const int RejectedPortCooldownMs = 5 * 60 * 1000;
     private const int PhantomPortOpenFailCooldownMs = 15 * 1000;
@@ -931,7 +931,7 @@ public partial class MainWindow : Window
             serialOpen = false;
             connectedPort = null;
             ports = GetAvailableComPorts();
-            QueueDelayedComPortRefresh("connected port disappeared delayed refresh");
+            QueueDebouncedDeviceChangeRefresh("connected port disappeared delayed refresh");
         }
         else if (serialOpen && IsConnectedDeviceTimedOut())
         {
@@ -944,7 +944,7 @@ public partial class MainWindow : Window
             serialOpen = false;
             connectedPort = null;
             ports = GetAvailableComPorts();
-            QueueDelayedComPortRefresh("controller timeout delayed refresh");
+            QueueDebouncedDeviceChangeRefresh("controller timeout delayed refresh");
         }
 
         portListChanged = !_lastKnownComPorts.SequenceEqual(ports, StringComparer.OrdinalIgnoreCase);
@@ -1876,6 +1876,9 @@ public partial class MainWindow : Window
 
     private void HandleDeviceMessage(string line)
     {
+        // Guard: discard callbacks that fire after the port has been closed.
+        if (_serial?.IsOpen != true) return;
+
         AppendDebugConsole("IN", line);
         string[] parts = line.Split(',', StringSplitOptions.TrimEntries);
 
@@ -1886,6 +1889,12 @@ public partial class MainWindow : Window
 
         string command = parts[0].ToUpperInvariant();
 
+        // Update the watchdog timestamp for every message — including pre-HELLO firmware
+        // output (I2C scan DBG lines, etc.) — so the connection is not falsely timed out
+        // while the firmware is still starting up.
+        _lastEspMessage = line;
+        _lastEspMessageTime = DateTime.Now;
+
         if (!_esp32HelloReceived && command != "HELLO")
         {
             if (!string.Equals(line, "PONG", StringComparison.OrdinalIgnoreCase))
@@ -1894,9 +1903,6 @@ public partial class MainWindow : Window
             }
             return;
         }
-
-        _lastEspMessage = line;
-        _lastEspMessageTime = DateTime.Now;
 
         // Normal heartbeat traffic arrives once per second. Keep it out of the log so the log remains useful.
         bool duplicateHelloAfterIdentity = command == "HELLO" &&
@@ -4621,7 +4627,7 @@ public partial class MainWindow : Window
             }
         }
 
-        settings.OledBrightnessPercent = Math.Clamp(settings.OledBrightnessPercent <= 0 ? 80 : settings.OledBrightnessPercent, 0, 100);
+        settings.OledBrightnessPercent = Math.Clamp(settings.OledBrightnessPercent <= 0 ? 100 : settings.OledBrightnessPercent, 0, 100);
         settings.OledSleepTimeoutMinutes = Math.Clamp(settings.OledSleepTimeoutMinutes <= 0 ? 2 : settings.OledSleepTimeoutMinutes, 1, 60);
         settings.OledConnectedIdleTimeoutMinutes = Math.Clamp(settings.OledConnectedIdleTimeoutMinutes <= 0 ? 10 : settings.OledConnectedIdleTimeoutMinutes, 1, 60);
         if (string.IsNullOrWhiteSpace(settings.OledConnectedIdleAction))
@@ -5276,7 +5282,7 @@ public sealed class DashboardSettings
     public int EncoderSensitivityPercent { get; set; } = 50;
     public string ThemeMode { get; set; } = ThemeModes.FollowSystem;
     public string OledDisplayMode { get; set; } = DisplayModes.AppNameAndVolume;
-    public int OledBrightnessPercent { get; set; } = 80;
+    public int OledBrightnessPercent { get; set; } = 100;
     public int OledSleepTimeoutMinutes { get; set; } = 2;
     public string OledConnectedIdleAction { get; set; } = OledIdleActions.DimTo30;
     public int OledConnectedIdleTimeoutMinutes { get; set; } = 10;
