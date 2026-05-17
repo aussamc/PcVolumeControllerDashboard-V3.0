@@ -23,17 +23,10 @@
 
 // =============================================================================
 // Startup options
-//   SHOW_OLED_IDENT_SCREEN — set true to show "OLED-N" on each display for
-//   OLED_IDENT_HOLD_MS milliseconds before the normal boot splash.
-//   Useful for confirming mux channel <-> physical display mapping during testing.
-//   Set false for production builds.
-//
 //   I2C_SCAN_ON_STARTUP — set true to scan the I2C bus on boot and print
 //   all found devices to the dashboard debug log via DBG messages.
 //   Also available at any time via the SCAN_I2C serial command.
 // =============================================================================
-#define SHOW_OLED_IDENT_SCREEN true
-#define OLED_IDENT_HOLD_MS     2000
 #define I2C_SCAN_ON_STARTUP    true
 
 // =============================================================================
@@ -926,7 +919,7 @@ void setupDefaultChannelStates() {
 // OLED identification screen
 //   Shows "OLED-N" in large text on each display so you can confirm that
 //   mux channel N is wired to the correct physical display.
-//   Controlled by SHOW_OLED_IDENT_SCREEN at the top of the file.
+//   Triggered via the dashboard Hardware Test tab (SHOW_IDENT serial command).
 // =============================================================================
 void showOledIdentScreen() {
   for (int ch = 0; ch < CHANNEL_COUNT; ch++) {
@@ -951,7 +944,7 @@ void showOledIdentScreen() {
     display.display();
   }
 
-  delay(OLED_IDENT_HOLD_MS);
+  delay(2000);
 }
 
 // =============================================================================
@@ -997,12 +990,6 @@ void setup() {
   }
 
   setupDefaultChannelStates();
-
-  // Optional: show OLED-N ident screen before boot splash
-  // (controlled by SHOW_OLED_IDENT_SCREEN near the top of the file)
-#if SHOW_OLED_IDENT_SCREEN
-  showOledIdentScreen();
-#endif
 
   // Show per-channel splash screen
   for (int ch = 0; ch < CHANNEL_COUNT; ch++) {
