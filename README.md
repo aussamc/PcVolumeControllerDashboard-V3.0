@@ -9,7 +9,7 @@ Each encoder knob on the hardware maps to a Windows audio session (an app, a bro
 ## Requirements
 
 - Windows 10 or 11 (x64)
-- PC Volume Controller hardware (ESP32-S3 based, with firmware v1.3.38 Beta 7 or later)
+- PC Volume Controller hardware v1.4 (ESP32-S3-DevKitC-1-N16R8 based, with firmware v2.0 or later)
 - USB cable to connect the controller
 
 To build from source:
@@ -31,9 +31,11 @@ Settings are saved to `%APPDATA%\PcVolumeController\settings.json` and restored 
 
 ## Features
 
+- **6-channel control** — six independent encoder knobs, each mapped to any Windows audio session.
 - **Per-channel audio targets** — assign any encoder to any running audio session, or to master volume.
 - **Per-channel sensitivity** — tune how fast each encoder changes volume.
 - **Per-channel short-button action** — select next channel, toggle mute, or no action.
+- **Per-channel OLED display** — each encoder has its own SSD1315 OLED showing channel name and volume.
 - **Auto sleep/wake** — sends a sleep command to the controller when the PC is idle (10 min), locked, or suspended; wakes it on activity.
 - **Auto-reconnect** — detects controller disconnects and reconnects automatically.
 - **Firmware flasher** — built-in UI to flash new ESP32 firmware via `tools/esptool.exe`.
@@ -60,9 +62,9 @@ Output is in `bin\Release\net10.0-windows\win-x64\publish\`.
 
 ## Firmware
 
-The ESP32 Arduino source is in `Computer_Volume_Controller_v1.3.38_Beta_7/`.
+The ESP32 Arduino source is in `Computer_Volume_Controller_v2.0/`.
 
-To build the firmware binary, see `firmware_bin/build_instructions.txt`. You will need Arduino CLI and the ESP32 Arduino core installed.
+Flash the firmware using the dashboard's built-in flasher, or manually via Arduino IDE / Arduino CLI with the ESP32-S3 Arduino core installed.
 
 The dashboard's built-in flasher requires `tools/esptool.exe`. See `tools/esptool_setup_instructions.txt` for how to obtain it.
 
@@ -72,22 +74,23 @@ The dashboard's built-in flasher requires `tools/esptool.exe`. See `tools/esptoo
 
 ```
 PcVolumeControllerDashboard.csproj      — .NET 10 WPF project
-MainWindow.xaml / .cs                   — main application window (~5300 lines)
+MainWindow.xaml / .cs                   — main application window
 App.xaml / .cs                          — WPF app entry point
 AssemblyInfo.cs                         — assembly attributes
-Computer_Volume_Controller_v1.3.38_Beta_7/  — ESP32 Arduino firmware source
+Computer_Volume_Controller_v2.0/        — ESP32 Arduino firmware source (v2.0, 6-channel)
 firmware_bin/                           — firmware build output + instructions
 tools/                                  — esptool.exe for firmware flashing
-previous_version_notes/                 — release notes and READMEs for older versions
+previous_version_notes/                 — release notes for older versions
 ```
 
 ---
 
 ## Version compatibility
 
-| Dashboard | Required firmware protocol |
-|-----------|---------------------------|
-| v1.3.39   | v1.3.38 Beta 7            |
+| Dashboard | Required firmware protocol | Hardware       |
+|-----------|---------------------------|----------------|
+| v2.0      | v2.0                      | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
+| v1.3.39   | v1.3.38 Beta 7            | Prototype (1-channel) |
 
 ---
 
