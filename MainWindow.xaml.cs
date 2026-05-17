@@ -29,7 +29,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "1.3.39";
+    private const string DashboardVersion = "2.0";
     private const string RequiredProtocolVersion = "2.0";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
