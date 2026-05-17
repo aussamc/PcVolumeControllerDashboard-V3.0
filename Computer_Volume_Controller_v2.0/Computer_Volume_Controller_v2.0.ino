@@ -62,10 +62,20 @@ const uint8_t ENC_SW_PIN[CHANNEL_COUNT] = {  3,  6, 11, 14, 17, 38 };
 // =============================================================================
 // TCA9548A I2C mux
 //   Address 0x70 (A0-A2 all low on PCB).
-//   Mux channel N corresponds to physical channel N (OLED N).
-//   Write (1 << N) to select channel N; write 0 to deselect all.
+//   Write (1 << N) to select physical channel N; write 0 to deselect all.
+//
+//   MUX_CHANNEL_MAP — maps logical software channel (0-5) to the physical
+//   mux output that drives that channel's OLED.  Edit this table if the
+//   display PCB wiring doesn't match the encoder order.
+//
+//   Current mapping (after physical wiring corrections):
+//     logical ch:   0  1  2  3  4  5
+//     physical mux: 3  2  1  0  5  4
+//   (swaps: OLED1↔4, OLED2↔3, OLED5↔6)
 // =============================================================================
 #define MUX_I2C_ADDR 0x70
+
+const uint8_t MUX_CHANNEL_MAP[CHANNEL_COUNT] = { 3, 2, 1, 0, 5, 4 };
 
 // =============================================================================
 // OLED displays (SSD1315, one per channel, all at address 0x3C)
@@ -163,10 +173,20 @@ void markDisplayActivity(const String &reason);
 // =============================================================================
 // Mux helpers
 // =============================================================================
-void selectMuxChannel(uint8_t ch) {
+
+// Raw physical channel select — use this only when you need to address a
+// specific mux output directly (e.g. I2C bus scanning).
+void selectMuxChannel(uint8_t physicalCh) {
   Wire.beginTransmission(MUX_I2C_ADDR);
-  Wire.write(1 << ch);
+  Wire.write(1 << physicalCh);
   Wire.endTransmission();
+}
+
+// Logical display channel select — applies MUX_CHANNEL_MAP so that
+// software channel N drives the correct physical OLED regardless of
+// how the display PCB happens to be wired.
+void selectDisplayChannel(uint8_t logicalCh) {
+  selectMuxChannel(MUX_CHANNEL_MAP[logicalCh]);
 }
 
 void disableMux() {
@@ -224,7 +244,7 @@ int brightnessPercentToContrast(int percent) {
 
 void applyOledBrightnessToChannel(int ch, int percent) {
   if (!displayOk[ch]) return;
-  selectMuxChannel(ch);
+  selectDisplayChannel(ch);
 
   percent = constrain(percent, 0, 100);
 
@@ -262,7 +282,7 @@ void applyOledBrightness() {
 void setAllDisplaysPower(bool on) {
   for (int ch = 0; ch < CHANNEL_COUNT; ch++) {
     if (!displayOk[ch]) continue;
-    selectMuxChannel(ch);
+    selectDisplayChannel(ch);
     display.ssd1306_command(on ? SSD1306_DISPLAYON : SSD1306_DISPLAYOFF);
   }
 }
@@ -279,7 +299,7 @@ void applyAntiBurnInOffset() {
 
   for (int ch = 0; ch < CHANNEL_COUNT; ch++) {
     if (!displayOk[ch]) continue;
-    selectMuxChannel(ch);
+    selectDisplayChannel(ch);
     display.ssd1306_command(SSD1306_SETDISPLAYOFFSET);
     display.ssd1306_command(offset);
   }
@@ -295,7 +315,7 @@ void updateDisplay(int ch) {
 
   applyAntiBurnInOffset();
 
-  selectMuxChannel(ch);
+  selectDisplayChannel(ch);
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
 
@@ -482,7 +502,7 @@ void showDisplayTestPattern() {
   for (int ch = 0; ch < CHANNEL_COUNT; ch++) {
     if (!displayOk[ch]) continue;
     applyOledBrightnessToChannel(ch, oledBrightnessPercent);
-    selectMuxChannel(ch);
+    selectDisplayChannel(ch);
     display.clearDisplay();
     display.setTextColor(SSD1306_WHITE);
     display.setTextSize(1);
@@ -908,7 +928,7 @@ void showOledIdentScreen() {
   for (int ch = 0; ch < CHANNEL_COUNT; ch++) {
     if (!displayOk[ch]) continue;
     applyOledBrightnessToChannel(ch, oledBrightnessPercent);
-    selectMuxChannel(ch);
+    selectDisplayChannel(ch);
     display.clearDisplay();
     display.setTextColor(SSD1306_WHITE);
 
@@ -959,7 +979,7 @@ void setup() {
   int okCount = 0;
   for (int ch = 0; ch < CHANNEL_COUNT; ch++) {
     displayOk[ch] = false;
-    selectMuxChannel(ch);
+    selectDisplayChannel(ch);
     displayOk[ch] = display.begin(SSD1306_SWITCHCAPVCC, OLED_I2C_ADDR);
     if (displayOk[ch]) {
       okCount++;
@@ -984,7 +1004,7 @@ void setup() {
   for (int ch = 0; ch < CHANNEL_COUNT; ch++) {
     if (!displayOk[ch]) continue;
     applyOledBrightnessToChannel(ch, oledBrightnessPercent);
-    selectMuxChannel(ch);
+    selectDisplayChannel(ch);
     display.clearDisplay();
     display.setTextColor(SSD1306_WHITE);
     display.setTextSize(1);
