@@ -25,11 +25,16 @@
 // Startup options
 //   SHOW_OLED_IDENT_SCREEN — set true to show "OLED-N" on each display for
 //   OLED_IDENT_HOLD_MS milliseconds before the normal boot splash.
-//   Useful for confirming mux channel <→ physical display mapping during testing.
+//   Useful for confirming mux channel <-> physical display mapping during testing.
 //   Set false for production builds.
+//
+//   I2C_SCAN_ON_STARTUP — set true to scan the I2C bus on boot and print
+//   all found devices to the dashboard debug log via DBG messages.
+//   Also available at any time via the SCAN_I2C serial command.
 // =============================================================================
 #define SHOW_OLED_IDENT_SCREEN true
 #define OLED_IDENT_HOLD_MS     2000
+#define I2C_SCAN_ON_STARTUP    true
 
 // =============================================================================
 // Hardware pins — ESP32-S3-DevKitC-1-N16R8 carrier PCB v1.4
@@ -619,6 +624,10 @@ void handleSerialLine(String line) {
     showDisplayTestPattern();
     return;
   }
+  if (line == "SCAN_I2C") {
+    scanI2cBus();
+    return;
+  }
   if (line == "DISCONNECT") {
     showDisconnected();
     return;
@@ -820,6 +829,63 @@ void checkPcTimeout() {
 }
 
 // =============================================================================
+// I2C bus scan
+//   Scans the root bus (mux disabled) then each of the CHANNEL_COUNT mux
+//   channels. All results are sent as DBG messages so they appear in the
+//   dashboard debug console. Known device addresses are annotated by name.
+//   Call scanI2cBus() directly or send SCAN_I2C over serial at any time.
+// =============================================================================
+String i2cDeviceName(uint8_t addr) {
+  if (addr == MUX_I2C_ADDR) return "TCA9548A mux";
+  if (addr == OLED_I2C_ADDR) return "OLED (SSD1315)";
+  if (addr == 0x3D)          return "OLED alt addr";
+  return "unknown";
+}
+
+void scanI2cBus() {
+  int totalFound = 0;
+
+  // ── Phase 1: root bus with mux disabled ──────────────────────────────────
+  disableMux();
+  delay(5);
+
+  sendDebug("I2C scan start — root bus");
+  int rootFound = 0;
+  for (uint8_t addr = 1; addr < 127; addr++) {
+    Wire.beginTransmission(addr);
+    if (Wire.endTransmission() == 0) {
+      sendDebug("  root  0x" + String(addr, HEX) + "  " + i2cDeviceName(addr));
+      rootFound++;
+    }
+  }
+  sendDebug("  root: " + String(rootFound) + " device(s)");
+  totalFound += rootFound;
+
+  // ── Phase 2: each mux channel ────────────────────────────────────────────
+  for (int ch = 0; ch < CHANNEL_COUNT; ch++) {
+    selectMuxChannel(ch);
+    delay(5);
+
+    int chFound = 0;
+    for (uint8_t addr = 1; addr < 127; addr++) {
+      if (addr == MUX_I2C_ADDR) continue;   // mux always visible; skip to avoid noise
+      Wire.beginTransmission(addr);
+      if (Wire.endTransmission() == 0) {
+        sendDebug("  mux ch" + String(ch) + "  0x" + String(addr, HEX) + "  " + i2cDeviceName(addr));
+        chFound++;
+      }
+    }
+    if (chFound == 0) {
+      sendDebug("  mux ch" + String(ch) + "  no devices");
+    }
+    totalFound += chFound;
+  }
+
+  disableMux();
+  sendDebug("I2C scan complete — " + String(totalFound) + " device(s) found");
+}
+
+// =============================================================================
 // Default channel state
 // =============================================================================
 void setupDefaultChannelStates() {
@@ -879,6 +945,12 @@ void setup() {
   delay(300);
 
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
+
+  // Optional: scan I2C bus and report to dashboard debug log on startup
+  // (controlled by I2C_SCAN_ON_STARTUP near the top of the file)
+#if I2C_SCAN_ON_STARTUP
+  scanI2cBus();
+#endif
 
   // Initialise each OLED through the mux.
   // Adafruit_SSD1306::begin() allocates the framebuffer on the first call;
