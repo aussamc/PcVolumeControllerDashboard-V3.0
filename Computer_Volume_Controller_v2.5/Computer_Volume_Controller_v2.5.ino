@@ -42,8 +42,6 @@
 //   Ch3:  A=12  B=13  SW=14
 //   Ch4:  A=15  B=16  SW=17
 //   Ch5:  A=18  B=21  SW=38   (19/20=USB skipped)
-//
-// TODO: confirm exact wiring against PCB schematic once encoders arrive.
 // =============================================================================
 #define PIN_I2C_SDA 9
 #define PIN_I2C_SCL 10
@@ -951,7 +949,7 @@ void showOledIdentScreen() {
 // Setup
 // =============================================================================
 void setup() {
-  // Configure encoder pins (INPUT_PULLUP — safe if encoders not yet installed)
+  // Configure encoder pins with internal pull-ups (no external resistors needed)
   for (int ch = 0; ch < CHANNEL_COUNT; ch++) {
     pinMode(ENC_A_PIN[ch],  INPUT_PULLUP);
     pinMode(ENC_B_PIN[ch],  INPUT_PULLUP);
