@@ -29,7 +29,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.19";
+    private const string DashboardVersion = "2.20";
     private const string RequiredProtocolVersion = "2.15";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -49,6 +49,12 @@ public partial class MainWindow : Window
     private const int EncoderReverseGuardMs = 140;
     private const int EncoderReverseConfirmEvents = 2;
     private const int EncoderMaxCoalescedDelta = 5;
+
+    // --- DIAGNOSTIC: set true to bypass ALL software debounce/coalescing/reverse-guard.
+    // Every raw ENC event is logged with timestamp, direction and inter-event interval
+    // so you can see exactly what the hardware sends with no filtering in the way.
+    // Flip back to false once analysis is complete and revert in the next version.
+    private const bool EncoderDebounceDisabled = true;
     private const int StatePollMs = 500;
     private const int HeartbeatMs = 1000;
     private const int AudioSessionRefreshCheckMs = 2500;
@@ -107,6 +113,10 @@ public partial class MainWindow : Window
     // Acceleration: tracks when each channel's delta was last applied (on the UI thread) so the
     // inter-event interval can be measured for speed-scaling.
     private readonly DateTime[] _accelPrevApplyAt = new DateTime[ExpectedChannelCount];
+
+    // Diagnostic (EncoderDebounceDisabled): tracks the arrival time of each raw ENC event
+    // per channel so the inter-event interval can be logged.
+    private readonly DateTime[] _encoderLastRawEventAt = new DateTime[ExpectedChannelCount];
 
     // Smoothing: all volumes are tracked in normalized float space (0.0–1.0) matching the
     // WASAPI API natively, which eliminates the quantisation artefacts that occur when
@@ -2184,6 +2194,29 @@ public partial class MainWindow : Window
 
         DateTime now = DateTime.Now;
 
+        // --- DIAGNOSTIC: bypass all debounce, coalescing, and reverse-guard ---
+        if (EncoderDebounceDisabled)
+        {
+            double rawIntervalMs;
+            bool isReverse;
+            lock (_encoderSmoothingLock)
+            {
+                rawIntervalMs = _encoderLastRawEventAt[encoderChannel] == default
+                    ? -1
+                    : (now - _encoderLastRawEventAt[encoderChannel]).TotalMilliseconds;
+                _encoderLastRawEventAt[encoderChannel] = now;
+                isReverse = _encoderLastDirection[encoderChannel] != 0
+                         && direction != _encoderLastDirection[encoderChannel];
+                _encoderLastDirection[encoderChannel] = direction;
+            }
+            string rawIntervalStr = rawIntervalMs < 0 ? "first" : $"{rawIntervalMs:F1}ms";
+            Log($"[RAW] Encoder {encoderChannel + 1}: delta={rawDelta} interval={rawIntervalStr}{(isReverse ? " DIRECTION-CHANGE" : "")}");
+            BeginApplySmoothedEncoderDelta(encoderChannel, rawDelta);
+            return;
+        }
+        // --- end diagnostic ---
+
+#pragma warning disable CS0162 // Unreachable code — intentional while EncoderDebounceDisabled=true
         lock (_encoderSmoothingLock)
         {
             int lastDirection = _encoderLastDirection[encoderChannel];
@@ -2245,6 +2278,7 @@ public partial class MainWindow : Window
 
             ScheduleEncoderCoalesceTimerLocked(encoderChannel, delayMs);
         }
+#pragma warning restore CS0162
     }
 
     private int GetEncoderApplyDelayMsLocked(int encoderChannel, DateTime now)
@@ -5779,6 +5813,10 @@ public partial class MainWindow : Window
         Log("PC Volume Controller Dashboard started.");
         Log($"Dashboard version: v{DashboardVersion}");
         Log($"Required ESP32 protocol: v{RequiredProtocolVersion}");
+        if (EncoderDebounceDisabled)
+        {
+            Log("WARNING: EncoderDebounceDisabled=true — all software debounce/coalescing/reverse-guard is bypassed. Every raw ENC event is logged with [RAW] prefix. For diagnostic use only.");
+        }
         Log($"Last remembered controller port: {(string.IsNullOrWhiteSpace(_settings.LastComPort) ? "none" : _settings.LastComPort)}");
         string[] startupPorts = GetAvailableComPorts();
         Log($"Actual COM ports at startup: {(startupPorts.Length == 0 ? "none" : string.Join(", ", startupPorts))}");
