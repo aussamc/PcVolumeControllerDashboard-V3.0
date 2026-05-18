@@ -29,7 +29,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.22";
+    private const string DashboardVersion = "2.23";
     private const string RequiredProtocolVersion = "2.21";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -668,6 +668,55 @@ public partial class MainWindow : Window
 
         SelectedChannel.DoublePressButtonAction = GetSelectedChannelDoublePressActionFromUi();
     }
+
+    // --- Auto-Rebind tab ---
+
+    private void RebindFallbackComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.ComboBox cb || _channels.Count == 0)
+        {
+            return;
+        }
+
+        if (cb.Tag is not int channelIndex || channelIndex < 0 || channelIndex >= ChannelCount)
+        {
+            return;
+        }
+
+        _channels[channelIndex].RebindFallback = cb.SelectedIndex == 1
+            ? RebindFallbacks.DoNothing
+            : RebindFallbacks.ShowInactive;
+
+        RefreshAllChannelStates();
+        SendAllChannelStatesToDevice();
+        SaveSettingsFromCurrentState();
+    }
+
+    private void ApplyRebindSettingsToUi()
+    {
+        for (int i = 0; i < ChannelCount; i++)
+        {
+            System.Windows.Controls.ComboBox? cb = GetRebindComboBoxForChannel(i);
+            if (cb == null)
+            {
+                continue;
+            }
+
+            string fb = _channels.Count > i ? _channels[i].RebindFallback : RebindFallbacks.ShowInactive;
+            cb.SelectedIndex = fb == RebindFallbacks.DoNothing ? 1 : 0;
+        }
+    }
+
+    private System.Windows.Controls.ComboBox? GetRebindComboBoxForChannel(int channelIndex) => channelIndex switch
+    {
+        0 => Channel1RebindComboBox,
+        1 => Channel2RebindComboBox,
+        2 => Channel3RebindComboBox,
+        3 => Channel4RebindComboBox,
+        4 => Channel5RebindComboBox,
+        5 => Channel6RebindComboBox,
+        _ => null
+    };
 
     private void Slider_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
@@ -2871,7 +2920,11 @@ public partial class MainWindow : Window
             {
                 channel.Volume = 0;
                 channel.Muted = true;
-                channel.Status = string.IsNullOrWhiteSpace(channel.TargetKey) ? "Unassigned" : "Waiting for app";
+                bool isProc = !string.IsNullOrWhiteSpace(channel.TargetKey);
+                channel.IsAppOffline = isProc;
+                channel.Status = isProc
+                    ? (channel.RebindFallback == RebindFallbacks.ShowInactive ? "App offline" : "Waiting")
+                    : "Unassigned";
                 continue;
             }
 
@@ -2880,6 +2933,7 @@ public partial class MainWindow : Window
                 channel.Volume = GetMasterVolumePercent();
                 channel.Muted = GetMasterMute();
                 channel.Status = "Active";
+                channel.IsAppOffline = false;
             }
             else
             {
@@ -2889,13 +2943,17 @@ public partial class MainWindow : Window
                 {
                     channel.Volume = 0;
                     channel.Muted = true;
-                    channel.Status = "Waiting for app";
+                    channel.IsAppOffline = true;
+                    channel.Status = channel.RebindFallback == RebindFallbacks.ShowInactive
+                        ? "App offline"
+                        : "Waiting";
                 }
                 else
                 {
                     channel.Volume = sessions[0].Volume;
                     channel.Muted = sessions[0].Muted;
                     channel.Status = sessions.Count == 1 ? "Active" : $"Active x{sessions.Count}";
+                    channel.IsAppOffline = false;
                 }
             }
         }
@@ -4461,10 +4519,12 @@ public partial class MainWindow : Window
             _channels[i].ButtonAction = ChannelButtonActions.IsValid(_settings.Channels[i].ButtonAction) ? _settings.Channels[i].ButtonAction : ChannelButtonActions.NoAction;
             _channels[i].LongPressButtonAction = ChannelButtonActions.IsValidLongPressAction(_settings.Channels[i].LongPressButtonAction) ? _settings.Channels[i].LongPressButtonAction : ChannelButtonActions.NoAction;
             _channels[i].DoublePressButtonAction = ChannelButtonActions.IsValidDoublePressAction(_settings.Channels[i].DoublePressButtonAction) ? _settings.Channels[i].DoublePressButtonAction : ChannelButtonActions.NoAction;
+            _channels[i].RebindFallback = RebindFallbacks.IsValid(_settings.Channels[i].RebindFallback) ? _settings.Channels[i].RebindFallback : RebindFallbacks.ShowInactive;
         }
 
         RefreshChannelAssignmentLabels();
         RefreshAllChannelStates();
+        ApplyRebindSettingsToUi();
     }
 
     private void SaveSettingsFromCurrentState()
@@ -4554,7 +4614,8 @@ public partial class MainWindow : Window
             FriendlyName = channel.FriendlyName,
             ButtonAction = ChannelButtonActions.IsValid(channel.ButtonAction) ? channel.ButtonAction : ChannelButtonActions.ToggleAssignedMute,
             LongPressButtonAction = ChannelButtonActions.IsValidLongPressAction(channel.LongPressButtonAction) ? channel.LongPressButtonAction : ChannelButtonActions.NoAction,
-            DoublePressButtonAction = ChannelButtonActions.IsValidDoublePressAction(channel.DoublePressButtonAction) ? channel.DoublePressButtonAction : ChannelButtonActions.NoAction
+            DoublePressButtonAction = ChannelButtonActions.IsValidDoublePressAction(channel.DoublePressButtonAction) ? channel.DoublePressButtonAction : ChannelButtonActions.NoAction,
+            RebindFallback = RebindFallbacks.IsValid(channel.RebindFallback) ? channel.RebindFallback : RebindFallbacks.ShowInactive
         }).ToArray();
 
         _settings.ChannelTargetKeys = _settings.Channels.Select(channel => channel.TargetKey).ToArray();
@@ -5333,6 +5394,11 @@ public partial class MainWindow : Window
             if (!ChannelButtonActions.IsValidDoublePressAction(channel.DoublePressButtonAction))
             {
                 channel.DoublePressButtonAction = ChannelButtonActions.NoAction;
+            }
+
+            if (!RebindFallbacks.IsValid(channel.RebindFallback))
+            {
+                channel.RebindFallback = RebindFallbacks.ShowInactive;
             }
         }
 
@@ -6128,6 +6194,11 @@ public sealed class ChannelSettings
     public string ButtonAction { get; set; } = ChannelButtonActions.ToggleAssignedMute;
     public string LongPressButtonAction { get; set; } = ChannelButtonActions.NoAction;
     public string DoublePressButtonAction { get; set; } = ChannelButtonActions.NoAction;
+
+    // What to do when the assigned app is not running.
+    // ShowInactive: grey out channel row + OLED shows "App offline"
+    // DoNothing:    channel stays silently inactive (previous behaviour)
+    public string RebindFallback { get; set; } = RebindFallbacks.ShowInactive;
 }
 
 public sealed class AudioTargetItem
@@ -6182,6 +6253,13 @@ public sealed class ChannelMappingItem
     public bool Muted { get; set; } = true;
     public string Status { get; set; } = "Unassigned";
 
+    // True when the channel has a PROC: assignment but the app is not currently running.
+    // Used by the ListView ItemContainerStyle to grey out the row.
+    public bool IsAppOffline { get; set; }
+
+    // Fallback behaviour when the assigned app is not running.
+    public string RebindFallback { get; set; } = RebindFallbacks.ShowInactive;
+
     public string ChannelDisplay => ChannelNumber.ToString();
 
     public string DisplayLabel
@@ -6204,4 +6282,12 @@ public sealed class ChannelMappingItem
 
     public string VolumeDisplay => $"{Volume}%";
     public string MuteDisplay => Muted ? "Yes" : "No";
+}
+
+public static class RebindFallbacks
+{
+    public const string ShowInactive = "ShowInactive";
+    public const string DoNothing    = "DoNothing";
+
+    public static bool IsValid(string? v) => v is ShowInactive or DoNothing;
 }
