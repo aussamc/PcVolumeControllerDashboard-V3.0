@@ -1,7 +1,7 @@
 ﻿<Window x:Class="PcVolumeControllerDashboard.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="PC Volume Controller Dashboard v2.21"
+        Title="PC Volume Controller Dashboard v2.22"
         Height="800"
         Width="1120"
         MinHeight="680"
@@ -1382,7 +1382,7 @@
                                                 ValueChanged="AccelThresholdSlider_ValueChanged"
                                                 VerticalAlignment="Center" />
                                         <TextBlock Grid.Column="2" x:Name="AccelThresholdLabel"
-                                                   Text="120 ms" VerticalAlignment="Center" Margin="6,0,0,0" />
+                                                   Text="150 ms" VerticalAlignment="Center" Margin="6,0,0,0" />
                                     </Grid>
                                     <TextBlock Text="Turn interval below which acceleration starts. Higher = kicks in earlier."
                                                FontSize="11" Opacity="0.6" Margin="170,0,0,8" TextWrapping="Wrap" />
@@ -1402,7 +1402,7 @@
                                                 ValueChanged="AccelMaxMultiplierSlider_ValueChanged"
                                                 VerticalAlignment="Center" />
                                         <TextBlock Grid.Column="2" x:Name="AccelMaxMultiplierLabel"
-                                                   Text="4.0×" VerticalAlignment="Center" Margin="6,0,0,0" />
+                                                   Text="8.0×" VerticalAlignment="Center" Margin="6,0,0,0" />
                                     </Grid>
                                     <TextBlock Text="Maximum step size boost when turning at full speed."
                                                FontSize="11" Opacity="0.6" Margin="170,0,0,8" TextWrapping="Wrap" />
@@ -1422,7 +1422,7 @@
                                                 ValueChanged="AccelCurveSlider_ValueChanged"
                                                 VerticalAlignment="Center" />
                                         <TextBlock Grid.Column="2" x:Name="AccelCurveLabel"
-                                                   Text="Soft" VerticalAlignment="Center" Margin="6,0,0,0" />
+                                                   Text="Early" VerticalAlignment="Center" Margin="6,0,0,0" />
                                     </Grid>
                                     <TextBlock Text="Early/Soft = acceleration builds quickly; Linear = even ramp; Late/Sharp = boost only at max speed."
                                                FontSize="11" Opacity="0.6" Margin="170,0,0,8" TextWrapping="Wrap" />
