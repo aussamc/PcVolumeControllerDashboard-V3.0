@@ -1177,7 +1177,7 @@
                                            Margin="0,0,0,4" />
 
                                 <TextBlock x:Name="SettingsExpectedProtocolTextBlock"
-                                           Text="Required ESP32 protocol: v2.0"
+                                           Text="Required ESP32 protocol: v2.5"
                                            Margin="0,0,0,4" />
 
                                 <TextBlock x:Name="SettingsFirmwareVersionTextBlock"
@@ -1386,7 +1386,7 @@
                             <StackPanel>
                                 <TextBlock Text="ESP32 Firmware Update" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,8" />
                                 <TextBlock Text="Use bundled firmware binaries when available, or select a manually built ESP32 .bin file. The dashboard looks for esptool in the tools folder." TextWrapping="Wrap" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,10" />
-                                <TextBlock Text="Bundled firmware source: Computer_Volume_Controller_v2.0" Margin="0,0,0,4" />
+                                <TextBlock Text="Bundled firmware source: Computer_Volume_Controller_v2.5" Margin="0,0,0,4" />
                                 <TextBlock x:Name="FirmwareStatusTextBlock" Text="Compiled binaries: see firmware_bin/build_instructions.txt if binaries are not present" Margin="0,0,0,6" TextWrapping="Wrap" />
                                 <TextBlock x:Name="SelectedFirmwareBinTextBlock" Text="Selected .bin file: none" Margin="0,0,0,10" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryForeground}" />
                                 <WrapPanel Margin="0,0,0,8">

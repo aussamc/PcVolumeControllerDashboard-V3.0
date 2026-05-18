@@ -3,8 +3,8 @@ ESP32 firmware binary build instructions
 
 The ESP32 Arduino source project is located at:
 
-  Computer_Volume_Controller_v2.0/
-    Computer_Volume_Controller_v2.0.ino
+  Computer_Volume_Controller_v2.5/
+    Computer_Volume_Controller_v2.5.ino
 
 Target board: ESP32-S3-DevKitC-1-N16R8
 
@@ -21,13 +21,13 @@ To build with Arduino CLI:
      arduino-cli lib install "Adafruit GFX Library"
      arduino-cli lib install "Adafruit SSD1306"
 4. Compile:
-     arduino-cli compile --fqbn esp32:esp32:esp32s3 --output-dir firmware_bin Computer_Volume_Controller_v2.0
+     arduino-cli compile --fqbn esp32:esp32:esp32s3 --output-dir firmware_bin Computer_Volume_Controller_v2.5
 
 Expected output files:
   - bootloader.bin
   - partitions.bin
   - boot_app0.bin
-  - Computer_Volume_Controller_v2.0.ino.bin
+  - Computer_Volume_Controller_v2.5.ino.bin
 
-Alternatively, open Computer_Volume_Controller_v2.0.ino in Arduino IDE,
+Alternatively, open Computer_Volume_Controller_v2.5.ino in Arduino IDE,
 select "ESP32S3 Dev Module" as the board, and use Sketch > Export Compiled Binary.

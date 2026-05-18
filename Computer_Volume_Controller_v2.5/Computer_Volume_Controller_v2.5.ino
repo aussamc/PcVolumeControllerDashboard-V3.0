@@ -1,5 +1,5 @@
 // =============================================================================
-// PC Volume Controller — firmware v2.0
+// PC Volume Controller — firmware v2.5
 // Target: ESP32-S3-DevKitC-1-N16R8 (custom carrier + display PCB, v1.4)
 //
 // Changes from v1.x (prototype):
@@ -18,7 +18,7 @@
 // Firmware identity
 // =============================================================================
 #define FIRMWARE_NAME    "PC_VOLUME_CONTROLLER"
-#define PROTOCOL_VERSION "2.0"
+#define PROTOCOL_VERSION "2.5"
 #define CHANNEL_COUNT    6
 
 // =============================================================================
