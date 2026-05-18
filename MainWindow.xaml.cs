@@ -29,7 +29,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.10";
+    private const string DashboardVersion = "2.11";
     private const string RequiredProtocolVersion = "2.10";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -42,7 +42,6 @@ public partial class MainWindow : Window
     private static readonly int[] EncoderChannelRemap = { 0, 1, 2, 3, 4, 5 };
 
     private const int BaudRate = 115200;
-    private const int EspChannel = 0;
     private const int BaseVolumeStepPercent = 2;
     private const int MaxEncoderSensitivityPercent = 500;
     private const int MaxVolumeStepPercent = 25;
@@ -2752,7 +2751,7 @@ public partial class MainWindow : Window
                 return;
             }
 
-            string message = $"STATE,{EspChannel},{label},{volume},{muted}";
+            string message = $"STATE,{channel.ChannelIndex},{label},{volume},{muted}";
 
             WriteSerialLine(message, logOutgoing: true);
 
