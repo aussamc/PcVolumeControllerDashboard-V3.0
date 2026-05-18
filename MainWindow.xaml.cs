@@ -29,7 +29,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.13";
+    private const string DashboardVersion = "2.14";
     private const string RequiredProtocolVersion = "2.12";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -615,6 +615,16 @@ public partial class MainWindow : Window
         SelectedChannel.ButtonAction = GetSelectedChannelButtonActionFromUi();
     }
 
+    private void ChannelLongPressActionComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ChannelLongPressActionComboBox == null || _channels.Count == 0)
+        {
+            return;
+        }
+
+        SelectedChannel.LongPressButtonAction = GetSelectedChannelLongPressActionFromUi();
+    }
+
     private void Slider_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (sender is not Slider slider)
@@ -803,6 +813,7 @@ public partial class MainWindow : Window
                 AssignedLabel = i == 0 ? "Master" : "Unassigned",
                 FriendlyName = i == 0 ? "Master" : string.Empty,
                 ButtonAction = ChannelButtonActions.ToggleAssignedMute,
+                LongPressButtonAction = ChannelButtonActions.ToggleAssignedMute,
                 Status = i == 0 ? "Active" : "Unassigned"
             });
         }
@@ -1958,18 +1969,7 @@ public partial class MainWindow : Window
                     Log("Safe mode: long-button event observed but audio-control action was skipped.");
                     break;
                 }
-                if (parts.Length > 1 && int.TryParse(parts[1], out int longPressFirmwareChannel) &&
-                    longPressFirmwareChannel >= 0 && longPressFirmwareChannel < ExpectedChannelCount)
-                {
-                    ToggleChannelMute(RemapEncoderChannel(longPressFirmwareChannel));
-                }
-                else
-                {
-                    ToggleSelectedChannelMute();
-                }
-                RefreshAllChannelStates();
-                SendAllChannelStatesToDevice();
-                SendStateToDevice(force: true);
+                ApplyLongButtonAction(parts);
                 break;
 
             case "SLEEPING":
@@ -2664,12 +2664,45 @@ public partial class MainWindow : Window
                 break;
 
             case ChannelButtonActions.NoAction:
-                Log($"Channel {channelIndex + 1} button action is set to No action.");
+                Log($"Channel {channelIndex + 1} short-press action is set to No action.");
                 break;
 
             case ChannelButtonActions.SelectNextChannel:
             default:
                 SelectNextChannel();
+                break;
+        }
+    }
+
+    private void ApplyLongButtonAction(string[] parts)
+    {
+        int channelIndex = _selectedChannelIndex;
+
+        if (parts.Length > 1 && int.TryParse(parts[1], out int parsedFirmwareChannel) && parsedFirmwareChannel >= 0 && parsedFirmwareChannel < ExpectedChannelCount)
+        {
+            channelIndex = RemapEncoderChannel(parsedFirmwareChannel);
+        }
+
+        string action = _channels[channelIndex].LongPressButtonAction;
+
+        switch (action)
+        {
+            case ChannelButtonActions.ToggleAssignedMute:
+                ToggleChannelMute(channelIndex);
+                RefreshAllChannelStates();
+                SendAllChannelStatesToDevice();
+                SendStateToDevice(force: true);
+                break;
+
+            case ChannelButtonActions.NoAction:
+                Log($"Channel {channelIndex + 1} long-press action is set to No action.");
+                break;
+
+            default:
+                ToggleChannelMute(channelIndex);
+                RefreshAllChannelStates();
+                SendAllChannelStatesToDevice();
+                SendStateToDevice(force: true);
                 break;
         }
     }
@@ -2687,6 +2720,11 @@ public partial class MainWindow : Window
         if (ChannelButtonActionComboBox != null)
         {
             ChannelButtonActionComboBox.SelectedIndex = GetButtonActionIndex(channel.ButtonAction);
+        }
+
+        if (ChannelLongPressActionComboBox != null)
+        {
+            ChannelLongPressActionComboBox.SelectedIndex = GetLongPressActionIndex(channel.LongPressButtonAction);
         }
     }
 
@@ -2869,12 +2907,32 @@ public partial class MainWindow : Window
         };
     }
 
+    private string GetSelectedChannelLongPressActionFromUi()
+    {
+        return ChannelLongPressActionComboBox?.SelectedIndex switch
+        {
+            0 => ChannelButtonActions.ToggleAssignedMute,
+            1 => ChannelButtonActions.NoAction,
+            _ => ChannelButtonActions.ToggleAssignedMute
+        };
+    }
+
     private static int GetButtonActionIndex(string action)
     {
         return action switch
         {
             ChannelButtonActions.ToggleAssignedMute => 1,
             ChannelButtonActions.NoAction => 2,
+            _ => 0
+        };
+    }
+
+    private static int GetLongPressActionIndex(string action)
+    {
+        return action switch
+        {
+            ChannelButtonActions.ToggleAssignedMute => 0,
+            ChannelButtonActions.NoAction => 1,
             _ => 0
         };
     }
@@ -3768,6 +3826,7 @@ public partial class MainWindow : Window
             _channels[i].TargetKey = _settings.Channels[i].TargetKey ?? string.Empty;
             _channels[i].FriendlyName = _settings.Channels[i].FriendlyName ?? string.Empty;
             _channels[i].ButtonAction = ChannelButtonActions.IsValid(_settings.Channels[i].ButtonAction) ? _settings.Channels[i].ButtonAction : ChannelButtonActions.NoAction;
+            _channels[i].LongPressButtonAction = ChannelButtonActions.IsValidLongPressAction(_settings.Channels[i].LongPressButtonAction) ? _settings.Channels[i].LongPressButtonAction : ChannelButtonActions.ToggleAssignedMute;
         }
 
         RefreshChannelAssignmentLabels();
@@ -3859,7 +3918,8 @@ public partial class MainWindow : Window
         {
             TargetKey = channel.TargetKey,
             FriendlyName = channel.FriendlyName,
-            ButtonAction = ChannelButtonActions.IsValid(channel.ButtonAction) ? channel.ButtonAction : ChannelButtonActions.NoAction
+            ButtonAction = ChannelButtonActions.IsValid(channel.ButtonAction) ? channel.ButtonAction : ChannelButtonActions.NoAction,
+            LongPressButtonAction = ChannelButtonActions.IsValidLongPressAction(channel.LongPressButtonAction) ? channel.LongPressButtonAction : ChannelButtonActions.ToggleAssignedMute
         }).ToArray();
 
         _settings.ChannelTargetKeys = _settings.Channels.Select(channel => channel.TargetKey).ToArray();
@@ -4629,6 +4689,11 @@ public partial class MainWindow : Window
             {
                 channel.ButtonAction = ChannelButtonActions.NoAction;
             }
+
+            if (!ChannelButtonActions.IsValidLongPressAction(channel.LongPressButtonAction))
+            {
+                channel.LongPressButtonAction = ChannelButtonActions.ToggleAssignedMute;
+            }
         }
 
         settings.OledBrightnessPercent = Math.Clamp(settings.OledBrightnessPercent <= 0 ? 100 : settings.OledBrightnessPercent, 0, 100);
@@ -5244,6 +5309,12 @@ public static class ChannelButtonActions
     {
         return action is SelectNextChannel or ToggleAssignedMute or NoAction;
     }
+
+    // Long press only supports ToggleAssignedMute and NoAction — SelectNextChannel is not offered.
+    public static bool IsValidLongPressAction(string? action)
+    {
+        return action is ToggleAssignedMute or NoAction;
+    }
 }
 
 public static class OledIdleActions
@@ -5321,12 +5392,12 @@ public sealed class DashboardSettings
     {
         return new[]
         {
-            new ChannelSettings { TargetKey = "MASTER", FriendlyName = "Master", ButtonAction = ChannelButtonActions.NoAction },
-            new ChannelSettings { TargetKey = "PROC:chrome", FriendlyName = "Browser", ButtonAction = ChannelButtonActions.NoAction },
-            new ChannelSettings { TargetKey = "PROC:Spotify", FriendlyName = "Music", ButtonAction = ChannelButtonActions.NoAction },
-            new ChannelSettings { TargetKey = "PROC:Discord", FriendlyName = "Discord", ButtonAction = ChannelButtonActions.NoAction },
-            new ChannelSettings { TargetKey = "", FriendlyName = "", ButtonAction = ChannelButtonActions.NoAction },
-            new ChannelSettings { TargetKey = "", FriendlyName = "", ButtonAction = ChannelButtonActions.NoAction }
+            new ChannelSettings { TargetKey = "MASTER", FriendlyName = "Master", ButtonAction = ChannelButtonActions.NoAction, LongPressButtonAction = ChannelButtonActions.ToggleAssignedMute },
+            new ChannelSettings { TargetKey = "PROC:chrome", FriendlyName = "Browser", ButtonAction = ChannelButtonActions.NoAction, LongPressButtonAction = ChannelButtonActions.ToggleAssignedMute },
+            new ChannelSettings { TargetKey = "PROC:Spotify", FriendlyName = "Music", ButtonAction = ChannelButtonActions.NoAction, LongPressButtonAction = ChannelButtonActions.ToggleAssignedMute },
+            new ChannelSettings { TargetKey = "PROC:Discord", FriendlyName = "Discord", ButtonAction = ChannelButtonActions.NoAction, LongPressButtonAction = ChannelButtonActions.ToggleAssignedMute },
+            new ChannelSettings { TargetKey = "", FriendlyName = "", ButtonAction = ChannelButtonActions.NoAction, LongPressButtonAction = ChannelButtonActions.ToggleAssignedMute },
+            new ChannelSettings { TargetKey = "", FriendlyName = "", ButtonAction = ChannelButtonActions.NoAction, LongPressButtonAction = ChannelButtonActions.ToggleAssignedMute }
         };
     }
 }
@@ -5336,6 +5407,7 @@ public sealed class ChannelSettings
     public string TargetKey { get; set; } = string.Empty;
     public string FriendlyName { get; set; } = string.Empty;
     public string ButtonAction { get; set; } = ChannelButtonActions.NoAction;
+    public string LongPressButtonAction { get; set; } = ChannelButtonActions.ToggleAssignedMute;
 }
 
 public sealed class AudioTargetItem
@@ -5384,6 +5456,7 @@ public sealed class ChannelMappingItem
     public string AssignedLabel { get; set; } = "Unassigned";
     public string FriendlyName { get; set; } = string.Empty;
     public string ButtonAction { get; set; } = ChannelButtonActions.NoAction;
+    public string LongPressButtonAction { get; set; } = ChannelButtonActions.ToggleAssignedMute;
     public int Volume { get; set; }
     public bool Muted { get; set; } = true;
     public string Status { get; set; } = "Unassigned";
