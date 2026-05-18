@@ -29,7 +29,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.12";
+    private const string DashboardVersion = "2.13";
     private const string RequiredProtocolVersion = "2.12";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -605,19 +605,6 @@ public partial class MainWindow : Window
         _settings.EncoderSensitivityPercent = sensitivity;
     }
 
-    private void ChannelSensitivitySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (ChannelSensitivityValueTextBlock == null || _channels.Count == 0)
-        {
-            return;
-        }
-
-        ChannelMappingItem channel = SelectedChannel;
-        int sensitivity = GetChannelSensitivityPercentFromUi();
-        channel.EncoderSensitivityPercent = sensitivity;
-        ChannelSensitivityValueTextBlock.Text = $"Channel sensitivity: {sensitivity}%";
-    }
-
     private void ChannelButtonActionComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (ChannelButtonActionComboBox == null || _channels.Count == 0)
@@ -815,7 +802,6 @@ public partial class MainWindow : Window
                 TargetKey = i == 0 ? "MASTER" : string.Empty,
                 AssignedLabel = i == 0 ? "Master" : "Unassigned",
                 FriendlyName = i == 0 ? "Master" : string.Empty,
-                EncoderSensitivityPercent = 50,
                 ButtonAction = ChannelButtonActions.ToggleAssignedMute,
                 Status = i == 0 ? "Active" : "Unassigned"
             });
@@ -2698,17 +2684,6 @@ public partial class MainWindow : Window
         SelectedVolumeTextBlock.Text = $"{channel.Volume}%";
         SelectedMuteTextBlock.Text = channel.Muted ? "Mute: Yes" : "Mute: No";
 
-        if (ChannelSensitivitySlider != null)
-        {
-            ChannelSensitivitySlider.Value = Math.Clamp(channel.EncoderSensitivityPercent <= 0 ? _settings.EncoderSensitivityPercent : channel.EncoderSensitivityPercent, 0, MaxEncoderSensitivityPercent);
-        }
-
-        if (ChannelSensitivityValueTextBlock != null)
-        {
-            int sensitivity = Math.Clamp(channel.EncoderSensitivityPercent <= 0 ? _settings.EncoderSensitivityPercent : channel.EncoderSensitivityPercent, 0, MaxEncoderSensitivityPercent);
-            ChannelSensitivityValueTextBlock.Text = $"Channel sensitivity: {sensitivity}%";
-        }
-
         if (ChannelButtonActionComboBox != null)
         {
             ChannelButtonActionComboBox.SelectedIndex = GetButtonActionIndex(channel.ButtonAction);
@@ -2864,30 +2839,9 @@ public partial class MainWindow : Window
         return Math.Clamp((int)Math.Round(EncoderSensitivitySlider.Value), 0, MaxEncoderSensitivityPercent);
     }
 
-    private int GetChannelSensitivityPercentFromUi()
-    {
-        if (ChannelSensitivitySlider == null)
-        {
-            return SelectedChannel.EncoderSensitivityPercent <= 0 ? _settings.EncoderSensitivityPercent : SelectedChannel.EncoderSensitivityPercent;
-        }
-
-        return Math.Clamp((int)Math.Round(ChannelSensitivitySlider.Value), 0, MaxEncoderSensitivityPercent);
-    }
-
     private int GetVolumeStepPercentForChannel(int channelIndex)
     {
-        int sensitivity = _settings.EncoderSensitivityPercent;
-
-        if (channelIndex >= 0 && channelIndex < _channels.Count)
-        {
-            int channelSensitivity = _channels[channelIndex].EncoderSensitivityPercent;
-            if (channelSensitivity > 0)
-            {
-                sensitivity = channelSensitivity;
-            }
-        }
-
-        return GetVolumeStepPercentFromSensitivity(sensitivity);
+        return GetVolumeStepPercent();
     }
 
     private int GetVolumeStepPercentFromSensitivity(int sensitivityPercent)
@@ -3813,7 +3767,6 @@ public partial class MainWindow : Window
         {
             _channels[i].TargetKey = _settings.Channels[i].TargetKey ?? string.Empty;
             _channels[i].FriendlyName = _settings.Channels[i].FriendlyName ?? string.Empty;
-            _channels[i].EncoderSensitivityPercent = Math.Clamp(_settings.Channels[i].EncoderSensitivityPercent <= 0 ? _settings.EncoderSensitivityPercent : _settings.Channels[i].EncoderSensitivityPercent, 0, MaxEncoderSensitivityPercent);
             _channels[i].ButtonAction = ChannelButtonActions.IsValid(_settings.Channels[i].ButtonAction) ? _settings.Channels[i].ButtonAction : ChannelButtonActions.NoAction;
         }
 
@@ -3906,7 +3859,6 @@ public partial class MainWindow : Window
         {
             TargetKey = channel.TargetKey,
             FriendlyName = channel.FriendlyName,
-            EncoderSensitivityPercent = Math.Clamp(channel.EncoderSensitivityPercent <= 0 ? _settings.EncoderSensitivityPercent : channel.EncoderSensitivityPercent, 0, MaxEncoderSensitivityPercent),
             ButtonAction = ChannelButtonActions.IsValid(channel.ButtonAction) ? channel.ButtonAction : ChannelButtonActions.NoAction
         }).ToArray();
 
@@ -4673,7 +4625,6 @@ public partial class MainWindow : Window
         settings.EncoderSensitivityPercent = Math.Clamp(settings.EncoderSensitivityPercent, 0, MaxEncoderSensitivityPercent);
         foreach (ChannelSettings channel in settings.Channels)
         {
-            channel.EncoderSensitivityPercent = Math.Clamp(channel.EncoderSensitivityPercent <= 0 ? settings.EncoderSensitivityPercent : channel.EncoderSensitivityPercent, 0, MaxEncoderSensitivityPercent);
             if (!ChannelButtonActions.IsValid(channel.ButtonAction))
             {
                 channel.ButtonAction = ChannelButtonActions.NoAction;
@@ -5370,12 +5321,12 @@ public sealed class DashboardSettings
     {
         return new[]
         {
-            new ChannelSettings { TargetKey = "MASTER", FriendlyName = "Master", EncoderSensitivityPercent = 50, ButtonAction = ChannelButtonActions.NoAction },
-            new ChannelSettings { TargetKey = "PROC:chrome", FriendlyName = "Browser", EncoderSensitivityPercent = 50, ButtonAction = ChannelButtonActions.NoAction },
-            new ChannelSettings { TargetKey = "PROC:Spotify", FriendlyName = "Music", EncoderSensitivityPercent = 50, ButtonAction = ChannelButtonActions.NoAction },
-            new ChannelSettings { TargetKey = "PROC:Discord", FriendlyName = "Discord", EncoderSensitivityPercent = 50, ButtonAction = ChannelButtonActions.NoAction },
-            new ChannelSettings { TargetKey = "", FriendlyName = "", EncoderSensitivityPercent = 50, ButtonAction = ChannelButtonActions.NoAction },
-            new ChannelSettings { TargetKey = "", FriendlyName = "", EncoderSensitivityPercent = 50, ButtonAction = ChannelButtonActions.NoAction }
+            new ChannelSettings { TargetKey = "MASTER", FriendlyName = "Master", ButtonAction = ChannelButtonActions.NoAction },
+            new ChannelSettings { TargetKey = "PROC:chrome", FriendlyName = "Browser", ButtonAction = ChannelButtonActions.NoAction },
+            new ChannelSettings { TargetKey = "PROC:Spotify", FriendlyName = "Music", ButtonAction = ChannelButtonActions.NoAction },
+            new ChannelSettings { TargetKey = "PROC:Discord", FriendlyName = "Discord", ButtonAction = ChannelButtonActions.NoAction },
+            new ChannelSettings { TargetKey = "", FriendlyName = "", ButtonAction = ChannelButtonActions.NoAction },
+            new ChannelSettings { TargetKey = "", FriendlyName = "", ButtonAction = ChannelButtonActions.NoAction }
         };
     }
 }
@@ -5384,7 +5335,6 @@ public sealed class ChannelSettings
 {
     public string TargetKey { get; set; } = string.Empty;
     public string FriendlyName { get; set; } = string.Empty;
-    public int EncoderSensitivityPercent { get; set; } = 50;
     public string ButtonAction { get; set; } = ChannelButtonActions.NoAction;
 }
 
@@ -5433,7 +5383,6 @@ public sealed class ChannelMappingItem
     public string TargetKey { get; set; } = string.Empty;
     public string AssignedLabel { get; set; } = "Unassigned";
     public string FriendlyName { get; set; } = string.Empty;
-    public int EncoderSensitivityPercent { get; set; } = 50;
     public string ButtonAction { get; set; } = ChannelButtonActions.NoAction;
     public int Volume { get; set; }
     public bool Muted { get; set; } = true;

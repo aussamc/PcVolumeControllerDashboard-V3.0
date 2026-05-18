@@ -1,7 +1,7 @@
 ﻿<Window x:Class="PcVolumeControllerDashboard.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="PC Volume Controller Dashboard v2.12"
+        Title="PC Volume Controller Dashboard v2.13"
         Height="800"
         Width="1120"
         MinHeight="680"
@@ -437,7 +437,7 @@
                            FontSize="26"
                            FontWeight="SemiBold" />
 
-                <TextBlock Text="v2.12 - Change all encoder/OLED/channel display numbering to 1-based (1–6)"
+                <TextBlock Text="v2.13 - Remove per-channel encoder sensitivity; all channels use the global Setup tab setting"
                            Foreground="{DynamicResource SecondaryForeground}"
                            Margin="0,4,0,0" />
             </StackPanel>
@@ -690,37 +690,6 @@
                                             <TextBlock Text="These settings apply to the currently selected physical encoder/channel."
                                                        Foreground="{DynamicResource SecondaryForeground}"
                                                        TextWrapping="Wrap"
-                                                       Margin="0,0,0,8" />
-
-                                            <Grid Width="360" HorizontalAlignment="Left" Margin="0,0,0,8">
-                                                <Grid.RowDefinitions>
-                                                    <RowDefinition Height="Auto" />
-                                                    <RowDefinition Height="Auto" />
-                                                </Grid.RowDefinitions>
-
-                                                <Slider Grid.Row="0"
-                                                        x:Name="ChannelSensitivitySlider"
-                                                        Minimum="0"
-                                                        Maximum="500"
-                                                        TickFrequency="10"
-                                                        IsSnapToTickEnabled="False"
-                                                        ValueChanged="ChannelSensitivitySlider_ValueChanged"
-                                                        PreviewMouseLeftButtonDown="Slider_PreviewMouseLeftButtonDown"
-                                                        PreviewMouseMove="Slider_PreviewMouseMove"
-                                                        PreviewMouseLeftButtonUp="Slider_PreviewMouseLeftButtonUp"
-                                                        LostMouseCapture="Slider_LostMouseCapture"
-                                                        Width="360"
-                                                        HorizontalAlignment="Left" />
-
-                                                <Grid Grid.Row="1" Margin="0,2,0,0">
-                                                    <TextBlock Text="0%" HorizontalAlignment="Left" />
-                                                    <TextBlock Text="500%" HorizontalAlignment="Right" />
-                                                </Grid>
-                                            </Grid>
-
-                                            <TextBlock x:Name="ChannelSensitivityValueTextBlock"
-                                                       Text="Channel sensitivity: 50%"
-                                                       FontWeight="SemiBold"
                                                        Margin="0,0,0,8" />
 
                                             <Grid Width="360" HorizontalAlignment="Left">
@@ -1172,7 +1141,7 @@
                                            Margin="0,0,0,8" />
 
                                 <TextBlock x:Name="SettingsDashboardVersionTextBlock"
-                                           Text="Dashboard version: v2.12"
+                                           Text="Dashboard version: v2.13"
                                            FontWeight="SemiBold"
                                            Margin="0,0,0,4" />
 
