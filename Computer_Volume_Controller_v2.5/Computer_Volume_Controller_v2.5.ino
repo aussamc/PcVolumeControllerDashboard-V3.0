@@ -1,5 +1,5 @@
 // =============================================================================
-// PC Volume Controller — firmware v2.0
+// PC Volume Controller — firmware v2.5
 // Target: ESP32-S3-DevKitC-1-N16R8 (custom carrier + display PCB, v1.4)
 //
 // Changes from v1.x (prototype):
@@ -18,7 +18,7 @@
 // Firmware identity
 // =============================================================================
 #define FIRMWARE_NAME    "PC_VOLUME_CONTROLLER"
-#define PROTOCOL_VERSION "2.0"
+#define PROTOCOL_VERSION "2.5"
 #define CHANNEL_COUNT    6
 
 // =============================================================================
@@ -63,12 +63,12 @@ const uint8_t ENC_SW_PIN[CHANNEL_COUNT] = {  3,  6, 11, 14, 17, 38 };
 //
 //   Current mapping (after physical wiring corrections):
 //     logical ch:   0  1  2  3  4  5
-//     physical mux: 3  2  1  0  5  4
-//   (swaps: OLED1↔4, OLED2↔3, OLED5↔6)
+//     physical mux: 3  2  1  6  5  4
+//   (swaps: OLED1<->4, OLED2<->3, OLED5<->6; OLED4->MUX6)
 // =============================================================================
 #define MUX_I2C_ADDR 0x70
 
-const uint8_t MUX_CHANNEL_MAP[CHANNEL_COUNT] = { 3, 2, 1, 0, 5, 4 };
+const uint8_t MUX_CHANNEL_MAP[CHANNEL_COUNT] = { 3, 2, 1, 6, 5, 4 };
 
 // =============================================================================
 // OLED displays (SSD1315, one per channel, all at address 0x3C)
