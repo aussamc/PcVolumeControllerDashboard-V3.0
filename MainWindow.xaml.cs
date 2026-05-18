@@ -29,8 +29,8 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.14";
-    private const string RequiredProtocolVersion = "2.12";
+    private const string DashboardVersion = "2.15";
+    private const string RequiredProtocolVersion = "2.15";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
     private const int ExpectedChannelCount = 6;
@@ -625,6 +625,16 @@ public partial class MainWindow : Window
         SelectedChannel.LongPressButtonAction = GetSelectedChannelLongPressActionFromUi();
     }
 
+    private void ChannelDoublePressActionComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ChannelDoublePressActionComboBox == null || _channels.Count == 0)
+        {
+            return;
+        }
+
+        SelectedChannel.DoublePressButtonAction = GetSelectedChannelDoublePressActionFromUi();
+    }
+
     private void Slider_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (sender is not Slider slider)
@@ -813,7 +823,8 @@ public partial class MainWindow : Window
                 AssignedLabel = i == 0 ? "Master" : "Unassigned",
                 FriendlyName = i == 0 ? "Master" : string.Empty,
                 ButtonAction = ChannelButtonActions.ToggleAssignedMute,
-                LongPressButtonAction = ChannelButtonActions.ToggleAssignedMute,
+                LongPressButtonAction = ChannelButtonActions.NoAction,
+                DoublePressButtonAction = ChannelButtonActions.NoAction,
                 Status = i == 0 ? "Active" : "Unassigned"
             });
         }
@@ -1972,6 +1983,22 @@ public partial class MainWindow : Window
                 ApplyLongButtonAction(parts);
                 break;
 
+            case "BTN_DOUBLE":
+                MarkEsp32Seen("button double");
+                RegisterHardwareButtonEvent(parts);
+                if (_controllerSleepRequested)
+                {
+                    Log("Ignored double-press event while controller sleep is active.");
+                    break;
+                }
+                if (_safeMode)
+                {
+                    Log("Safe mode: double-press event observed but audio-control action was skipped.");
+                    break;
+                }
+                ApplyDoubleButtonAction(parts);
+                break;
+
             case "SLEEPING":
                 MarkEsp32Seen("sleep ack");
                 if (HardwareTestStatusTextBlock != null)
@@ -2707,6 +2734,36 @@ public partial class MainWindow : Window
         }
     }
 
+    private void ApplyDoubleButtonAction(string[] parts)
+    {
+        int channelIndex = _selectedChannelIndex;
+
+        if (parts.Length > 1 && int.TryParse(parts[1], out int parsedFirmwareChannel) && parsedFirmwareChannel >= 0 && parsedFirmwareChannel < ExpectedChannelCount)
+        {
+            channelIndex = RemapEncoderChannel(parsedFirmwareChannel);
+        }
+
+        string action = _channels[channelIndex].DoublePressButtonAction;
+
+        switch (action)
+        {
+            case ChannelButtonActions.ToggleAssignedMute:
+                ToggleChannelMute(channelIndex);
+                RefreshAllChannelStates();
+                SendAllChannelStatesToDevice();
+                SendStateToDevice(force: true);
+                break;
+
+            case ChannelButtonActions.NoAction:
+                Log($"Channel {channelIndex + 1} double-press action is set to No action.");
+                break;
+
+            default:
+                Log($"Channel {channelIndex + 1} double-press action is set to No action.");
+                break;
+        }
+    }
+
     private void UpdateSelectedChannelUi()
     {
         ChannelMappingItem channel = SelectedChannel;
@@ -2725,6 +2782,11 @@ public partial class MainWindow : Window
         if (ChannelLongPressActionComboBox != null)
         {
             ChannelLongPressActionComboBox.SelectedIndex = GetLongPressActionIndex(channel.LongPressButtonAction);
+        }
+
+        if (ChannelDoublePressActionComboBox != null)
+        {
+            ChannelDoublePressActionComboBox.SelectedIndex = GetDoublePressActionIndex(channel.DoublePressButtonAction);
         }
     }
 
@@ -2934,6 +2996,26 @@ public partial class MainWindow : Window
             ChannelButtonActions.ToggleAssignedMute => 0,
             ChannelButtonActions.NoAction => 1,
             _ => 0
+        };
+    }
+
+    private string GetSelectedChannelDoublePressActionFromUi()
+    {
+        return ChannelDoublePressActionComboBox?.SelectedIndex switch
+        {
+            0 => ChannelButtonActions.ToggleAssignedMute,
+            1 => ChannelButtonActions.NoAction,
+            _ => ChannelButtonActions.NoAction
+        };
+    }
+
+    private static int GetDoublePressActionIndex(string action)
+    {
+        return action switch
+        {
+            ChannelButtonActions.ToggleAssignedMute => 0,
+            ChannelButtonActions.NoAction => 1,
+            _ => 1
         };
     }
 
@@ -3826,7 +3908,8 @@ public partial class MainWindow : Window
             _channels[i].TargetKey = _settings.Channels[i].TargetKey ?? string.Empty;
             _channels[i].FriendlyName = _settings.Channels[i].FriendlyName ?? string.Empty;
             _channels[i].ButtonAction = ChannelButtonActions.IsValid(_settings.Channels[i].ButtonAction) ? _settings.Channels[i].ButtonAction : ChannelButtonActions.NoAction;
-            _channels[i].LongPressButtonAction = ChannelButtonActions.IsValidLongPressAction(_settings.Channels[i].LongPressButtonAction) ? _settings.Channels[i].LongPressButtonAction : ChannelButtonActions.ToggleAssignedMute;
+            _channels[i].LongPressButtonAction = ChannelButtonActions.IsValidLongPressAction(_settings.Channels[i].LongPressButtonAction) ? _settings.Channels[i].LongPressButtonAction : ChannelButtonActions.NoAction;
+            _channels[i].DoublePressButtonAction = ChannelButtonActions.IsValidDoublePressAction(_settings.Channels[i].DoublePressButtonAction) ? _settings.Channels[i].DoublePressButtonAction : ChannelButtonActions.NoAction;
         }
 
         RefreshChannelAssignmentLabels();
@@ -3918,8 +4001,9 @@ public partial class MainWindow : Window
         {
             TargetKey = channel.TargetKey,
             FriendlyName = channel.FriendlyName,
-            ButtonAction = ChannelButtonActions.IsValid(channel.ButtonAction) ? channel.ButtonAction : ChannelButtonActions.NoAction,
-            LongPressButtonAction = ChannelButtonActions.IsValidLongPressAction(channel.LongPressButtonAction) ? channel.LongPressButtonAction : ChannelButtonActions.ToggleAssignedMute
+            ButtonAction = ChannelButtonActions.IsValid(channel.ButtonAction) ? channel.ButtonAction : ChannelButtonActions.ToggleAssignedMute,
+            LongPressButtonAction = ChannelButtonActions.IsValidLongPressAction(channel.LongPressButtonAction) ? channel.LongPressButtonAction : ChannelButtonActions.NoAction,
+            DoublePressButtonAction = ChannelButtonActions.IsValidDoublePressAction(channel.DoublePressButtonAction) ? channel.DoublePressButtonAction : ChannelButtonActions.NoAction
         }).ToArray();
 
         _settings.ChannelTargetKeys = _settings.Channels.Select(channel => channel.TargetKey).ToArray();
@@ -4692,7 +4776,12 @@ public partial class MainWindow : Window
 
             if (!ChannelButtonActions.IsValidLongPressAction(channel.LongPressButtonAction))
             {
-                channel.LongPressButtonAction = ChannelButtonActions.ToggleAssignedMute;
+                channel.LongPressButtonAction = ChannelButtonActions.NoAction;
+            }
+
+            if (!ChannelButtonActions.IsValidDoublePressAction(channel.DoublePressButtonAction))
+            {
+                channel.DoublePressButtonAction = ChannelButtonActions.NoAction;
             }
         }
 
@@ -5310,8 +5399,13 @@ public static class ChannelButtonActions
         return action is SelectNextChannel or ToggleAssignedMute or NoAction;
     }
 
-    // Long press only supports ToggleAssignedMute and NoAction — SelectNextChannel is not offered.
+    // Long press and double press only support ToggleAssignedMute and NoAction.
     public static bool IsValidLongPressAction(string? action)
+    {
+        return action is ToggleAssignedMute or NoAction;
+    }
+
+    public static bool IsValidDoublePressAction(string? action)
     {
         return action is ToggleAssignedMute or NoAction;
     }
@@ -5392,12 +5486,12 @@ public sealed class DashboardSettings
     {
         return new[]
         {
-            new ChannelSettings { TargetKey = "MASTER", FriendlyName = "Master", ButtonAction = ChannelButtonActions.NoAction, LongPressButtonAction = ChannelButtonActions.ToggleAssignedMute },
-            new ChannelSettings { TargetKey = "PROC:chrome", FriendlyName = "Browser", ButtonAction = ChannelButtonActions.NoAction, LongPressButtonAction = ChannelButtonActions.ToggleAssignedMute },
-            new ChannelSettings { TargetKey = "PROC:Spotify", FriendlyName = "Music", ButtonAction = ChannelButtonActions.NoAction, LongPressButtonAction = ChannelButtonActions.ToggleAssignedMute },
-            new ChannelSettings { TargetKey = "PROC:Discord", FriendlyName = "Discord", ButtonAction = ChannelButtonActions.NoAction, LongPressButtonAction = ChannelButtonActions.ToggleAssignedMute },
-            new ChannelSettings { TargetKey = "", FriendlyName = "", ButtonAction = ChannelButtonActions.NoAction, LongPressButtonAction = ChannelButtonActions.ToggleAssignedMute },
-            new ChannelSettings { TargetKey = "", FriendlyName = "", ButtonAction = ChannelButtonActions.NoAction, LongPressButtonAction = ChannelButtonActions.ToggleAssignedMute }
+            new ChannelSettings { TargetKey = "MASTER",     FriendlyName = "Master",  ButtonAction = ChannelButtonActions.ToggleAssignedMute, LongPressButtonAction = ChannelButtonActions.NoAction, DoublePressButtonAction = ChannelButtonActions.NoAction },
+            new ChannelSettings { TargetKey = "PROC:chrome", FriendlyName = "Browser", ButtonAction = ChannelButtonActions.ToggleAssignedMute, LongPressButtonAction = ChannelButtonActions.NoAction, DoublePressButtonAction = ChannelButtonActions.NoAction },
+            new ChannelSettings { TargetKey = "PROC:Spotify", FriendlyName = "Music",  ButtonAction = ChannelButtonActions.ToggleAssignedMute, LongPressButtonAction = ChannelButtonActions.NoAction, DoublePressButtonAction = ChannelButtonActions.NoAction },
+            new ChannelSettings { TargetKey = "PROC:Discord", FriendlyName = "Discord", ButtonAction = ChannelButtonActions.ToggleAssignedMute, LongPressButtonAction = ChannelButtonActions.NoAction, DoublePressButtonAction = ChannelButtonActions.NoAction },
+            new ChannelSettings { TargetKey = "",             FriendlyName = "",        ButtonAction = ChannelButtonActions.ToggleAssignedMute, LongPressButtonAction = ChannelButtonActions.NoAction, DoublePressButtonAction = ChannelButtonActions.NoAction },
+            new ChannelSettings { TargetKey = "",             FriendlyName = "",        ButtonAction = ChannelButtonActions.ToggleAssignedMute, LongPressButtonAction = ChannelButtonActions.NoAction, DoublePressButtonAction = ChannelButtonActions.NoAction }
         };
     }
 }
@@ -5406,8 +5500,9 @@ public sealed class ChannelSettings
 {
     public string TargetKey { get; set; } = string.Empty;
     public string FriendlyName { get; set; } = string.Empty;
-    public string ButtonAction { get; set; } = ChannelButtonActions.NoAction;
-    public string LongPressButtonAction { get; set; } = ChannelButtonActions.ToggleAssignedMute;
+    public string ButtonAction { get; set; } = ChannelButtonActions.ToggleAssignedMute;
+    public string LongPressButtonAction { get; set; } = ChannelButtonActions.NoAction;
+    public string DoublePressButtonAction { get; set; } = ChannelButtonActions.NoAction;
 }
 
 public sealed class AudioTargetItem
@@ -5455,8 +5550,9 @@ public sealed class ChannelMappingItem
     public string TargetKey { get; set; } = string.Empty;
     public string AssignedLabel { get; set; } = "Unassigned";
     public string FriendlyName { get; set; } = string.Empty;
-    public string ButtonAction { get; set; } = ChannelButtonActions.NoAction;
-    public string LongPressButtonAction { get; set; } = ChannelButtonActions.ToggleAssignedMute;
+    public string ButtonAction { get; set; } = ChannelButtonActions.ToggleAssignedMute;
+    public string LongPressButtonAction { get; set; } = ChannelButtonActions.NoAction;
+    public string DoublePressButtonAction { get; set; } = ChannelButtonActions.NoAction;
     public int Volume { get; set; }
     public bool Muted { get; set; } = true;
     public string Status { get; set; } = "Unassigned";
