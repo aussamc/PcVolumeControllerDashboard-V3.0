@@ -29,7 +29,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.18";
+    private const string DashboardVersion = "2.19";
     private const string RequiredProtocolVersion = "2.15";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -2395,14 +2395,37 @@ public partial class MainWindow : Window
     // Returns a volume step scaled up when the encoder is turned quickly.
     private int GetAcceleratedStep(int baseStep, double intervalMs)
     {
-        int multiplier = _settings.AccelerationPreset switch
+        // Custom preset: continuous formula using three tunable parameters.
+        //   speedFactor = how close to the threshold (0 = at/above threshold, 1 = instantaneous)
+        //   curved      = speedFactor shaped by the curve exponent
+        //   multiplier  = 1× (slow) → AccelMaxMultiplier× (fast)
+        if (_settings.AccelerationPreset == AccelerationPresets.Custom)
+        {
+            float threshold  = Math.Max(1f, _settings.AccelThresholdMs);
+            float sf         = (float)Math.Clamp((threshold - intervalMs) / threshold, 0.0, 1.0);
+            float curved     = MathF.Pow(sf, Math.Max(0.1f, _settings.AccelCurveExponent));
+            float multiplier = 1.0f + (_settings.AccelMaxMultiplier - 1.0f) * curved;
+            return Math.Clamp((int)Math.Round(baseStep * multiplier), 1, MaxVolumeStepPercent);
+        }
+
+        // Fixed presets: step-function multipliers for Light / Medium / Aggressive.
+        int intMultiplier = _settings.AccelerationPreset switch
         {
             AccelerationPresets.Light       => intervalMs < 80  ? 2 : 1,
             AccelerationPresets.Medium      => intervalMs < 60  ? 3 : intervalMs < 100 ? 2 : 1,
             AccelerationPresets.Aggressive  => intervalMs < 50  ? 4 : intervalMs < 70  ? 3 : intervalMs < 110 ? 2 : 1,
             _                               => 1,
         };
-        return Math.Clamp(baseStep * multiplier, 1, MaxVolumeStepPercent);
+        return Math.Clamp(baseStep * intMultiplier, 1, MaxVolumeStepPercent);
+    }
+
+    // Computes the custom-preset multiplier at a given interval for display in the preview.
+    private float ComputeCustomAccelMultiplier(double intervalMs, int thresholdMs, float maxMult, float curveExp)
+    {
+        float threshold = Math.Max(1f, thresholdMs);
+        float sf        = (float)Math.Clamp((threshold - intervalMs) / threshold, 0.0, 1.0);
+        float curved    = MathF.Pow(sf, Math.Max(0.1f, curveExp));
+        return 1.0f + (maxMult - 1.0f) * curved;
     }
 
     // EMA alpha per tick.  Formula: after N ticks, remaining error = (1-alpha)^N.
@@ -3255,7 +3278,80 @@ public partial class MainWindow : Window
     {
         if (AccelerationPresetComboBox == null) return;
         _settings.AccelerationPreset = GetAccelerationPresetFromUi();
+        UpdateAccelCustomPanel();
         SaveSettings();
+    }
+
+    private void AccelThresholdSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (AccelThresholdSlider == null) return;
+        int v = (int)Math.Round(AccelThresholdSlider.Value);
+        _settings.AccelThresholdMs = v;
+        if (AccelThresholdLabel != null) AccelThresholdLabel.Text = $"{v} ms";
+        UpdateAccelPreview();
+        SaveSettings();
+    }
+
+    private void AccelMaxMultiplierSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (AccelMaxMultiplierSlider == null) return;
+        float v = (float)AccelMaxMultiplierSlider.Value;
+        _settings.AccelMaxMultiplier = v;
+        if (AccelMaxMultiplierLabel != null) AccelMaxMultiplierLabel.Text = $"{v:F1}×";
+        UpdateAccelPreview();
+        SaveSettings();
+    }
+
+    private void AccelCurveSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (AccelCurveSlider == null) return;
+        float v = (float)AccelCurveSlider.Value;
+        _settings.AccelCurveExponent = v;
+        if (AccelCurveLabel != null) AccelCurveLabel.Text = GetCurveShapeLabel(v);
+        UpdateAccelPreview();
+        SaveSettings();
+    }
+
+    private static string GetCurveShapeLabel(float exponent)
+    {
+        if (exponent < 0.6f) return "Early";
+        if (exponent < 0.85f) return "Soft";
+        if (exponent < 1.15f) return "Linear";
+        if (exponent < 1.7f) return "Late";
+        return "Sharp";
+    }
+
+    // Shows or hides the custom acceleration panel depending on the selected preset.
+    private void UpdateAccelCustomPanel()
+    {
+        if (AccelCustomPanel == null) return;
+        bool isCustom = GetAccelerationPresetFromUi() == AccelerationPresets.Custom;
+        AccelCustomPanel.Visibility = isCustom ? Visibility.Visible : Visibility.Collapsed;
+        if (isCustom) UpdateAccelPreview();
+    }
+
+    // Recomputes and displays the live multiplier preview for the custom acceleration curve.
+    private void UpdateAccelPreview()
+    {
+        if (AccelPreviewLabel == null) return;
+
+        int   threshold = Math.Clamp((int)Math.Round(AccelThresholdSlider?.Value ?? _settings.AccelThresholdMs), 20, 250);
+        float maxMult   = Math.Clamp((float)(AccelMaxMultiplierSlider?.Value    ?? _settings.AccelMaxMultiplier), 1.5f, 8.0f);
+        float curve     = Math.Clamp((float)(AccelCurveSlider?.Value            ?? _settings.AccelCurveExponent), 0.3f, 2.5f);
+
+        // Representative turning speeds: idle baseline, medium, fast, maximum.
+        double[] intervals = { threshold * 1.5, threshold * 0.7, threshold * 0.25, 8.0 };
+        string[] speedLabels = { $"Idle (>{threshold} ms)", $"Medium (~{(int)(threshold * 0.7)} ms)", $"Fast (~{(int)(threshold * 0.25)} ms)", "Max (~8 ms)" };
+
+        var parts = new System.Text.StringBuilder();
+        for (int i = 0; i < intervals.Length; i++)
+        {
+            float mult = ComputeCustomAccelMultiplier(intervals[i], threshold, maxMult, curve);
+            if (i > 0) parts.Append("   ");
+            parts.Append($"{speedLabels[i]}: {mult:F1}×");
+        }
+
+        AccelPreviewLabel.Text = parts.ToString();
     }
 
     private void VolumeSmoothingEnabledCheckBox_Changed(object sender, RoutedEventArgs e)
@@ -3284,6 +3380,7 @@ public partial class MainWindow : Window
             0 => AccelerationPresets.Light,
             1 => AccelerationPresets.Medium,
             2 => AccelerationPresets.Aggressive,
+            3 => AccelerationPresets.Custom,
             _ => AccelerationPresets.Medium,
         };
     }
@@ -3295,6 +3392,7 @@ public partial class MainWindow : Window
             AccelerationPresets.Light      => 0,
             AccelerationPresets.Medium     => 1,
             AccelerationPresets.Aggressive => 2,
+            AccelerationPresets.Custom     => 3,
             _                              => 1,
         };
     }
@@ -3755,6 +3853,22 @@ public partial class MainWindow : Window
         {
             AccelerationPresetComboBox.SelectedIndex = GetAccelerationPresetIndex(_settings.AccelerationPreset);
         }
+        if (AccelThresholdSlider != null)
+        {
+            AccelThresholdSlider.Value = Math.Clamp(_settings.AccelThresholdMs, 20, 250);
+            if (AccelThresholdLabel != null) AccelThresholdLabel.Text = $"{_settings.AccelThresholdMs} ms";
+        }
+        if (AccelMaxMultiplierSlider != null)
+        {
+            AccelMaxMultiplierSlider.Value = Math.Clamp((double)_settings.AccelMaxMultiplier, 1.5, 8.0);
+            if (AccelMaxMultiplierLabel != null) AccelMaxMultiplierLabel.Text = $"{_settings.AccelMaxMultiplier:F1}×";
+        }
+        if (AccelCurveSlider != null)
+        {
+            AccelCurveSlider.Value = Math.Clamp((double)_settings.AccelCurveExponent, 0.3, 2.5);
+            if (AccelCurveLabel != null) AccelCurveLabel.Text = GetCurveShapeLabel(_settings.AccelCurveExponent);
+        }
+        UpdateAccelCustomPanel();
         if (VolumeSmoothingEnabledCheckBox != null)
         {
             VolumeSmoothingEnabledCheckBox.IsChecked = _settings.VolumeSmoothingEnabled;
@@ -3867,6 +3981,9 @@ public partial class MainWindow : Window
         _settings.EncoderSensitivityPercent = GetEncoderSensitivityPercentFromUi();
         _settings.AccelerationEnabled = AccelerationEnabledCheckBox?.IsChecked == true;
         _settings.AccelerationPreset = GetAccelerationPresetFromUi();
+        if (AccelThresholdSlider != null) _settings.AccelThresholdMs = (int)Math.Round(AccelThresholdSlider.Value);
+        if (AccelMaxMultiplierSlider != null) _settings.AccelMaxMultiplier = (float)AccelMaxMultiplierSlider.Value;
+        if (AccelCurveSlider != null) _settings.AccelCurveExponent = (float)AccelCurveSlider.Value;
         _settings.VolumeSmoothingEnabled = VolumeSmoothingEnabledCheckBox?.IsChecked == true;
         _settings.VolumeSmoothingSpeed = GetVolumeSmoothingSpeedFromUi();
         _settings.ThemeMode = GetThemeModeFromUi();
@@ -5204,6 +5321,9 @@ public partial class MainWindow : Window
         {
             settings.AccelerationPreset = AccelerationPresets.Medium;
         }
+        settings.AccelThresholdMs   = Math.Clamp(settings.AccelThresholdMs,   20,  250);
+        settings.AccelMaxMultiplier = Math.Clamp(settings.AccelMaxMultiplier, 1.5f, 8.0f);
+        settings.AccelCurveExponent = Math.Clamp(settings.AccelCurveExponent, 0.3f, 2.5f);
         if (!SmoothingSpeed.IsValid(settings.VolumeSmoothingSpeed))
         {
             settings.VolumeSmoothingSpeed = SmoothingSpeed.Normal;
@@ -5870,8 +5990,9 @@ public static class AccelerationPresets
     public const string Light = "Light";
     public const string Medium = "Medium";
     public const string Aggressive = "Aggressive";
+    public const string Custom = "Custom";
 
-    public static bool IsValid(string? v) => v is None or Light or Medium or Aggressive;
+    public static bool IsValid(string? v) => v is None or Light or Medium or Aggressive or Custom;
 }
 
 public static class SmoothingSpeed
@@ -5906,6 +6027,15 @@ public sealed class DashboardSettings
     public string AccelerationPreset { get; set; } = AccelerationPresets.Medium;
     public bool VolumeSmoothingEnabled { get; set; } = false;
     public string VolumeSmoothingSpeed { get; set; } = SmoothingSpeed.Normal;
+
+    // Custom acceleration curve (used when AccelerationPreset == "Custom")
+    // AccelThresholdMs   — encoder interval (ms) below which full acceleration applies;
+    //                      higher = boost activates at slower turning speeds.
+    // AccelMaxMultiplier — step multiplier at maximum speed (interval ≈ 0 ms).
+    // AccelCurveExponent — shape of the ramp; < 1 = early kick-in, 1 = linear, > 1 = late.
+    public int   AccelThresholdMs     { get; set; } = 120;
+    public float AccelMaxMultiplier   { get; set; } = 4.0f;
+    public float AccelCurveExponent   { get; set; } = 0.7f;
 
     public string ThemeMode { get; set; } = ThemeModes.FollowSystem;
     public string OledDisplayMode { get; set; } = DisplayModes.AppNameAndVolume;

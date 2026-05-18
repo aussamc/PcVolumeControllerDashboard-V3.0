@@ -1,7 +1,7 @@
 ﻿<Window x:Class="PcVolumeControllerDashboard.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="PC Volume Controller Dashboard v2.18"
+        Title="PC Volume Controller Dashboard v2.19"
         Height="800"
         Width="1120"
         MinHeight="680"
@@ -1354,8 +1354,86 @@
                                         <ComboBoxItem Content="Light" />
                                         <ComboBoxItem Content="Medium" />
                                         <ComboBoxItem Content="Aggressive" />
+                                        <ComboBoxItem Content="Custom" />
                                     </ComboBox>
                                 </Grid>
+
+                                <!-- Custom acceleration tuning panel — visible only when "Custom" preset is selected -->
+                                <StackPanel x:Name="AccelCustomPanel"
+                                            Margin="0,8,0,4"
+                                            Visibility="Collapsed">
+
+                                    <TextBlock Text="Custom acceleration tuning"
+                                               FontWeight="SemiBold"
+                                               Margin="0,0,0,8" />
+
+                                    <!-- Speed threshold -->
+                                    <Grid Margin="0,0,0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="170" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="72" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Speed threshold:" VerticalAlignment="Center" />
+                                        <Slider Grid.Column="1"
+                                                x:Name="AccelThresholdSlider"
+                                                Minimum="20" Maximum="250"
+                                                TickFrequency="10" IsSnapToTickEnabled="True"
+                                                ValueChanged="AccelThresholdSlider_ValueChanged"
+                                                VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="2" x:Name="AccelThresholdLabel"
+                                                   Text="120 ms" VerticalAlignment="Center" Margin="6,0,0,0" />
+                                    </Grid>
+                                    <TextBlock Text="Turn interval below which acceleration starts. Higher = kicks in earlier."
+                                               FontSize="11" Opacity="0.6" Margin="170,0,0,8" TextWrapping="Wrap" />
+
+                                    <!-- Max multiplier -->
+                                    <Grid Margin="0,0,0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="170" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="72" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Max multiplier:" VerticalAlignment="Center" />
+                                        <Slider Grid.Column="1"
+                                                x:Name="AccelMaxMultiplierSlider"
+                                                Minimum="1.5" Maximum="8.0"
+                                                TickFrequency="0.5" IsSnapToTickEnabled="True"
+                                                ValueChanged="AccelMaxMultiplierSlider_ValueChanged"
+                                                VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="2" x:Name="AccelMaxMultiplierLabel"
+                                                   Text="4.0×" VerticalAlignment="Center" Margin="6,0,0,0" />
+                                    </Grid>
+                                    <TextBlock Text="Maximum step size boost when turning at full speed."
+                                               FontSize="11" Opacity="0.6" Margin="170,0,0,8" TextWrapping="Wrap" />
+
+                                    <!-- Curve exponent -->
+                                    <Grid Margin="0,0,0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="170" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="72" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Curve shape:" VerticalAlignment="Center" />
+                                        <Slider Grid.Column="1"
+                                                x:Name="AccelCurveSlider"
+                                                Minimum="0.3" Maximum="2.5"
+                                                TickFrequency="0.1" IsSnapToTickEnabled="True"
+                                                ValueChanged="AccelCurveSlider_ValueChanged"
+                                                VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="2" x:Name="AccelCurveLabel"
+                                                   Text="Soft" VerticalAlignment="Center" Margin="6,0,0,0" />
+                                    </Grid>
+                                    <TextBlock Text="Early/Soft = acceleration builds quickly; Linear = even ramp; Late/Sharp = boost only at max speed."
+                                               FontSize="11" Opacity="0.6" Margin="170,0,0,8" TextWrapping="Wrap" />
+
+                                    <!-- Live preview -->
+                                    <TextBlock x:Name="AccelPreviewLabel"
+                                               FontFamily="Consolas"
+                                               FontSize="11"
+                                               Margin="0,0,0,0"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
 
                                 <!-- Smoothing -->
                                 <CheckBox x:Name="VolumeSmoothingEnabledCheckBox"
