@@ -1,7 +1,7 @@
 ﻿<Window x:Class="PcVolumeControllerDashboard.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="PC Volume Controller Dashboard v2.11"
+        Title="PC Volume Controller Dashboard v2.12"
         Height="800"
         Width="1120"
         MinHeight="680"
@@ -437,7 +437,7 @@
                            FontSize="26"
                            FontWeight="SemiBold" />
 
-                <TextBlock Text="v2.11 - Fix OLED 0 overwrite caused by prototype EspChannel constant"
+                <TextBlock Text="v2.12 - Change all encoder/OLED/channel display numbering to 1-based (1–6)"
                            Foreground="{DynamicResource SecondaryForeground}"
                            Margin="0,4,0,0" />
             </StackPanel>
@@ -641,7 +641,7 @@
                                                FontWeight="SemiBold" />
 
                                     <TextBlock x:Name="SelectedTargetTextBlock"
-                                               Text="Channel 0 - Master"
+                                               Text="Channel 1 - Master"
                                                FontSize="22"
                                                FontWeight="SemiBold"
                                                Margin="0,14,0,4" />
@@ -950,7 +950,7 @@
 
                                             <UniformGrid Grid.Row="0" Columns="6" Rows="1" Margin="0,0,0,18">
                                                 <StackPanel HorizontalAlignment="Center" Margin="6,0">
-                                                    <TextBlock x:Name="OledPreview1Title" Text="OLED 0" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
+                                                    <TextBlock x:Name="OledPreview1Title" Text="OLED 1" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
                                                     <Viewbox Width="192" Height="96" Stretch="Uniform" HorizontalAlignment="Center">
                                                         <Border Width="128" Height="64" Background="#111111" BorderBrush="#333333" BorderThickness="1" Padding="4" SnapsToDevicePixels="True">
                                                             <Grid>
@@ -967,7 +967,7 @@
                                                     </Viewbox>
                                                 </StackPanel>
                                                 <StackPanel HorizontalAlignment="Center" Margin="6,0">
-                                                    <TextBlock x:Name="OledPreview2Title" Text="OLED 1" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
+                                                    <TextBlock x:Name="OledPreview2Title" Text="OLED 2" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
                                                     <Viewbox Width="192" Height="96" Stretch="Uniform" HorizontalAlignment="Center">
                                                         <Border Width="128" Height="64" Background="#111111" BorderBrush="#333333" BorderThickness="1" Padding="4" SnapsToDevicePixels="True">
                                                             <Grid>
@@ -984,7 +984,7 @@
                                                     </Viewbox>
                                                 </StackPanel>
                                                 <StackPanel HorizontalAlignment="Center" Margin="6,0">
-                                                    <TextBlock x:Name="OledPreview3Title" Text="OLED 2" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
+                                                    <TextBlock x:Name="OledPreview3Title" Text="OLED 3" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
                                                     <Viewbox Width="192" Height="96" Stretch="Uniform" HorizontalAlignment="Center">
                                                         <Border Width="128" Height="64" Background="#111111" BorderBrush="#333333" BorderThickness="1" Padding="4" SnapsToDevicePixels="True">
                                                             <Grid>
@@ -1001,7 +1001,7 @@
                                                     </Viewbox>
                                                 </StackPanel>
                                                 <StackPanel HorizontalAlignment="Center" Margin="6,0">
-                                                    <TextBlock x:Name="OledPreview4Title" Text="OLED 3" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
+                                                    <TextBlock x:Name="OledPreview4Title" Text="OLED 4" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
                                                     <Viewbox Width="192" Height="96" Stretch="Uniform" HorizontalAlignment="Center">
                                                         <Border Width="128" Height="64" Background="#111111" BorderBrush="#333333" BorderThickness="1" Padding="4" SnapsToDevicePixels="True">
                                                             <Grid>
@@ -1018,7 +1018,7 @@
                                                     </Viewbox>
                                                 </StackPanel>
                                                 <StackPanel HorizontalAlignment="Center" Margin="6,0">
-                                                    <TextBlock x:Name="OledPreview5Title" Text="OLED 4" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
+                                                    <TextBlock x:Name="OledPreview5Title" Text="OLED 5" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
                                                     <Viewbox Width="192" Height="96" Stretch="Uniform" HorizontalAlignment="Center">
                                                         <Border Width="128" Height="64" Background="#111111" BorderBrush="#333333" BorderThickness="1" Padding="4" SnapsToDevicePixels="True">
                                                             <Grid>
@@ -1035,7 +1035,7 @@
                                                     </Viewbox>
                                                 </StackPanel>
                                                 <StackPanel HorizontalAlignment="Center" Margin="6,0">
-                                                    <TextBlock x:Name="OledPreview6Title" Text="OLED 5" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
+                                                    <TextBlock x:Name="OledPreview6Title" Text="OLED 6" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
                                                     <Viewbox Width="192" Height="96" Stretch="Uniform" HorizontalAlignment="Center">
                                                         <Border Width="128" Height="64" Background="#111111" BorderBrush="#333333" BorderThickness="1" Padding="4" SnapsToDevicePixels="True">
                                                             <Grid>
@@ -1055,7 +1055,7 @@
 
                                             <UniformGrid Grid.Row="1" Columns="6" Rows="1">
                                                 <StackPanel HorizontalAlignment="Center" Margin="6,0">
-                                                    <TextBlock Text="Encoder 0" HorizontalAlignment="Center" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,6" />
+                                                    <TextBlock Text="Encoder 1" HorizontalAlignment="Center" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,6" />
                                                     <Border x:Name="EncoderPreview1Highlight" CornerRadius="8" BorderThickness="2" BorderBrush="{DynamicResource CardBorder}" Background="Transparent" Padding="4">
                                                         <Grid Width="86" Height="86">
                                                         <Ellipse Stroke="{DynamicResource PreviewEncoderStroke}" Fill="{DynamicResource PreviewEncoderOuterFill}" StrokeThickness="1.2" Margin="9" />
@@ -1069,7 +1069,7 @@
                                                     </Border>
                                                 </StackPanel>
                                                 <StackPanel HorizontalAlignment="Center" Margin="6,0">
-                                                    <TextBlock Text="Encoder 1" HorizontalAlignment="Center" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,6" />
+                                                    <TextBlock Text="Encoder 2" HorizontalAlignment="Center" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,6" />
                                                     <Border x:Name="EncoderPreview2Highlight" CornerRadius="8" BorderThickness="2" BorderBrush="{DynamicResource CardBorder}" Background="Transparent" Padding="4">
                                                         <Grid Width="86" Height="86">
                                                         <Ellipse Stroke="{DynamicResource PreviewEncoderStroke}" Fill="{DynamicResource PreviewEncoderOuterFill}" StrokeThickness="1.2" Margin="9" />
@@ -1083,7 +1083,7 @@
                                                     </Border>
                                                 </StackPanel>
                                                 <StackPanel HorizontalAlignment="Center" Margin="6,0">
-                                                    <TextBlock Text="Encoder 2" HorizontalAlignment="Center" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,6" />
+                                                    <TextBlock Text="Encoder 3" HorizontalAlignment="Center" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,6" />
                                                     <Border x:Name="EncoderPreview3Highlight" CornerRadius="8" BorderThickness="2" BorderBrush="{DynamicResource CardBorder}" Background="Transparent" Padding="4">
                                                         <Grid Width="86" Height="86">
                                                         <Ellipse Stroke="{DynamicResource PreviewEncoderStroke}" Fill="{DynamicResource PreviewEncoderOuterFill}" StrokeThickness="1.2" Margin="9" />
@@ -1097,7 +1097,7 @@
                                                     </Border>
                                                 </StackPanel>
                                                 <StackPanel HorizontalAlignment="Center" Margin="6,0">
-                                                    <TextBlock Text="Encoder 3" HorizontalAlignment="Center" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,6" />
+                                                    <TextBlock Text="Encoder 4" HorizontalAlignment="Center" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,6" />
                                                     <Border x:Name="EncoderPreview4Highlight" CornerRadius="8" BorderThickness="2" BorderBrush="{DynamicResource CardBorder}" Background="Transparent" Padding="4">
                                                         <Grid Width="86" Height="86">
                                                         <Ellipse Stroke="{DynamicResource PreviewEncoderStroke}" Fill="{DynamicResource PreviewEncoderOuterFill}" StrokeThickness="1.2" Margin="9" />
@@ -1111,7 +1111,7 @@
                                                     </Border>
                                                 </StackPanel>
                                                 <StackPanel HorizontalAlignment="Center" Margin="6,0">
-                                                    <TextBlock Text="Encoder 4" HorizontalAlignment="Center" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,6" />
+                                                    <TextBlock Text="Encoder 5" HorizontalAlignment="Center" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,6" />
                                                     <Border x:Name="EncoderPreview5Highlight" CornerRadius="8" BorderThickness="2" BorderBrush="{DynamicResource CardBorder}" Background="Transparent" Padding="4">
                                                         <Grid Width="86" Height="86">
                                                         <Ellipse Stroke="{DynamicResource PreviewEncoderStroke}" Fill="{DynamicResource PreviewEncoderOuterFill}" StrokeThickness="1.2" Margin="9" />
@@ -1125,7 +1125,7 @@
                                                     </Border>
                                                 </StackPanel>
                                                 <StackPanel HorizontalAlignment="Center" Margin="6,0">
-                                                    <TextBlock Text="Encoder 5" HorizontalAlignment="Center" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,6" />
+                                                    <TextBlock Text="Encoder 6" HorizontalAlignment="Center" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,6" />
                                                     <Border x:Name="EncoderPreview6Highlight" CornerRadius="8" BorderThickness="2" BorderBrush="{DynamicResource CardBorder}" Background="Transparent" Padding="4">
                                                         <Grid Width="86" Height="86">
                                                         <Ellipse Stroke="{DynamicResource PreviewEncoderStroke}" Fill="{DynamicResource PreviewEncoderOuterFill}" StrokeThickness="1.2" Margin="9" />
@@ -1172,12 +1172,12 @@
                                            Margin="0,0,0,8" />
 
                                 <TextBlock x:Name="SettingsDashboardVersionTextBlock"
-                                           Text="Dashboard version: v2.11"
+                                           Text="Dashboard version: v2.12"
                                            FontWeight="SemiBold"
                                            Margin="0,0,0,4" />
 
                                 <TextBlock x:Name="SettingsExpectedProtocolTextBlock"
-                                           Text="Required ESP32 protocol: v2.10"
+                                           Text="Required ESP32 protocol: v2.12"
                                            Margin="0,0,0,4" />
 
                                 <TextBlock x:Name="SettingsFirmwareVersionTextBlock"
@@ -1386,7 +1386,7 @@
                             <StackPanel>
                                 <TextBlock Text="ESP32 Firmware Update" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,8" />
                                 <TextBlock Text="Use bundled firmware binaries when available, or select a manually built ESP32 .bin file. The dashboard looks for esptool in the tools folder." TextWrapping="Wrap" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,10" />
-                                <TextBlock Text="Bundled firmware source: Computer_Volume_Controller_v2.10" Margin="0,0,0,4" />
+                                <TextBlock Text="Bundled firmware source: Computer_Volume_Controller_v2.12" Margin="0,0,0,4" />
                                 <TextBlock x:Name="FirmwareStatusTextBlock" Text="Compiled binaries: see firmware_bin/build_instructions.txt if binaries are not present" Margin="0,0,0,6" TextWrapping="Wrap" />
                                 <TextBlock x:Name="SelectedFirmwareBinTextBlock" Text="Selected .bin file: none" Margin="0,0,0,10" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryForeground}" />
                                 <WrapPanel Margin="0,0,0,8">
