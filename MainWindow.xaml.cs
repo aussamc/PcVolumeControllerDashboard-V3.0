@@ -29,7 +29,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.16";
+    private const string DashboardVersion = "2.17";
     private const string RequiredProtocolVersion = "2.15";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -108,10 +108,15 @@ public partial class MainWindow : Window
     // inter-event interval can be measured for speed-scaling.
     private readonly DateTime[] _accelPrevApplyAt = new DateTime[ExpectedChannelCount];
 
-    // Smoothing: per-channel target volume (0-100) and active flags; a shared timer ticks
-    // every SmoothingTickMs and eases the actual session volume toward the target.
-    private const int SmoothingTickMs = 20;
-    private readonly int[] _smoothingTargetVolumes = new int[ExpectedChannelCount];
+    // Smoothing: all volumes are tracked in normalized float space (0.0–1.0) matching the
+    // WASAPI API natively, which eliminates the quantisation artefacts that occur when
+    // intermediate steps are rounded to integer percent.  A shared background timer fires
+    // every SmoothingTickMs and applies one EMA step per active channel, converging
+    // asymptotically toward the target with no fixed tick count.
+    private const int SmoothingTickMs = 16;          // ~60 Hz; reliable with timeBeginPeriod(1)
+    private const float SmoothingSnapThreshold = 0.002f; // 0.2 % — snap when this close
+    private readonly float[] _smoothingTargetVolumes = new float[ExpectedChannelCount];
+    private readonly float[] _smoothingCurrentVolumes = new float[ExpectedChannelCount];
     private readonly bool[] _smoothingActive = new bool[ExpectedChannelCount];
     private System.Threading.Timer? _smoothingTimer;
 
@@ -167,6 +172,9 @@ public partial class MainWindow : Window
 
     public MainWindow()
     {
+        // Raise Windows multimedia timer resolution to 1 ms for reliable smooth-volume ticks.
+        timeBeginPeriod(1);
+
         InitializeComponent();
 
         AudioSessionsListView.ItemsSource = _audioTargets;
@@ -326,6 +334,11 @@ public partial class MainWindow : Window
 
     [DllImport("dwmapi.dll", CharSet = CharSet.Unicode, PreserveSig = true)]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+
+    // Raise Windows multimedia timer resolution to 1 ms so System.Threading.Timer fires
+    // reliably at the requested interval rather than slipping by a full 15.6 ms quantum.
+    [DllImport("winmm.dll")] private static extern uint timeBeginPeriod(uint uPeriod);
+    [DllImport("winmm.dll")] private static extern uint timeEndPeriod(uint uPeriod);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct LASTINPUTINFO
@@ -2326,30 +2339,48 @@ public partial class MainWindow : Window
 
         int deltaPercent = smoothedDelta * step;
 
+        // Capture whether this is the first event on this channel so the log message is legible.
+        bool isFirstEvent = _accelPrevApplyAt[encoderChannel] == default;
+
         if (IsAdvancedDebugLoggingEnabled())
         {
-            Log($"Encoder {encoderChannel + 1}: delta {smoothedDelta}, step {step}%, total {deltaPercent}% (interval {intervalMs:F0}ms).");
+            string intervalStr = isFirstEvent ? "first event" : $"{intervalMs:F0}ms";
+            Log($"Encoder {encoderChannel + 1}: delta {smoothedDelta}, step {step}%, total {deltaPercent}% (interval {intervalStr}).");
         }
 
         if (_settings.VolumeSmoothingEnabled)
         {
-            // If already smoothing this channel, extend the target rather than reading actual
-            // volume (avoids "chasing" artefacts when events arrive faster than ticks).
-            int baseTarget = _smoothingActive[encoderChannel]
-                ? _smoothingTargetVolumes[encoderChannel]
-                : GetChannelCurrentVolumePercent(encoderChannel);
+            float deltaNorm = deltaPercent / 100f;
 
-            if (baseTarget < 0)
+            float baseTarget;
+
+            if (_smoothingActive[encoderChannel])
             {
-                // Channel unassigned — fall through to direct change.
-                goto directChange;
+                // Extend the current in-flight target — do NOT re-read from the audio API.
+                // Re-reading gives the un-interpolated actual value, which causes the target
+                // to snap backward and then surge forward on every rapid encoder event.
+                baseTarget = _smoothingTargetVolumes[encoderChannel];
+            }
+            else
+            {
+                // First event on this channel: read actual volume as starting point.
+                float current = GetChannelCurrentVolumeNormalized(encoderChannel);
+
+                if (current < 0f)
+                {
+                    // Channel unassigned — fall through to direct change.
+                    goto directChange;
+                }
+
+                _smoothingCurrentVolumes[encoderChannel] = current;
+                baseTarget = current;
             }
 
-            _smoothingTargetVolumes[encoderChannel] = Math.Clamp(baseTarget + deltaPercent, 0, 100);
+            _smoothingTargetVolumes[encoderChannel] = Math.Clamp(baseTarget + deltaNorm, 0f, 1f);
             _smoothingActive[encoderChannel] = true;
             EnsureSmoothingTimerRunning();
 
-            // Apply first tick immediately so the UI reacts without waiting for the timer.
+            // Run first tick inline for immediate response — no waiting for the timer.
             SmoothingTick();
             return;
         }
@@ -2374,24 +2405,27 @@ public partial class MainWindow : Window
         return Math.Clamp(baseStep * multiplier, 1, MaxVolumeStepPercent);
     }
 
-    // Returns the smoothing ease-out fraction (proportion of remaining distance moved per tick).
-    private double GetSmoothingFraction()
+    // EMA alpha per tick.  Formula: after N ticks, remaining error = (1-alpha)^N.
+    //   Fast   (alpha 0.50): ~97 % converged in  5 ticks × 16 ms = ~80 ms
+    //   Normal (alpha 0.35): ~97 % converged in  8 ticks × 16 ms = ~128 ms
+    //   Slow   (alpha 0.22): ~97 % converged in 13 ticks × 16 ms = ~208 ms
+    private float GetSmoothingAlpha()
     {
         return _settings.VolumeSmoothingSpeed switch
         {
-            SmoothingSpeed.Fast   => 0.40,
-            SmoothingSpeed.Slow   => 0.15,
-            _                     => 0.25,   // Normal
+            SmoothingSpeed.Fast => 0.50f,
+            SmoothingSpeed.Slow => 0.22f,
+            _                   => 0.35f,  // Normal
         };
     }
 
-    // Reads the current actual volume (0-100) for the given channel.
-    // Returns -1 if the channel is unassigned or its audio session is unavailable.
-    private int GetChannelCurrentVolumePercent(int channelIndex)
+    // Returns the normalized volume (0.0–1.0) read directly from the WASAPI API.
+    // Returns -1 if the channel is unassigned or its session is unavailable.
+    private float GetChannelCurrentVolumeNormalized(int channelIndex)
     {
         if (channelIndex < 0 || channelIndex >= _channels.Count)
         {
-            return -1;
+            return -1f;
         }
 
         ChannelMappingItem channel = _channels[channelIndex];
@@ -2399,30 +2433,88 @@ public partial class MainWindow : Window
 
         if (target == null)
         {
-            return -1;
+            return -1f;
         }
 
-        if (target.IsMaster)
+        try
         {
-            try { return GetMasterVolumePercent(); }
-            catch { return -1; }
+            if (target.IsMaster)
+            {
+                EnsureAudioDevice();
+                return Math.Clamp(_defaultRenderDevice!.AudioEndpointVolume.MasterVolumeLevelScalar, 0f, 1f);
+            }
+
+            var sessions = FindSessionsForKey(target.Key).ToList();
+
+            if (sessions.Count == 0)
+            {
+                return -1f;
+            }
+
+            SimpleAudioVolume? vol = sessions[0].Session?.SimpleAudioVolume;
+            return vol == null ? -1f : Math.Clamp(vol.Volume, 0f, 1f);
         }
-
-        var sessions = FindSessionsForKey(target.Key).ToList();
-
-        if (sessions.Count == 0)
+        catch
         {
-            return -1;
+            return -1f;
         }
+    }
 
-        SimpleAudioVolume? vol = sessions[0].Session?.SimpleAudioVolume;
-
-        if (vol == null)
+    // Writes a normalized volume directly to WASAPI, bypassing the integer-percent
+    // round-trip used by ChangeChannelVolume.  Used exclusively by the smoothing path.
+    private void SetChannelVolumeAbsolute(int channelIndex, float volumeNormalized)
+    {
+        if (channelIndex < 0 || channelIndex >= _channels.Count)
         {
-            return -1;
+            return;
         }
 
-        return Math.Clamp((int)Math.Round(vol.Volume * 100), 0, 100);
+        ChannelMappingItem channel = _channels[channelIndex];
+        AudioTargetItem? target = FindTargetByKey(channel.TargetKey);
+
+        if (target == null)
+        {
+            return;
+        }
+
+        float v = Math.Clamp(volumeNormalized, 0f, 1f);
+
+        try
+        {
+            if (target.IsMaster)
+            {
+                EnsureAudioDevice();
+                _defaultRenderDevice!.AudioEndpointVolume.MasterVolumeLevelScalar = v;
+
+                if (_defaultRenderDevice.AudioEndpointVolume.Mute && v > 0f)
+                {
+                    _defaultRenderDevice.AudioEndpointVolume.Mute = false;
+                }
+
+                return;
+            }
+
+            foreach (AudioTargetItem sessionTarget in FindSessionsForKey(target.Key))
+            {
+                SimpleAudioVolume? vol = sessionTarget.Session?.SimpleAudioVolume;
+
+                if (vol == null)
+                {
+                    continue;
+                }
+
+                vol.Volume = v;
+
+                if (vol.Mute && v > 0f)
+                {
+                    vol.Mute = false;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"SetChannelVolumeAbsolute error: {ex.Message}");
+        }
     }
 
     private void EnsureSmoothingTimerRunning()
@@ -2443,13 +2535,19 @@ public partial class MainWindow : Window
         _smoothingTimer = null;
     }
 
-    // Called on the UI thread every SmoothingTickMs.  Moves each active channel's actual
-    // volume one step closer to its target using an ease-out curve.
+    // Called on the UI thread every SmoothingTickMs (~16 ms / 60 Hz).
+    //
+    // Each active channel advances one EMA step:
+    //   next = current + alpha * (target - current)
+    //
+    // Working entirely in normalized float space (0.0–1.0) avoids the quantisation
+    // artefacts that appear when intermediate volumes are rounded to integer percent.
+    // SetChannelVolumeAbsolute writes the float directly to WASAPI — no conversion.
     private void SmoothingTick()
     {
         bool anyActive = false;
         bool stateChanged = false;
-        double fraction = GetSmoothingFraction();
+        float alpha = GetSmoothingAlpha();
 
         for (int ch = 0; ch < ExpectedChannelCount; ch++)
         {
@@ -2458,32 +2556,24 @@ public partial class MainWindow : Window
                 continue;
             }
 
-            int target = _smoothingTargetVolumes[ch];
-            int current = GetChannelCurrentVolumePercent(ch);
+            float target  = _smoothingTargetVolumes[ch];
+            float current = _smoothingCurrentVolumes[ch];
+            float diff    = target - current;
 
-            if (current < 0)
+            if (Math.Abs(diff) < SmoothingSnapThreshold)
             {
+                // Within snap threshold — write the exact target and stop.
+                _smoothingCurrentVolumes[ch] = target;
+                SetChannelVolumeAbsolute(ch, target);
+                stateChanged = true;
                 _smoothingActive[ch] = false;
                 continue;
             }
 
-            int diff = target - current;
-
-            if (Math.Abs(diff) <= 1)
-            {
-                // Within 1 % — snap to target and stop.
-                if (diff != 0)
-                {
-                    ChangeChannelVolume(ch, diff);
-                    stateChanged = true;
-                }
-                _smoothingActive[ch] = false;
-                continue;
-            }
-
-            // Ease-out: move a fraction of the remaining distance, minimum 1 %.
-            int step = Math.Max(1, (int)Math.Round(Math.Abs(diff) * fraction)) * Math.Sign(diff);
-            ChangeChannelVolume(ch, step);
+            // EMA: exponentially approach target.
+            float next = current + alpha * diff;
+            _smoothingCurrentVolumes[ch] = next;
+            SetChannelVolumeAbsolute(ch, next);
             stateChanged = true;
             anyActive = true;
         }
@@ -5071,6 +5161,23 @@ public partial class MainWindow : Window
             }
         }
 
+        // v3 → v4: Short press default restored to ToggleAssignedMute.  The v2→v3 migration
+        // moved everyone to NoAction when a dedicated long-press mute was introduced; that
+        // was overly conservative.  Channels still on NoAction are migrated back so new and
+        // existing users both get mute-on-short-press out of the box.
+        if (settings.SettingsVersion < 4)
+        {
+            foreach (ChannelSettings channel in settings.Channels)
+            {
+                if (channel.ButtonAction == ChannelButtonActions.NoAction)
+                {
+                    channel.ButtonAction = ChannelButtonActions.ToggleAssignedMute;
+                }
+            }
+            settings.SettingsVersion = 4;
+            migrated = true;
+        }
+
         if (!AccelerationPresets.IsValid(settings.AccelerationPreset))
         {
             settings.AccelerationPreset = AccelerationPresets.Medium;
@@ -5672,6 +5779,8 @@ public partial class MainWindow : Window
             _trayIcon.Dispose();
             _trayIcon = null;
         }
+
+        timeEndPeriod(1);
 
         base.OnClosed(e);
     }
