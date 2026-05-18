@@ -29,17 +29,17 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.8";
-    private const string RequiredProtocolVersion = "2.5";
+    private const string DashboardVersion = "2.9";
+    private const string RequiredProtocolVersion = "2.9";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
     private const int ExpectedChannelCount = 6;
 
     // Software encoder channel remap: maps firmware encoder index (0-based) to dashboard
-    // channel index (0-based).  Edit this array to correct for physical wiring order
+    // channel index (0-based).  Edit this array to correct for physical encoder wiring order
     // mismatches without reflashing the ESP32.
-    // Default: encoder 0 and 1 are physically swapped relative to the channel labels.
-    private static readonly int[] EncoderChannelRemap = { 1, 0, 2, 3, 4, 5 };
+    // Identity mapping — firmware GPIO assignments match channel order 0-5.
+    private static readonly int[] EncoderChannelRemap = { 0, 1, 2, 3, 4, 5 };
 
     private const int BaudRate = 115200;
     private const int EspChannel = 0;
