@@ -1,12 +1,18 @@
 // =============================================================================
-// PC Volume Controller — firmware v2.15
+// PC Volume Controller — firmware v2.21
 // Target: ESP32-S3-DevKitC-1-N16R8 (custom carrier + display PCB, v1.4)
 //
-// Changes from v2.12:
-//   - Double-press detection added (parallel firing — BTN_SHORT fires immediately,
-//     BTN_DOUBLE fires additionally if a second short press follows within 350 ms)
-//   - ButtonState struct gains lastShortPressMs for double-press tracking
-//   - Protocol version bumped to 2.15
+// Changes from v2.15:
+//   - DIAGNOSTIC BUILD: all encoder software debounce removed so raw hardware
+//     behaviour can be observed via dashboard logs.
+//     Removed filters:
+//       1. ENC_DEBOUNCE_US   — was 1000 µs transition gate, now 0 (disabled)
+//       2. ENC_REPORT_GUARD_MS — was 3 ms report rate-limit, now 0 (disabled)
+//       3. Invalid-quadrature accumulator reset — was clearing accumulator on
+//          movement==0 transitions; now just skips (no reset)
+//       4. Direction-reversal reset — was resetting accumulator on mid-turn
+//          direction change; now always accumulates
+//   - Protocol version bumped to 2.21 (reflash required)
 // =============================================================================
 
 #include <Arduino.h>
@@ -18,7 +24,7 @@
 // Firmware identity
 // =============================================================================
 #define FIRMWARE_NAME    "PC_VOLUME_CONTROLLER"
-#define PROTOCOL_VERSION "2.15"
+#define PROTOCOL_VERSION "2.21"
 #define CHANNEL_COUNT    6
 
 // =============================================================================
@@ -112,8 +118,13 @@ struct EncoderState {
 };
 EncoderState encoders[CHANNEL_COUNT];
 
-const unsigned long ENC_DEBOUNCE_US     = 1000;
-const unsigned long ENC_REPORT_GUARD_MS = 3;
+// DIAGNOSTIC: both debounce constants set to 0 to disable their respective guards.
+//   ENC_DEBOUNCE_US=0   — the condition (elapsed < 0) is never true for unsigned long,
+//                         so the 1 ms transition gate is fully bypassed.
+//   ENC_REPORT_GUARD_MS=0 — the condition (elapsed >= 0) is always true for unsigned
+//                         long, so the 3 ms report rate-limit is fully bypassed.
+const unsigned long ENC_DEBOUNCE_US     = 0;
+const unsigned long ENC_REPORT_GUARD_MS = 0;
 const int8_t        ENC_COUNTS_PER_DETENT = 4;
 
 // =============================================================================
@@ -695,7 +706,13 @@ void readSerialMessages() {
 }
 
 // =============================================================================
-// Encoder reading (per-channel, quadrature decode with bounce filtering)
+// Encoder reading (per-channel, quadrature decode — DEBOUNCE DISABLED)
+//
+// All four software debounce layers have been removed for diagnostic purposes:
+//   1. ENC_DEBOUNCE_US=0  — 1 µs transition gate bypassed
+//   2. invalid-quadrature accumulator reset removed — skip only, no reset
+//   3. direction-reversal reset removed — always accumulate
+//   4. ENC_REPORT_GUARD_MS=0 — 3 ms report rate-limit bypassed
 // =============================================================================
 uint8_t readEncoderRawState(int ch) {
   uint8_t a = digitalRead(ENC_A_PIN[ch]) == LOW ? 0 : 1;
@@ -726,6 +743,7 @@ void readEncoder(int ch) {
   markLocalActivity();
 
   unsigned long nowUs = micros();
+  // DIAGNOSTIC: ENC_DEBOUNCE_US=0 — gate condition is never true; transition always accepted.
   if (nowUs - enc.lastTransitionUs < ENC_DEBOUNCE_US) return;
 
   uint8_t transitionIndex = (enc.lastState << 2) | currentState;
@@ -734,19 +752,14 @@ void readEncoder(int ch) {
   enc.lastState        = currentState;
   enc.lastTransitionUs = nowUs;
 
-  if (movement == 0) {
-    enc.accumulator = 0;   // invalid quadrature — likely contact bounce
-    return;
-  }
+  // DIAGNOSTIC: invalid-quadrature reset removed — skip the transition but keep accumulator.
+  if (movement == 0) return;
 
-  // Direction reversal mid-turn is usually bounce; reset rather than accumulate.
-  if ((enc.accumulator > 0 && movement < 0) || (enc.accumulator < 0 && movement > 0)) {
-    enc.accumulator = movement;
-  } else {
-    enc.accumulator += movement;
-  }
+  // DIAGNOSTIC: direction-reversal reset removed — always accumulate.
+  enc.accumulator += movement;
 
   unsigned long nowMs = millis();
+  // DIAGNOSTIC: ENC_REPORT_GUARD_MS=0 — rate-limit condition is always true; report immediately.
   if (enc.accumulator >= ENC_COUNTS_PER_DETENT && nowMs - enc.lastReportMs >= ENC_REPORT_GUARD_MS) {
     Serial.print("ENC,");
     Serial.print(ch);
@@ -770,6 +783,8 @@ void readAllEncoders() {
 
 // =============================================================================
 // Button reading (per-channel, debounced, short/long press)
+// Note: BTN_DEBOUNCE_MS is intentionally kept — button debounce is separate
+// from encoder debounce and is needed for correct press detection.
 // =============================================================================
 void readButton(int ch) {
   bool          currentState = digitalRead(ENC_SW_PIN[ch]);
