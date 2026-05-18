@@ -62,7 +62,7 @@ Output is in `bin\Release\net10.0-windows\win-x64\publish\`.
 
 ## Firmware
 
-The ESP32 Arduino source is in `Computer_Volume_Controller_v2.21/`.
+The ESP32 Arduino source is in `Computer_Volume_Controller_v2.24/`.
 
 Flash the firmware using the dashboard's built-in flasher, or manually via Arduino IDE / Arduino CLI with the ESP32-S3 Arduino core installed.
 
@@ -89,6 +89,9 @@ previous_version_notes/                 — release notes for older versions
 
 | Dashboard | Required firmware protocol | Hardware       |
 |-----------|---------------------------|----------------|
+| v2.24     | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
+| v2.23     | v2.21                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
+| v2.22     | v2.21                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v2.21     | v2.21                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v2.20     | v2.15                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v2.19     | v2.15                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |

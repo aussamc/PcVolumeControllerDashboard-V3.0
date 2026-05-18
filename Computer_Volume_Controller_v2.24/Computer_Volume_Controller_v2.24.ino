@@ -1,18 +1,12 @@
 // =============================================================================
-// PC Volume Controller — firmware v2.21
+// PC Volume Controller — firmware v2.24
 // Target: ESP32-S3-DevKitC-1-N16R8 (custom carrier + display PCB, v1.4)
 //
-// Changes from v2.15:
-//   - DIAGNOSTIC BUILD: all encoder software debounce removed so raw hardware
-//     behaviour can be observed via dashboard logs.
-//     Removed filters:
-//       1. ENC_DEBOUNCE_US   — was 1000 µs transition gate, now 0 (disabled)
-//       2. ENC_REPORT_GUARD_MS — was 3 ms report rate-limit, now 0 (disabled)
-//       3. Invalid-quadrature accumulator reset — was clearing accumulator on
-//          movement==0 transitions; now just skips (no reset)
-//       4. Direction-reversal reset — was resetting accumulator on mid-turn
-//          direction change; now always accumulates
-//   - Protocol version bumped to 2.21 (reflash required)
+// Changes from v2.21:
+//   - Per-channel OLED display mode override via new DISPMODE protocol command.
+//     Each channel can independently override the global OLED mode set by
+//     OLEDCFG, or inherit the global setting (empty mode string = use global).
+//   - Protocol version bumped to 2.24 (reflash required)
 // =============================================================================
 
 #include <Arduino.h>
@@ -24,7 +18,7 @@
 // Firmware identity
 // =============================================================================
 #define FIRMWARE_NAME    "PC_VOLUME_CONTROLLER"
-#define PROTOCOL_VERSION "2.21"
+#define PROTOCOL_VERSION "2.24"
 #define CHANNEL_COUNT    6
 
 // =============================================================================
@@ -96,7 +90,7 @@ bool   sleepBlocksFirstInput = false;
 String sleepReason           = "";
 String serialInputBuffer     = "";
 
-// OLED configuration (same for all displays)
+// OLED configuration — global defaults applied by OLEDCFG command.
 String displayMode                = "AppVolume";
 int    oledBrightnessPercent      = 100;
 int    activeOledBrightnessPercent = 100;
@@ -106,6 +100,12 @@ unsigned long connectedIdleTimeoutMs = 600000UL;
 unsigned long lastDisplayActivityMs  = 0;
 bool    antiBurnInEnabled = true;
 uint8_t lastBurnInOffset  = 255;
+
+// Per-channel OLED display mode overrides.
+//   Empty string = inherit global displayMode set by OLEDCFG.
+//   Non-empty = use this mode for this channel regardless of global setting.
+//   Set by DISPMODE,<ch>,<mode> from the dashboard.
+String channelMode[CHANNEL_COUNT];   // default-initialised to "" (Arduino String default)
 
 // =============================================================================
 // Per-channel encoder state
@@ -312,6 +312,7 @@ void applyAntiBurnInOffset() {
 
 // =============================================================================
 // Display rendering (per-channel)
+//   Mode resolution: channelMode[ch] overrides the global displayMode if set.
 // =============================================================================
 void updateDisplay(int ch) {
   if (ch < 0 || ch >= CHANNEL_COUNT) return;
@@ -323,7 +324,8 @@ void updateDisplay(int ch) {
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
 
-  String mode = displayMode;
+  // Resolve display mode: per-channel override if set, else global default.
+  String mode = (channelMode[ch].length() > 0) ? channelMode[ch] : displayMode;
   mode.toUpperCase();
 
   const ChannelState &c = channels[ch];
@@ -627,6 +629,22 @@ void handleOledConfigMessage(const String &line) {
   Serial.println(antiBurnInEnabled ? 1 : 0);
 }
 
+void handleDispModeMessage(const String &line) {
+  // DISPMODE,<channelIndex>,<mode>
+  //   Sets the per-channel OLED display mode override.
+  //   Empty <mode> clears the override so the channel uses the global OLEDCFG mode.
+  int channelIndex = getCsvPart(line, 1).toInt();
+  if (channelIndex < 0 || channelIndex >= CHANNEL_COUNT) return;
+
+  channelMode[channelIndex] = getCsvPart(line, 2);   // "" = use global default
+
+  markDisplayActivity("DISPMODE");
+  updateDisplay(channelIndex);
+
+  sendDebug("Ch" + String(channelIndex) + " display mode: " +
+    (channelMode[channelIndex].length() > 0 ? channelMode[channelIndex] : "global"));
+}
+
 // =============================================================================
 // Serial I/O
 // =============================================================================
@@ -674,6 +692,10 @@ void handleSerialLine(String line) {
   }
   if (line.startsWith("OLEDCFG,")) {
     handleOledConfigMessage(line);
+    return;
+  }
+  if (line.startsWith("DISPMODE,")) {
+    handleDispModeMessage(line);
     return;
   }
   if (line.startsWith("STATE,")) {
@@ -935,6 +957,7 @@ void setupDefaultChannelStates() {
     channels[ch].volume = 0;
     channels[ch].muted  = true;
     channels[ch].status = "Waiting";
+    channelMode[ch]     = "";   // inherit global mode by default
   }
   channels[0].label = "Master";
 }
