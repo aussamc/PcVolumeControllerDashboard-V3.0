@@ -89,7 +89,8 @@ previous_version_notes/                 — release notes for older versions
 
 | Dashboard | Required firmware protocol | Hardware       |
 |-----------|---------------------------|----------------|
-| v2.5      | v2.5                      | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
+| v2.7      | v2.5                      | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
+| v2.5–v2.6 | v2.5                      | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v2.0–v2.4 | v2.0                      | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v1.3.39   | v1.3.38 Beta 7            | Prototype (1-channel) |
 

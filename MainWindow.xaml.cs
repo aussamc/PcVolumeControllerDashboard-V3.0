@@ -29,7 +29,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.6";
+    private const string DashboardVersion = "2.7";
     private const string RequiredProtocolVersion = "2.5";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -811,7 +811,7 @@ public partial class MainWindow : Window
                 AssignedLabel = i == 0 ? "Master" : "Unassigned",
                 FriendlyName = i == 0 ? "Master" : string.Empty,
                 EncoderSensitivityPercent = 50,
-                ButtonAction = ChannelButtonActions.SelectNextChannel,
+                ButtonAction = ChannelButtonActions.ToggleAssignedMute,
                 Status = i == 0 ? "Active" : "Unassigned"
             });
         }
@@ -1967,7 +1967,15 @@ public partial class MainWindow : Window
                     Log("Safe mode: long-button event observed but audio-control action was skipped.");
                     break;
                 }
-                ToggleSelectedChannelMute();
+                if (parts.Length > 1 && int.TryParse(parts[1], out int longPressChannel) &&
+                    longPressChannel >= 0 && longPressChannel < _channels.Count)
+                {
+                    ToggleChannelMute(longPressChannel);
+                }
+                else
+                {
+                    ToggleSelectedChannelMute();
+                }
                 RefreshAllChannelStates();
                 SendAllChannelStatesToDevice();
                 SendStateToDevice(force: true);
@@ -3790,7 +3798,7 @@ public partial class MainWindow : Window
             _channels[i].TargetKey = _settings.Channels[i].TargetKey ?? string.Empty;
             _channels[i].FriendlyName = _settings.Channels[i].FriendlyName ?? string.Empty;
             _channels[i].EncoderSensitivityPercent = Math.Clamp(_settings.Channels[i].EncoderSensitivityPercent <= 0 ? _settings.EncoderSensitivityPercent : _settings.Channels[i].EncoderSensitivityPercent, 0, MaxEncoderSensitivityPercent);
-            _channels[i].ButtonAction = ChannelButtonActions.IsValid(_settings.Channels[i].ButtonAction) ? _settings.Channels[i].ButtonAction : ChannelButtonActions.SelectNextChannel;
+            _channels[i].ButtonAction = ChannelButtonActions.IsValid(_settings.Channels[i].ButtonAction) ? _settings.Channels[i].ButtonAction : ChannelButtonActions.ToggleAssignedMute;
         }
 
         RefreshChannelAssignmentLabels();
@@ -3883,7 +3891,7 @@ public partial class MainWindow : Window
             TargetKey = channel.TargetKey,
             FriendlyName = channel.FriendlyName,
             EncoderSensitivityPercent = Math.Clamp(channel.EncoderSensitivityPercent <= 0 ? _settings.EncoderSensitivityPercent : channel.EncoderSensitivityPercent, 0, MaxEncoderSensitivityPercent),
-            ButtonAction = ChannelButtonActions.IsValid(channel.ButtonAction) ? channel.ButtonAction : ChannelButtonActions.SelectNextChannel
+            ButtonAction = ChannelButtonActions.IsValid(channel.ButtonAction) ? channel.ButtonAction : ChannelButtonActions.ToggleAssignedMute
         }).ToArray();
 
         _settings.ChannelTargetKeys = _settings.Channels.Select(channel => channel.TargetKey).ToArray();
@@ -4617,13 +4625,28 @@ public partial class MainWindow : Window
             settings.ThemeMode = ThemeModes.FollowSystem;
         }
 
+        // v1 → v2: 6-encoder hardware is now installed. The old SelectNextChannel action
+        // was a prototype workaround (1 encoder cycling through channels). Migrate every
+        // channel that still has that action to ToggleAssignedMute so each encoder/button
+        // controls its own dedicated channel independently.
+        if (settings.SettingsVersion < 2)
+        {
+            foreach (ChannelSettings channel in settings.Channels)
+            {
+                if (channel.ButtonAction == ChannelButtonActions.SelectNextChannel)
+                    channel.ButtonAction = ChannelButtonActions.ToggleAssignedMute;
+            }
+            settings.SettingsVersion = 2;
+            migrated = true;
+        }
+
         settings.EncoderSensitivityPercent = Math.Clamp(settings.EncoderSensitivityPercent, 0, MaxEncoderSensitivityPercent);
         foreach (ChannelSettings channel in settings.Channels)
         {
             channel.EncoderSensitivityPercent = Math.Clamp(channel.EncoderSensitivityPercent <= 0 ? settings.EncoderSensitivityPercent : channel.EncoderSensitivityPercent, 0, MaxEncoderSensitivityPercent);
             if (!ChannelButtonActions.IsValid(channel.ButtonAction))
             {
-                channel.ButtonAction = ChannelButtonActions.SelectNextChannel;
+                channel.ButtonAction = ChannelButtonActions.ToggleAssignedMute;
             }
         }
 
@@ -5317,12 +5340,12 @@ public sealed class DashboardSettings
     {
         return new[]
         {
-            new ChannelSettings { TargetKey = "MASTER", FriendlyName = "Master", EncoderSensitivityPercent = 50, ButtonAction = ChannelButtonActions.SelectNextChannel },
-            new ChannelSettings { TargetKey = "PROC:chrome", FriendlyName = "Browser", EncoderSensitivityPercent = 50, ButtonAction = ChannelButtonActions.SelectNextChannel },
-            new ChannelSettings { TargetKey = "PROC:Spotify", FriendlyName = "Music", EncoderSensitivityPercent = 50, ButtonAction = ChannelButtonActions.SelectNextChannel },
-            new ChannelSettings { TargetKey = "PROC:Discord", FriendlyName = "Discord", EncoderSensitivityPercent = 50, ButtonAction = ChannelButtonActions.SelectNextChannel },
-            new ChannelSettings { TargetKey = "", FriendlyName = "", EncoderSensitivityPercent = 50, ButtonAction = ChannelButtonActions.SelectNextChannel },
-            new ChannelSettings { TargetKey = "", FriendlyName = "", EncoderSensitivityPercent = 50, ButtonAction = ChannelButtonActions.SelectNextChannel }
+            new ChannelSettings { TargetKey = "MASTER", FriendlyName = "Master", EncoderSensitivityPercent = 50, ButtonAction = ChannelButtonActions.ToggleAssignedMute },
+            new ChannelSettings { TargetKey = "PROC:chrome", FriendlyName = "Browser", EncoderSensitivityPercent = 50, ButtonAction = ChannelButtonActions.ToggleAssignedMute },
+            new ChannelSettings { TargetKey = "PROC:Spotify", FriendlyName = "Music", EncoderSensitivityPercent = 50, ButtonAction = ChannelButtonActions.ToggleAssignedMute },
+            new ChannelSettings { TargetKey = "PROC:Discord", FriendlyName = "Discord", EncoderSensitivityPercent = 50, ButtonAction = ChannelButtonActions.ToggleAssignedMute },
+            new ChannelSettings { TargetKey = "", FriendlyName = "", EncoderSensitivityPercent = 50, ButtonAction = ChannelButtonActions.ToggleAssignedMute },
+            new ChannelSettings { TargetKey = "", FriendlyName = "", EncoderSensitivityPercent = 50, ButtonAction = ChannelButtonActions.ToggleAssignedMute }
         };
     }
 }
@@ -5332,7 +5355,7 @@ public sealed class ChannelSettings
     public string TargetKey { get; set; } = string.Empty;
     public string FriendlyName { get; set; } = string.Empty;
     public int EncoderSensitivityPercent { get; set; } = 50;
-    public string ButtonAction { get; set; } = ChannelButtonActions.SelectNextChannel;
+    public string ButtonAction { get; set; } = ChannelButtonActions.ToggleAssignedMute;
 }
 
 public sealed class AudioTargetItem
@@ -5381,7 +5404,7 @@ public sealed class ChannelMappingItem
     public string AssignedLabel { get; set; } = "Unassigned";
     public string FriendlyName { get; set; } = string.Empty;
     public int EncoderSensitivityPercent { get; set; } = 50;
-    public string ButtonAction { get; set; } = ChannelButtonActions.SelectNextChannel;
+    public string ButtonAction { get; set; } = ChannelButtonActions.ToggleAssignedMute;
     public int Volume { get; set; }
     public bool Muted { get; set; } = true;
     public string Status { get; set; } = "Unassigned";
