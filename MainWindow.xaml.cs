@@ -29,8 +29,8 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.11";
-    private const string RequiredProtocolVersion = "2.10";
+    private const string DashboardVersion = "2.12";
+    private const string RequiredProtocolVersion = "2.12";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
     private const int ExpectedChannelCount = 6;
@@ -811,7 +811,7 @@ public partial class MainWindow : Window
             _channels.Add(new ChannelMappingItem
             {
                 ChannelIndex = i,
-                ChannelNumber = i,
+                ChannelNumber = i + 1,
                 TargetKey = i == 0 ? "MASTER" : string.Empty,
                 AssignedLabel = i == 0 ? "Master" : "Unassigned",
                 FriendlyName = i == 0 ? "Master" : string.Empty,
