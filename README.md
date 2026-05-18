@@ -36,6 +36,7 @@ Settings are saved to `%APPDATA%\PcVolumeController\settings.json` and restored 
 - **Per-channel sensitivity** — tune how fast each encoder changes volume.
 - **Per-channel short-button action** — select next channel, toggle mute, or no action.
 - **Per-channel OLED display** — each encoder has its own SSD1315 OLED showing channel name and volume.
+- **Named profiles** — save and switch between named sets of channel assignments instantly from the Audio tab.
 - **Auto sleep/wake** — sends a sleep command to the controller when the PC is idle (10 min), locked, or suspended; wakes it on activity.
 - **Auto-reconnect** — detects controller disconnects and reconnects automatically.
 - **Firmware flasher** — built-in UI to flash new ESP32 firmware via `tools/esptool.exe`.
@@ -89,6 +90,7 @@ previous_version_notes/                 — release notes for older versions
 
 | Dashboard | Required firmware protocol | Hardware       |
 |-----------|---------------------------|----------------|
+| v2.25     | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v2.24     | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v2.23     | v2.21                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v2.22     | v2.21                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
