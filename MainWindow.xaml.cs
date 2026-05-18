@@ -29,7 +29,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.15";
+    private const string DashboardVersion = "2.16";
     private const string RequiredProtocolVersion = "2.15";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -103,6 +103,17 @@ public partial class MainWindow : Window
     private readonly DateTime[] _encoderReverseCandidateStartedAt = new DateTime[ExpectedChannelCount];
     private readonly System.Threading.Timer?[] _encoderCoalesceTimers = new System.Threading.Timer?[ExpectedChannelCount];
     private readonly WpfDispatcherTimer?[] _encoderHighlightTimers = new WpfDispatcherTimer?[ExpectedChannelCount];
+
+    // Acceleration: tracks when each channel's delta was last applied (on the UI thread) so the
+    // inter-event interval can be measured for speed-scaling.
+    private readonly DateTime[] _accelPrevApplyAt = new DateTime[ExpectedChannelCount];
+
+    // Smoothing: per-channel target volume (0-100) and active flags; a shared timer ticks
+    // every SmoothingTickMs and eases the actual session volume toward the target.
+    private const int SmoothingTickMs = 20;
+    private readonly int[] _smoothingTargetVolumes = new int[ExpectedChannelCount];
+    private readonly bool[] _smoothingActive = new bool[ExpectedChannelCount];
+    private System.Threading.Timer? _smoothingTimer;
 
     private DashboardSettings _settings = new();
     private int _selectedChannelIndex = 0;
@@ -2301,15 +2312,193 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Measure time since the previous apply for this channel (used by acceleration).
+        DateTime now = DateTime.Now;
+        double intervalMs = _accelPrevApplyAt[encoderChannel] == default
+            ? double.MaxValue
+            : (now - _accelPrevApplyAt[encoderChannel]).TotalMilliseconds;
+        _accelPrevApplyAt[encoderChannel] = now;
+
+        int baseStep = GetVolumeStepPercentForChannel(encoderChannel);
+        int step = _settings.AccelerationEnabled
+            ? GetAcceleratedStep(baseStep, intervalMs)
+            : baseStep;
+
+        int deltaPercent = smoothedDelta * step;
+
         if (IsAdvancedDebugLoggingEnabled())
         {
-            Log($"Encoder {encoderChannel + 1}: applying smoothed delta {smoothedDelta}.");
+            Log($"Encoder {encoderChannel + 1}: delta {smoothedDelta}, step {step}%, total {deltaPercent}% (interval {intervalMs:F0}ms).");
         }
 
-        ChangeChannelVolume(encoderChannel, smoothedDelta * GetVolumeStepPercentForChannel(encoderChannel));
+        if (_settings.VolumeSmoothingEnabled)
+        {
+            // If already smoothing this channel, extend the target rather than reading actual
+            // volume (avoids "chasing" artefacts when events arrive faster than ticks).
+            int baseTarget = _smoothingActive[encoderChannel]
+                ? _smoothingTargetVolumes[encoderChannel]
+                : GetChannelCurrentVolumePercent(encoderChannel);
+
+            if (baseTarget < 0)
+            {
+                // Channel unassigned — fall through to direct change.
+                goto directChange;
+            }
+
+            _smoothingTargetVolumes[encoderChannel] = Math.Clamp(baseTarget + deltaPercent, 0, 100);
+            _smoothingActive[encoderChannel] = true;
+            EnsureSmoothingTimerRunning();
+
+            // Apply first tick immediately so the UI reacts without waiting for the timer.
+            SmoothingTick();
+            return;
+        }
+
+        directChange:
+        ChangeChannelVolume(encoderChannel, deltaPercent);
         RefreshAllChannelStates();
         SendAllChannelStatesToDevice();
         SendStateToDevice(force: true);
+    }
+
+    // Returns a volume step scaled up when the encoder is turned quickly.
+    private int GetAcceleratedStep(int baseStep, double intervalMs)
+    {
+        int multiplier = _settings.AccelerationPreset switch
+        {
+            AccelerationPresets.Light       => intervalMs < 80  ? 2 : 1,
+            AccelerationPresets.Medium      => intervalMs < 60  ? 3 : intervalMs < 100 ? 2 : 1,
+            AccelerationPresets.Aggressive  => intervalMs < 50  ? 4 : intervalMs < 70  ? 3 : intervalMs < 110 ? 2 : 1,
+            _                               => 1,
+        };
+        return Math.Clamp(baseStep * multiplier, 1, MaxVolumeStepPercent);
+    }
+
+    // Returns the smoothing ease-out fraction (proportion of remaining distance moved per tick).
+    private double GetSmoothingFraction()
+    {
+        return _settings.VolumeSmoothingSpeed switch
+        {
+            SmoothingSpeed.Fast   => 0.40,
+            SmoothingSpeed.Slow   => 0.15,
+            _                     => 0.25,   // Normal
+        };
+    }
+
+    // Reads the current actual volume (0-100) for the given channel.
+    // Returns -1 if the channel is unassigned or its audio session is unavailable.
+    private int GetChannelCurrentVolumePercent(int channelIndex)
+    {
+        if (channelIndex < 0 || channelIndex >= _channels.Count)
+        {
+            return -1;
+        }
+
+        ChannelMappingItem channel = _channels[channelIndex];
+        AudioTargetItem? target = FindTargetByKey(channel.TargetKey);
+
+        if (target == null)
+        {
+            return -1;
+        }
+
+        if (target.IsMaster)
+        {
+            try { return GetMasterVolumePercent(); }
+            catch { return -1; }
+        }
+
+        var sessions = FindSessionsForKey(target.Key).ToList();
+
+        if (sessions.Count == 0)
+        {
+            return -1;
+        }
+
+        SimpleAudioVolume? vol = sessions[0].Session?.SimpleAudioVolume;
+
+        if (vol == null)
+        {
+            return -1;
+        }
+
+        return Math.Clamp((int)Math.Round(vol.Volume * 100), 0, 100);
+    }
+
+    private void EnsureSmoothingTimerRunning()
+    {
+        if (_smoothingTimer == null)
+        {
+            _smoothingTimer = new System.Threading.Timer(_ =>
+            {
+                try { Dispatcher.BeginInvoke(new Action(SmoothingTick)); }
+                catch { }
+            }, null, SmoothingTickMs, SmoothingTickMs);
+        }
+    }
+
+    private void StopSmoothingTimer()
+    {
+        _smoothingTimer?.Dispose();
+        _smoothingTimer = null;
+    }
+
+    // Called on the UI thread every SmoothingTickMs.  Moves each active channel's actual
+    // volume one step closer to its target using an ease-out curve.
+    private void SmoothingTick()
+    {
+        bool anyActive = false;
+        bool stateChanged = false;
+        double fraction = GetSmoothingFraction();
+
+        for (int ch = 0; ch < ExpectedChannelCount; ch++)
+        {
+            if (!_smoothingActive[ch])
+            {
+                continue;
+            }
+
+            int target = _smoothingTargetVolumes[ch];
+            int current = GetChannelCurrentVolumePercent(ch);
+
+            if (current < 0)
+            {
+                _smoothingActive[ch] = false;
+                continue;
+            }
+
+            int diff = target - current;
+
+            if (Math.Abs(diff) <= 1)
+            {
+                // Within 1 % — snap to target and stop.
+                if (diff != 0)
+                {
+                    ChangeChannelVolume(ch, diff);
+                    stateChanged = true;
+                }
+                _smoothingActive[ch] = false;
+                continue;
+            }
+
+            // Ease-out: move a fraction of the remaining distance, minimum 1 %.
+            int step = Math.Max(1, (int)Math.Round(Math.Abs(diff) * fraction)) * Math.Sign(diff);
+            ChangeChannelVolume(ch, step);
+            stateChanged = true;
+            anyActive = true;
+        }
+
+        if (stateChanged)
+        {
+            RefreshAllChannelStates();
+            SendAllChannelStatesToDevice();
+            SendStateToDevice(force: true);
+        }
+
+        if (!anyActive)
+        {
+            StopSmoothingTimer();
+        }
     }
 
     private void RefreshDefaultAudioDevice()
@@ -2944,6 +3133,82 @@ public partial class MainWindow : Window
         return GetVolumeStepPercent();
     }
 
+    private void AccelerationEnabledCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        _settings.AccelerationEnabled = AccelerationEnabledCheckBox?.IsChecked == true;
+        SaveSettings();
+    }
+
+    private void AccelerationPresetComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (AccelerationPresetComboBox == null) return;
+        _settings.AccelerationPreset = GetAccelerationPresetFromUi();
+        SaveSettings();
+    }
+
+    private void VolumeSmoothingEnabledCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        _settings.VolumeSmoothingEnabled = VolumeSmoothingEnabledCheckBox?.IsChecked == true;
+        if (!_settings.VolumeSmoothingEnabled)
+        {
+            // Cancel any in-progress smoothing immediately.
+            for (int i = 0; i < ExpectedChannelCount; i++) _smoothingActive[i] = false;
+            StopSmoothingTimer();
+        }
+        SaveSettings();
+    }
+
+    private void VolumeSmoothingSpeedComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (VolumeSmoothingSpeedComboBox == null) return;
+        _settings.VolumeSmoothingSpeed = GetVolumeSmoothingSpeedFromUi();
+        SaveSettings();
+    }
+
+    private string GetAccelerationPresetFromUi()
+    {
+        return AccelerationPresetComboBox?.SelectedIndex switch
+        {
+            0 => AccelerationPresets.Light,
+            1 => AccelerationPresets.Medium,
+            2 => AccelerationPresets.Aggressive,
+            _ => AccelerationPresets.Medium,
+        };
+    }
+
+    private static int GetAccelerationPresetIndex(string preset)
+    {
+        return preset switch
+        {
+            AccelerationPresets.Light      => 0,
+            AccelerationPresets.Medium     => 1,
+            AccelerationPresets.Aggressive => 2,
+            _                              => 1,
+        };
+    }
+
+    private string GetVolumeSmoothingSpeedFromUi()
+    {
+        return VolumeSmoothingSpeedComboBox?.SelectedIndex switch
+        {
+            0 => SmoothingSpeed.Fast,
+            1 => SmoothingSpeed.Normal,
+            2 => SmoothingSpeed.Slow,
+            _ => SmoothingSpeed.Normal,
+        };
+    }
+
+    private static int GetSmoothingSpeedIndex(string speed)
+    {
+        return speed switch
+        {
+            SmoothingSpeed.Fast   => 0,
+            SmoothingSpeed.Normal => 1,
+            SmoothingSpeed.Slow   => 2,
+            _                     => 1,
+        };
+    }
+
     private int GetVolumeStepPercentFromSensitivity(int sensitivityPercent)
     {
         int sensitivity = Math.Clamp(sensitivityPercent, 0, MaxEncoderSensitivityPercent);
@@ -3370,6 +3635,23 @@ public partial class MainWindow : Window
         EncoderSensitivitySlider.Value = Math.Clamp(_settings.EncoderSensitivityPercent, 0, MaxEncoderSensitivityPercent);
         EncoderSensitivityValueTextBlock.Text = $"Sensitivity: {Math.Clamp(_settings.EncoderSensitivityPercent, 0, MaxEncoderSensitivityPercent)}%";
 
+        if (AccelerationEnabledCheckBox != null)
+        {
+            AccelerationEnabledCheckBox.IsChecked = _settings.AccelerationEnabled;
+        }
+        if (AccelerationPresetComboBox != null)
+        {
+            AccelerationPresetComboBox.SelectedIndex = GetAccelerationPresetIndex(_settings.AccelerationPreset);
+        }
+        if (VolumeSmoothingEnabledCheckBox != null)
+        {
+            VolumeSmoothingEnabledCheckBox.IsChecked = _settings.VolumeSmoothingEnabled;
+        }
+        if (VolumeSmoothingSpeedComboBox != null)
+        {
+            VolumeSmoothingSpeedComboBox.SelectedIndex = GetSmoothingSpeedIndex(_settings.VolumeSmoothingSpeed);
+        }
+
         ThemeFollowSystemRadioButton.IsChecked = _settings.ThemeMode == ThemeModes.FollowSystem;
         ThemeLightRadioButton.IsChecked = _settings.ThemeMode == ThemeModes.Light;
         ThemeDarkRadioButton.IsChecked = _settings.ThemeMode == ThemeModes.Dark;
@@ -3471,6 +3753,10 @@ public partial class MainWindow : Window
         _settings.OledConnectedIdleTimeoutMinutes = GetOledConnectedIdleTimeoutMinutesFromUi();
         _settings.OledAntiBurnInEnabled = IsOledAntiBurnInEnabledFromUi();
         _settings.EncoderSensitivityPercent = GetEncoderSensitivityPercentFromUi();
+        _settings.AccelerationEnabled = AccelerationEnabledCheckBox?.IsChecked == true;
+        _settings.AccelerationPreset = GetAccelerationPresetFromUi();
+        _settings.VolumeSmoothingEnabled = VolumeSmoothingEnabledCheckBox?.IsChecked == true;
+        _settings.VolumeSmoothingSpeed = GetVolumeSmoothingSpeedFromUi();
         _settings.ThemeMode = GetThemeModeFromUi();
 
         SaveChannelsToSettings();
@@ -4785,6 +5071,15 @@ public partial class MainWindow : Window
             }
         }
 
+        if (!AccelerationPresets.IsValid(settings.AccelerationPreset))
+        {
+            settings.AccelerationPreset = AccelerationPresets.Medium;
+        }
+        if (!SmoothingSpeed.IsValid(settings.VolumeSmoothingSpeed))
+        {
+            settings.VolumeSmoothingSpeed = SmoothingSpeed.Normal;
+        }
+
         settings.OledBrightnessPercent = Math.Clamp(settings.OledBrightnessPercent <= 0 ? 100 : settings.OledBrightnessPercent, 0, 100);
         settings.OledSleepTimeoutMinutes = Math.Clamp(settings.OledSleepTimeoutMinutes <= 0 ? 2 : settings.OledSleepTimeoutMinutes, 1, 60);
         settings.OledConnectedIdleTimeoutMinutes = Math.Clamp(settings.OledConnectedIdleTimeoutMinutes <= 0 ? 10 : settings.OledConnectedIdleTimeoutMinutes, 1, 60);
@@ -5356,6 +5651,7 @@ public partial class MainWindow : Window
         _audioSessionRefreshTimer?.Dispose();
         _comPortRefreshTimer?.Dispose();
         _fullStateSendCoalesceTimer?.Dispose();
+        _smoothingTimer?.Dispose();
 
         for (int i = 0; i < _encoderCoalesceTimers.Length; i++)
         {
@@ -5437,6 +5733,25 @@ public static class DisplayModes
     public const string BarPercent = "BarPercent";
 }
 
+public static class AccelerationPresets
+{
+    public const string None = "None";
+    public const string Light = "Light";
+    public const string Medium = "Medium";
+    public const string Aggressive = "Aggressive";
+
+    public static bool IsValid(string? v) => v is None or Light or Medium or Aggressive;
+}
+
+public static class SmoothingSpeed
+{
+    public const string Fast = "Fast";
+    public const string Normal = "Normal";
+    public const string Slow = "Slow";
+
+    public static bool IsValid(string? v) => v is Fast or Normal or Slow;
+}
+
 public sealed class DashboardSettings
 {
     // Incremented whenever a migration runs in NormalizeSettings so future
@@ -5454,6 +5769,13 @@ public sealed class DashboardSettings
     public int SelectedChannelIndex { get; set; }
 
     public int EncoderSensitivityPercent { get; set; } = 50;
+
+    // Encoder Feel — acceleration and smoothing (added v2.16)
+    public bool AccelerationEnabled { get; set; } = false;
+    public string AccelerationPreset { get; set; } = AccelerationPresets.Medium;
+    public bool VolumeSmoothingEnabled { get; set; } = false;
+    public string VolumeSmoothingSpeed { get; set; } = SmoothingSpeed.Normal;
+
     public string ThemeMode { get; set; } = ThemeModes.FollowSystem;
     public string OledDisplayMode { get; set; } = DisplayModes.AppNameAndVolume;
     public int OledBrightnessPercent { get; set; } = 100;

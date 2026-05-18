@@ -1,7 +1,7 @@
 ﻿<Window x:Class="PcVolumeControllerDashboard.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="PC Volume Controller Dashboard v2.15"
+        Title="PC Volume Controller Dashboard v2.16"
         Height="800"
         Width="1120"
         MinHeight="680"
@@ -694,7 +694,7 @@
 
                                             <Grid Width="360" HorizontalAlignment="Left">
                                                 <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="90" />
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
                                                 <TextBlock Grid.Column="0"
@@ -713,7 +713,7 @@
 
                                             <Grid Width="360" HorizontalAlignment="Left" Margin="0,8,0,0">
                                                 <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="90" />
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
                                                 <TextBlock Grid.Column="0"
@@ -731,7 +731,7 @@
 
                                             <Grid Width="360" HorizontalAlignment="Left" Margin="0,8,0,0">
                                                 <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="90" />
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
                                                 <TextBlock Grid.Column="0"
@@ -1314,6 +1314,73 @@
                                            Text="Sensitivity: 50%"
                                            FontWeight="SemiBold"
                                            Margin="0,8,0,0" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="12"
+                                Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Encoder Feel"
+                                           FontSize="18"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,8" />
+
+                                <TextBlock Text="Volume acceleration scales the volume step when you turn the encoder quickly. Volume smoothing eases the volume to its target over a short time rather than jumping instantly."
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource SecondaryForeground}"
+                                           Margin="0,0,0,12" />
+
+                                <!-- Acceleration -->
+                                <CheckBox x:Name="AccelerationEnabledCheckBox"
+                                          Content="Enable volume acceleration"
+                                          Margin="0,0,0,8"
+                                          Checked="AccelerationEnabledCheckBox_Changed"
+                                          Unchecked="AccelerationEnabledCheckBox_Changed" />
+
+                                <Grid Margin="0,0,0,16" HorizontalAlignment="Left">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="140" />
+                                        <ColumnDefinition Width="180" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0"
+                                               Text="Acceleration preset:"
+                                               VerticalAlignment="Center" />
+                                    <ComboBox Grid.Column="1"
+                                              x:Name="AccelerationPresetComboBox"
+                                              Height="30"
+                                              SelectionChanged="AccelerationPresetComboBox_SelectionChanged">
+                                        <ComboBoxItem Content="Light" />
+                                        <ComboBoxItem Content="Medium" />
+                                        <ComboBoxItem Content="Aggressive" />
+                                    </ComboBox>
+                                </Grid>
+
+                                <!-- Smoothing -->
+                                <CheckBox x:Name="VolumeSmoothingEnabledCheckBox"
+                                          Content="Enable volume smoothing"
+                                          Margin="0,0,0,8"
+                                          Checked="VolumeSmoothingEnabledCheckBox_Changed"
+                                          Unchecked="VolumeSmoothingEnabledCheckBox_Changed" />
+
+                                <Grid HorizontalAlignment="Left">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="140" />
+                                        <ColumnDefinition Width="180" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0"
+                                               Text="Smoothing speed:"
+                                               VerticalAlignment="Center" />
+                                    <ComboBox Grid.Column="1"
+                                              x:Name="VolumeSmoothingSpeedComboBox"
+                                              Height="30"
+                                              SelectionChanged="VolumeSmoothingSpeedComboBox_SelectionChanged">
+                                        <ComboBoxItem Content="Fast (~60 ms)" />
+                                        <ComboBoxItem Content="Normal (~100 ms)" />
+                                        <ComboBoxItem Content="Slow (~150 ms)" />
+                                    </ComboBox>
+                                </Grid>
                             </StackPanel>
                         </Border>
 
