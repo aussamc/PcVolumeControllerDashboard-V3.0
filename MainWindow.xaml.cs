@@ -29,7 +29,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.17";
+    private const string DashboardVersion = "2.18";
     private const string RequiredProtocolVersion = "2.15";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -2543,6 +2543,14 @@ public partial class MainWindow : Window
     // Working entirely in normalized float space (0.0–1.0) avoids the quantisation
     // artefacts that appear when intermediate volumes are rounded to integer percent.
     // SetChannelVolumeAbsolute writes the float directly to WASAPI — no conversion.
+    //
+    // IMPORTANT: we do NOT call RefreshAllChannelStates() here.  That method reads
+    // sessions[0].Volume — a cached integer from AudioTargetItem — which is only
+    // refreshed every 500 ms by StatePollTick.  Using it would overwrite the smooth
+    // interpolated value we just computed with a stale snapshot, collapsing the
+    // animation back to a step function on the main page and OLED preview.
+    // Instead, _channels[ch].Volume is updated directly from _smoothingCurrentVolumes
+    // so both the channel list and the OLED preview animate in lock-step with the audio.
     private void SmoothingTick()
     {
         bool anyActive = false;
@@ -2559,28 +2567,42 @@ public partial class MainWindow : Window
             float target  = _smoothingTargetVolumes[ch];
             float current = _smoothingCurrentVolumes[ch];
             float diff    = target - current;
+            float next;
 
             if (Math.Abs(diff) < SmoothingSnapThreshold)
             {
                 // Within snap threshold — write the exact target and stop.
-                _smoothingCurrentVolumes[ch] = target;
-                SetChannelVolumeAbsolute(ch, target);
-                stateChanged = true;
+                next = target;
                 _smoothingActive[ch] = false;
-                continue;
+            }
+            else
+            {
+                // EMA: exponentially approach target.
+                next = current + alpha * diff;
+                anyActive = true;
             }
 
-            // EMA: exponentially approach target.
-            float next = current + alpha * diff;
             _smoothingCurrentVolumes[ch] = next;
             SetChannelVolumeAbsolute(ch, next);
+
+            // Mirror the smooth float into the channel's integer display volume so
+            // the channel list volume bar and the OLED preview panel both animate
+            // frame-by-frame rather than snapping once per StatePollTick.
+            if (ch < _channels.Count)
+            {
+                _channels[ch].Volume = (int)Math.Round(next * 100);
+            }
+
             stateChanged = true;
-            anyActive = true;
         }
 
         if (stateChanged)
         {
-            RefreshAllChannelStates();
+            // Refresh only the visual layer — not RefreshAllChannelStates (see above).
+            ChannelMappingsListView.Items.Refresh();
+            UpdateSelectedChannelUi();
+            UpdateOledPreviewPanels();
+
             SendAllChannelStatesToDevice();
             SendStateToDevice(force: true);
         }
