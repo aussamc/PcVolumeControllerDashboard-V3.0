@@ -29,7 +29,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.24";
+    private const string DashboardVersion = "2.25";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -178,6 +178,7 @@ public partial class MainWindow : Window
     private int _fullStateSendQueued;
     private DateTime _lastSleepWakeTestCommandAt = DateTime.MinValue;
     private Slider? _activeSliderDrag;
+    private bool _profileComboBoxSuppressEvents;
 
 
     public MainWindow()
@@ -682,6 +683,309 @@ public partial class MainWindow : Window
         SelectedChannel.OledDisplayMode = mode;
         SendChannelOledModeToDevice(_selectedChannelIndex);
         SaveSettingsFromCurrentState();
+    }
+
+    // --- Profiles ---
+
+    private void RefreshProfileUi()
+    {
+        if (ProfileComboBox == null)
+        {
+            return;
+        }
+
+        _profileComboBoxSuppressEvents = true;
+        ProfileComboBox.Items.Clear();
+        foreach (ProfileEntry profile in _settings.Profiles)
+        {
+            ProfileComboBox.Items.Add(profile.Name);
+        }
+        int activeIndex = _settings.Profiles.FindIndex(p => p.Name == _settings.ActiveProfileName);
+        ProfileComboBox.SelectedIndex = activeIndex >= 0 ? activeIndex : 0;
+        _profileComboBoxSuppressEvents = false;
+
+        if (DeleteProfileButton != null)
+        {
+            DeleteProfileButton.IsEnabled = _settings.Profiles.Count > 1;
+        }
+    }
+
+    private void ProfileComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_profileComboBoxSuppressEvents || ProfileComboBox == null)
+        {
+            return;
+        }
+
+        int index = ProfileComboBox.SelectedIndex;
+        if (index < 0 || index >= _settings.Profiles.Count)
+        {
+            return;
+        }
+
+        string newName = _settings.Profiles[index].Name;
+        if (newName == _settings.ActiveProfileName)
+        {
+            return;
+        }
+
+        SwitchToProfile(newName);
+    }
+
+    private void SwitchToProfile(string profileName)
+    {
+        // Persist the currently live channel state to the profile we're leaving.
+        SaveChannelsToSettings();
+
+        _settings.ActiveProfileName = profileName;
+        ProfileEntry? profile = _settings.Profiles.FirstOrDefault(p => p.Name == profileName);
+        if (profile == null)
+        {
+            return;
+        }
+
+        _settings.Channels = profile.Channels;
+        ApplySettingsToChannels();
+        RefreshAllChannelStates();
+        SendAllChannelStatesToDevice();
+        SendAllChannelOledModesToDevice();
+        SaveSettings();
+        Log($"Switched to profile \"{profileName}\".");
+    }
+
+    private void NewProfileButton_Click(object sender, RoutedEventArgs e)
+    {
+        string? name = ShowInputDialog(this, "New Profile", "Enter a name for the new profile:");
+        if (name == null)
+        {
+            return;
+        }
+
+        name = name.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            System.Windows.MessageBox.Show(this, "Profile name cannot be empty.", "New Profile", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        if (_settings.Profiles.Any(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            System.Windows.MessageBox.Show(this, $"A profile named \"{name}\" already exists.", "New Profile", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        // Save current state to the profile we're leaving.
+        SaveChannelsToSettings();
+
+        ProfileEntry newProfile = new() { Name = name, Channels = DashboardSettings.CreateDefaultChannels() };
+        _settings.Profiles.Add(newProfile);
+        _settings.ActiveProfileName = name;
+        _settings.Channels = newProfile.Channels;
+        ApplySettingsToChannels();
+        RefreshAllChannelStates();
+        SendAllChannelStatesToDevice();
+        SendAllChannelOledModesToDevice();
+        SaveSettings();
+        Log($"Created new profile \"{name}\".");
+    }
+
+    private void RenameProfileButton_Click(object sender, RoutedEventArgs e)
+    {
+        string current = _settings.ActiveProfileName;
+        string? name = ShowInputDialog(this, "Rename Profile", "Enter a new name for this profile:", current);
+        if (name == null)
+        {
+            return;
+        }
+
+        name = name.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            System.Windows.MessageBox.Show(this, "Profile name cannot be empty.", "Rename Profile", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        if (string.Equals(name, current, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (_settings.Profiles.Any(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            System.Windows.MessageBox.Show(this, $"A profile named \"{name}\" already exists.", "Rename Profile", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        ProfileEntry? profile = _settings.Profiles.FirstOrDefault(p => p.Name == current);
+        if (profile == null)
+        {
+            return;
+        }
+
+        profile.Name = name;
+        _settings.ActiveProfileName = name;
+        RefreshProfileUi();
+        SaveSettings();
+        Log($"Renamed profile \"{current}\" to \"{name}\".");
+    }
+
+    private void DuplicateProfileButton_Click(object sender, RoutedEventArgs e)
+    {
+        string current = _settings.ActiveProfileName;
+
+        // Auto-generate a unique default name for the duplicate.
+        string baseName = current + " Copy";
+        string candidateName = baseName;
+        int suffix = 2;
+        while (_settings.Profiles.Any(p => string.Equals(p.Name, candidateName, StringComparison.OrdinalIgnoreCase)))
+        {
+            candidateName = $"{baseName} {suffix++}";
+        }
+
+        string? name = ShowInputDialog(this, "Duplicate Profile", "Enter a name for the duplicate:", candidateName);
+        if (name == null)
+        {
+            return;
+        }
+
+        name = name.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            System.Windows.MessageBox.Show(this, "Profile name cannot be empty.", "Duplicate Profile", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        if (_settings.Profiles.Any(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            System.Windows.MessageBox.Show(this, $"A profile named \"{name}\" already exists.", "Duplicate Profile", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        // Persist current state before duplicating.
+        SaveChannelsToSettings();
+
+        ProfileEntry? source = _settings.Profiles.FirstOrDefault(p => p.Name == current);
+        if (source == null)
+        {
+            return;
+        }
+
+        ProfileEntry duplicate = new()
+        {
+            Name = name,
+            Channels = source.Channels.Select(ch => new ChannelSettings
+            {
+                TargetKey = ch.TargetKey,
+                FriendlyName = ch.FriendlyName,
+                ButtonAction = ch.ButtonAction,
+                LongPressButtonAction = ch.LongPressButtonAction,
+                DoublePressButtonAction = ch.DoublePressButtonAction,
+                RebindFallback = ch.RebindFallback,
+                OledDisplayMode = ch.OledDisplayMode
+            }).ToArray()
+        };
+
+        _settings.Profiles.Add(duplicate);
+        _settings.ActiveProfileName = name;
+        _settings.Channels = duplicate.Channels;
+        ApplySettingsToChannels();
+        RefreshAllChannelStates();
+        SendAllChannelStatesToDevice();
+        SendAllChannelOledModesToDevice();
+        SaveSettings();
+        Log($"Duplicated profile \"{current}\" as \"{name}\".");
+    }
+
+    private void DeleteProfileButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_settings.Profiles.Count <= 1)
+        {
+            System.Windows.MessageBox.Show(this, "Cannot delete the last remaining profile.", "Delete Profile", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        string current = _settings.ActiveProfileName;
+        MessageBoxResult result = System.Windows.MessageBox.Show(this,
+            $"Delete profile \"{current}\"? This cannot be undone.",
+            "Delete Profile",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (result != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        int index = _settings.Profiles.FindIndex(p => p.Name == current);
+        _settings.Profiles.RemoveAt(index);
+
+        // Switch to the nearest remaining profile.
+        int newIndex = Math.Min(index, _settings.Profiles.Count - 1);
+        _settings.ActiveProfileName = _settings.Profiles[newIndex].Name;
+        _settings.Channels = _settings.Profiles[newIndex].Channels;
+        ApplySettingsToChannels();
+        RefreshAllChannelStates();
+        SendAllChannelStatesToDevice();
+        SendAllChannelOledModesToDevice();
+        SaveSettings();
+        Log($"Deleted profile \"{current}\".");
+    }
+
+    private static string? ShowInputDialog(Window owner, string title, string prompt, string defaultValue = "")
+    {
+        var dialog = new Window
+        {
+            Title = title,
+            Width = 380,
+            Height = 162,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = owner,
+            ResizeMode = ResizeMode.NoResize,
+            ShowInTaskbar = false
+        };
+
+        var grid = new Grid();
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.Margin = new Thickness(16);
+
+        var label = new TextBlock { Text = prompt, Margin = new Thickness(0, 0, 0, 8) };
+        Grid.SetRow(label, 0);
+        grid.Children.Add(label);
+
+        var textBox = new System.Windows.Controls.TextBox
+        {
+            Text = defaultValue,
+            Height = 30,
+            Margin = new Thickness(0, 0, 0, 12),
+            VerticalContentAlignment = VerticalAlignment.Center,
+            Padding = new Thickness(4, 0, 4, 0)
+        };
+        Grid.SetRow(textBox, 1);
+        grid.Children.Add(textBox);
+
+        var buttonPanel = new StackPanel
+        {
+            Orientation = System.Windows.Controls.Orientation.Horizontal,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Right
+        };
+        var okButton = new System.Windows.Controls.Button { Content = "OK", Width = 80, Height = 30, Margin = new Thickness(0, 0, 8, 0), IsDefault = true };
+        var cancelButton = new System.Windows.Controls.Button { Content = "Cancel", Width = 80, Height = 30, IsCancel = true };
+
+        string? result = null;
+        okButton.Click += (_, _) => { result = textBox.Text; dialog.DialogResult = true; };
+        cancelButton.Click += (_, _) => { dialog.DialogResult = false; };
+
+        buttonPanel.Children.Add(okButton);
+        buttonPanel.Children.Add(cancelButton);
+        Grid.SetRow(buttonPanel, 2);
+        grid.Children.Add(buttonPanel);
+
+        dialog.Content = grid;
+        dialog.Loaded += (_, _) => { textBox.Focus(); textBox.SelectAll(); };
+
+        return dialog.ShowDialog() == true ? result : null;
     }
 
     // --- Auto-Rebind tab ---
@@ -4617,6 +4921,7 @@ public partial class MainWindow : Window
         RefreshChannelAssignmentLabels();
         RefreshAllChannelStates();
         ApplyRebindSettingsToUi();
+        RefreshProfileUi();
     }
 
     private void SaveSettingsFromCurrentState()
@@ -4712,6 +5017,16 @@ public partial class MainWindow : Window
         }).ToArray();
 
         _settings.ChannelTargetKeys = _settings.Channels.Select(channel => channel.TargetKey).ToArray();
+
+        // Keep the active profile's Channels in sync with the live channel state.
+        if (_settings.Profiles != null)
+        {
+            ProfileEntry? activeProfile = _settings.Profiles.FirstOrDefault(p => p.Name == _settings.ActiveProfileName);
+            if (activeProfile != null)
+            {
+                activeProfile.Channels = _settings.Channels;
+            }
+        }
     }
 
     private void SaveCurrentWindowSize()
@@ -5546,6 +5861,64 @@ public partial class MainWindow : Window
         }
         settings.SelectedChannelIndex = Math.Clamp(settings.SelectedChannelIndex, 0, ChannelCount - 1);
 
+        // v4 → v5: Named profiles introduced. Create a single "Default" profile from
+        // the current channel settings so existing setups are migrated automatically.
+        if (settings.SettingsVersion < 5)
+        {
+            settings.Profiles ??= new List<ProfileEntry>();
+            if (settings.Profiles.Count == 0)
+            {
+                settings.Profiles.Add(new ProfileEntry
+                {
+                    Name = "Default",
+                    Channels = settings.Channels.Select(ch => new ChannelSettings
+                    {
+                        TargetKey = ch.TargetKey,
+                        FriendlyName = ch.FriendlyName,
+                        ButtonAction = ch.ButtonAction,
+                        LongPressButtonAction = ch.LongPressButtonAction,
+                        DoublePressButtonAction = ch.DoublePressButtonAction,
+                        RebindFallback = ch.RebindFallback,
+                        OledDisplayMode = ch.OledDisplayMode
+                    }).ToArray()
+                });
+                settings.ActiveProfileName = "Default";
+            }
+            settings.SettingsVersion = 5;
+            migrated = true;
+        }
+
+        // Validate profiles: null-guard, fix bad channel arrays, ensure at least one profile,
+        // ensure the active name points to an existing profile.
+        settings.Profiles ??= new List<ProfileEntry>();
+        foreach (ProfileEntry profile in settings.Profiles)
+        {
+            if (profile.Channels == null || profile.Channels.Length != ChannelCount)
+            {
+                profile.Channels = DashboardSettings.CreateDefaultChannels();
+            }
+        }
+        if (settings.Profiles.Count == 0)
+        {
+            settings.Profiles.Add(new ProfileEntry
+            {
+                Name = "Default",
+                Channels = DashboardSettings.CreateDefaultChannels()
+            });
+        }
+        if (settings.Profiles.All(p => p.Name != settings.ActiveProfileName))
+        {
+            settings.ActiveProfileName = settings.Profiles[0].Name;
+        }
+
+        // Sync Channels from the active profile so ApplySettingsToChannels reads
+        // the profile data, not a stale copy from an older settings field.
+        ProfileEntry? activeProfile = settings.Profiles.FirstOrDefault(p => p.Name == settings.ActiveProfileName);
+        if (activeProfile != null)
+        {
+            settings.Channels = activeProfile.Channels;
+        }
+
         return migrated;
     }
 
@@ -6210,6 +6583,16 @@ public static class SmoothingSpeed
     public static bool IsValid(string? v) => v is Fast or Normal or Slow;
 }
 
+/// <summary>
+/// A named set of channel assignments that can be switched at runtime.
+/// Profiles store the six channel settings; all other dashboard settings are global.
+/// </summary>
+public sealed class ProfileEntry
+{
+    public string Name { get; set; } = "Default";
+    public ChannelSettings[] Channels { get; set; } = DashboardSettings.CreateDefaultChannels();
+}
+
 public sealed class DashboardSettings
 {
     // Incremented whenever a migration runs in NormalizeSettings so future
@@ -6257,6 +6640,12 @@ public sealed class DashboardSettings
     public ChannelSettings[] Channels { get; set; } = CreateDefaultChannels();
 
     public string[] ChannelTargetKeys { get; set; } = Array.Empty<string>();
+
+    // Named profiles (v2.25+). Each profile stores its own set of 6 channel settings.
+    // The active profile's Channels array is always mirrored into the Channels property
+    // above so older code paths continue to work unchanged.
+    public List<ProfileEntry> Profiles { get; set; } = new();
+    public string ActiveProfileName { get; set; } = string.Empty;
 
     public static DashboardSettings CreateDefault()
     {
