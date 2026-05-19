@@ -1,7 +1,8 @@
 ﻿<Window x:Class="PcVolumeControllerDashboard.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="PC Volume Controller Dashboard v2.26"
+        Title="PC Volume Controller Dashboard v2.27"
+        Icon="Assets/app-icon.ico"
         Height="800"
         Width="1120"
         MinHeight="680"
@@ -99,6 +100,39 @@
                                 <Setter TargetName="ButtonBorder"
                                         Property="Opacity"
                                         Value="0.45" />
+                                <Setter Property="Cursor" Value="Arrow" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PrimaryButton" TargetType="{x:Type Button}" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="#0066CC" />
+            <Setter Property="Foreground" Value="#FFFFFF" />
+            <Setter Property="BorderBrush" Value="#0055AA" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border x:Name="PrimaryBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              RecognizesAccessKey="True" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="PrimaryBorder" Property="Background" Value="#0055AA" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="PrimaryBorder" Property="Background" Value="#004488" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="PrimaryBorder" Property="Opacity" Value="0.45" />
                                 <Setter Property="Cursor" Value="Arrow" />
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -419,7 +453,42 @@
         </Style>
     </Window.Resources>
 
-    <Grid Margin="16">
+    <DockPanel>
+        <!-- Status bar docked to the bottom -->
+        <Border DockPanel.Dock="Bottom"
+                x:Name="StatusBar"
+                BorderThickness="0,1,0,0"
+                Padding="10,5"
+                Background="{DynamicResource CardBackground}">
+            <DockPanel>
+                <Ellipse x:Name="StatusBarDot"
+                         Width="10" Height="10"
+                         Fill="{DynamicResource ConnectionBadForeground}"
+                         Margin="0,0,6,0"
+                         DockPanel.Dock="Left"
+                         VerticalAlignment="Center" />
+                <TextBlock x:Name="StatusBarConnectionText"
+                           Text="Disconnected"
+                           VerticalAlignment="Center"
+                           Margin="0,0,16,0"
+                           DockPanel.Dock="Left" />
+                <TextBlock x:Name="StatusBarProfileText"
+                           Text=""
+                           VerticalAlignment="Center"
+                           Margin="0,0,16,0"
+                           Foreground="{DynamicResource SecondaryForeground}"
+                           DockPanel.Dock="Left" />
+                <TextBlock x:Name="StatusBarFirmwareText"
+                           Text=""
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource SecondaryForeground}"
+                           HorizontalAlignment="Right"
+                           DockPanel.Dock="Right" />
+            </DockPanel>
+        </Border>
+
+        <!-- Main content -->
+        <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -503,6 +572,7 @@
                                     Content="Connect"
                                     Width="110"
                                     Height="30"
+                                    Style="{StaticResource PrimaryButton}"
                                     Click="ConnectButton_Click" />
 
                             <TextBlock Grid.Row="0" Grid.Column="4"
@@ -551,6 +621,7 @@
                                     Height="30"
                                     Margin="0,0,6,0"
                                     DockPanel.Dock="Left"
+                                    Style="{StaticResource PrimaryButton}"
                                     Click="NewProfileButton_Click" />
                             <Button x:Name="RenameProfileButton"
                                     Content="Rename"
@@ -647,6 +718,7 @@
                                                 Width="80"
                                                 Height="30"
                                                 Margin="0,0,8,0"
+                                                Style="{StaticResource PrimaryButton}"
                                                 Click="AssignChannelButton_Click" />
 
                                         <Button Grid.Column="7"
@@ -679,7 +751,27 @@
                                             <GridViewColumn Header="Ch" Width="42" DisplayMemberBinding="{Binding ChannelDisplay}" />
                                             <GridViewColumn Header="Display Name" Width="135" DisplayMemberBinding="{Binding DisplayLabel}" />
                                             <GridViewColumn Header="Assigned Target" Width="145" DisplayMemberBinding="{Binding AssignedLabel}" />
-                                            <GridViewColumn Header="Volume" Width="70" DisplayMemberBinding="{Binding VolumeDisplay}" />
+                                            <GridViewColumn Header="Volume" Width="80">
+                                                <GridViewColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <Grid>
+                                                            <Grid.RowDefinitions>
+                                                                <RowDefinition Height="Auto" />
+                                                                <RowDefinition Height="3" />
+                                                            </Grid.RowDefinitions>
+                                                            <TextBlock Grid.Row="0" Text="{Binding VolumeDisplay}" FontSize="11" />
+                                                            <ProgressBar Grid.Row="1"
+                                                                         Value="{Binding Volume}"
+                                                                         Minimum="0" Maximum="100"
+                                                                         Height="3"
+                                                                         Background="Transparent"
+                                                                         BorderThickness="0"
+                                                                         Foreground="#0066CC"
+                                                                         Margin="0,1,0,0" />
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </GridViewColumn.CellTemplate>
+                                            </GridViewColumn>
                                             <GridViewColumn Header="Mute" Width="60" DisplayMemberBinding="{Binding MuteDisplay}" />
                                             <GridViewColumn Header="Status" Width="130" DisplayMemberBinding="{Binding Status}" />
                                         </GridView>
@@ -826,6 +918,19 @@
                                                     <ComboBoxItem Content="Volume bar" />
                                                 </ComboBox>
                                             </Grid>
+
+                                            <Grid Width="360" HorizontalAlignment="Left" Margin="0,12,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="90" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="App offline:" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                <ComboBox Grid.Column="1" x:Name="ChannelRebindComboBox" Height="30"
+                                                          SelectionChanged="ChannelRebindComboBox_SelectionChanged">
+                                                    <ComboBoxItem Content="Show Inactive" />
+                                                    <ComboBoxItem Content="Do Nothing" />
+                                                </ComboBox>
+                                            </Grid>
                                         </StackPanel>
                                     </Border>
 
@@ -904,127 +1009,6 @@
                     </Grid>
                 </Grid>
 
-            </TabItem>
-
-            <!-- ============================================================ -->
-            <!-- Auto-Rebind tab                                               -->
-            <!-- ============================================================ -->
-            <TabItem Header="Auto-Rebind">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Background="{DynamicResource AppBackground}">
-                    <StackPanel Margin="0,12,0,0">
-                        <Border BorderThickness="1"
-                                CornerRadius="8"
-                                Padding="12"
-                                Margin="0,0,0,12">
-                            <StackPanel>
-                                <TextBlock Text="App Offline Fallback"
-                                           FontSize="18"
-                                           FontWeight="SemiBold"
-                                           Margin="0,0,0,4" />
-                                <TextBlock TextWrapping="Wrap"
-                                           Opacity="0.7"
-                                           Margin="0,0,0,14">
-                                    When a channel's assigned app is not running, choose what happens.
-                                    <LineBreak />
-                                    <Run FontWeight="SemiBold">Show Inactive</Run> — channel row is greyed out; OLED shows "App offline". Reverts to active as soon as the app opens.
-                                    <LineBreak />
-                                    <Run FontWeight="SemiBold">Do Nothing</Run> — channel is silently inactive (no visual change).
-                                </TextBlock>
-
-                                <!-- Channel 1 -->
-                                <Grid Margin="0,0,0,8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="140" />
-                                        <ColumnDefinition Width="200" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Channel 1" VerticalAlignment="Center" />
-                                    <ComboBox Grid.Column="1" x:Name="Channel1RebindComboBox" Height="30"
-                                              Tag="0"
-                                              SelectionChanged="RebindFallbackComboBox_SelectionChanged">
-                                        <ComboBoxItem Content="Show Inactive" />
-                                        <ComboBoxItem Content="Do Nothing" />
-                                    </ComboBox>
-                                </Grid>
-
-                                <!-- Channel 2 -->
-                                <Grid Margin="0,0,0,8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="140" />
-                                        <ColumnDefinition Width="200" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Channel 2" VerticalAlignment="Center" />
-                                    <ComboBox Grid.Column="1" x:Name="Channel2RebindComboBox" Height="30"
-                                              Tag="1"
-                                              SelectionChanged="RebindFallbackComboBox_SelectionChanged">
-                                        <ComboBoxItem Content="Show Inactive" />
-                                        <ComboBoxItem Content="Do Nothing" />
-                                    </ComboBox>
-                                </Grid>
-
-                                <!-- Channel 3 -->
-                                <Grid Margin="0,0,0,8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="140" />
-                                        <ColumnDefinition Width="200" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Channel 3" VerticalAlignment="Center" />
-                                    <ComboBox Grid.Column="1" x:Name="Channel3RebindComboBox" Height="30"
-                                              Tag="2"
-                                              SelectionChanged="RebindFallbackComboBox_SelectionChanged">
-                                        <ComboBoxItem Content="Show Inactive" />
-                                        <ComboBoxItem Content="Do Nothing" />
-                                    </ComboBox>
-                                </Grid>
-
-                                <!-- Channel 4 -->
-                                <Grid Margin="0,0,0,8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="140" />
-                                        <ColumnDefinition Width="200" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Channel 4" VerticalAlignment="Center" />
-                                    <ComboBox Grid.Column="1" x:Name="Channel4RebindComboBox" Height="30"
-                                              Tag="3"
-                                              SelectionChanged="RebindFallbackComboBox_SelectionChanged">
-                                        <ComboBoxItem Content="Show Inactive" />
-                                        <ComboBoxItem Content="Do Nothing" />
-                                    </ComboBox>
-                                </Grid>
-
-                                <!-- Channel 5 -->
-                                <Grid Margin="0,0,0,8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="140" />
-                                        <ColumnDefinition Width="200" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Channel 5" VerticalAlignment="Center" />
-                                    <ComboBox Grid.Column="1" x:Name="Channel5RebindComboBox" Height="30"
-                                              Tag="4"
-                                              SelectionChanged="RebindFallbackComboBox_SelectionChanged">
-                                        <ComboBoxItem Content="Show Inactive" />
-                                        <ComboBoxItem Content="Do Nothing" />
-                                    </ComboBox>
-                                </Grid>
-
-                                <!-- Channel 6 -->
-                                <Grid Margin="0,0,0,8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="140" />
-                                        <ColumnDefinition Width="200" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Channel 6" VerticalAlignment="Center" />
-                                    <ComboBox Grid.Column="1" x:Name="Channel6RebindComboBox" Height="30"
-                                              Tag="5"
-                                              SelectionChanged="RebindFallbackComboBox_SelectionChanged">
-                                        <ComboBoxItem Content="Show Inactive" />
-                                        <ComboBoxItem Content="Do Nothing" />
-                                    </ComboBox>
-                                </Grid>
-
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                </ScrollViewer>
             </TabItem>
 
             <TabItem Header="OLED Setup">
@@ -1465,6 +1449,17 @@
                                            Foreground="{DynamicResource SecondaryForeground}"
                                            TextWrapping="Wrap"
                                            Margin="0,4,0,0" />
+
+                                <Button x:Name="ShowFirstRunWizardButton"
+                                        Content="Show setup guide"
+                                        HorizontalAlignment="Left"
+                                        Padding="0"
+                                        BorderThickness="0"
+                                        Background="Transparent"
+                                        Foreground="#0066CC"
+                                        Cursor="Hand"
+                                        Margin="0,8,0,0"
+                                        Click="ShowFirstRunWizardButton_Click" />
                             </StackPanel>
                         </Border>
 
@@ -1722,12 +1717,10 @@
                             <Button x:Name="FactoryResetSetupButton" Content="Factory Reset Setup" Width="170" Height="34" Margin="0,0,8,8" Click="FactoryResetSetupButton_Click" />
                         </WrapPanel>
 
-                        <Button x:Name="SaveSettingsButton"
-                                Content="Save Setup"
-                                Width="130"
-                                Height="34"
-                                HorizontalAlignment="Left"
-                                Click="SaveSettingsButton_Click" />
+                        <TextBlock Text="Settings are saved automatically whenever you make a change."
+                                   Foreground="{DynamicResource SecondaryForeground}"
+                                   FontStyle="Italic"
+                                   TextWrapping="Wrap" />
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
@@ -1738,12 +1731,12 @@
                             <StackPanel>
                                 <TextBlock Text="ESP32 Firmware Update" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,8" />
                                 <TextBlock Text="Use bundled firmware binaries when available, or select a manually built ESP32 .bin file. The dashboard looks for esptool in the tools folder." TextWrapping="Wrap" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,10" />
-                                <TextBlock Text="Bundled firmware source: Computer_Volume_Controller_v2.15" Margin="0,0,0,4" />
+                                <TextBlock x:Name="FirmwareSourceTextBlock" Text="Bundled firmware source: —" Margin="0,0,0,4" />
                                 <TextBlock x:Name="FirmwareStatusTextBlock" Text="Compiled binaries: see firmware_bin/build_instructions.txt if binaries are not present" Margin="0,0,0,6" TextWrapping="Wrap" />
                                 <TextBlock x:Name="SelectedFirmwareBinTextBlock" Text="Selected .bin file: none" Margin="0,0,0,10" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryForeground}" />
                                 <WrapPanel Margin="0,0,0,8">
                                     <Button x:Name="SelectFirmwareBinButton" Content="Select .bin File" Width="130" Height="34" Margin="0,0,8,8" Click="SelectFirmwareBinButton_Click" />
-                                    <Button x:Name="FlashFirmwareButton" Content="Flash ESP32 Firmware" Width="180" Height="34" Margin="0,0,8,8" Click="FlashFirmwareButton_Click" />
+                                    <Button x:Name="FlashFirmwareButton" Content="Flash ESP32 Firmware" Width="180" Height="34" Margin="0,0,8,8" Style="{StaticResource PrimaryButton}" Click="FlashFirmwareButton_Click" />
                                 </WrapPanel>
                                 <TextBox x:Name="FirmwareFlashOutputTextBox" Margin="0,12,0,0" MinHeight="180" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" IsReadOnly="True" />
                             </StackPanel>
@@ -1793,7 +1786,7 @@
                     <TextBox Grid.Row="1" x:Name="DebugConsoleTextBox" FontFamily="Consolas" AcceptsReturn="True" TextWrapping="NoWrap" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" IsReadOnly="True" />
                 </Grid>
             </TabItem>
-            <TabItem x:Name="FirstRunWizardTab" Header="First Run">
+            <TabItem x:Name="FirstRunWizardTab" Header="First Run" Visibility="Collapsed">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Background="{DynamicResource AppBackground}">
                     <StackPanel Margin="0,12,0,0">
                         <Border BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12">
@@ -1856,5 +1849,6 @@
                        Text="Ready."
                        TextWrapping="Wrap" />
         </Border>
-    </Grid>
+        </Grid>
+    </DockPanel>
 </Window>

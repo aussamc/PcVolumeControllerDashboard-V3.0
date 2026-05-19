@@ -78,6 +78,7 @@ PcVolumeControllerDashboard.csproj      — .NET 10 WPF project
 MainWindow.xaml / .cs                   — main application window
 App.xaml / .cs                          — WPF app entry point
 AssemblyInfo.cs                         — assembly attributes
+Assets/                                 — application assets (app-icon.ico)
 Computer_Volume_Controller_v2.10/       — ESP32 Arduino firmware source (v2.10, 6-channel)
 firmware_bin/                           — firmware build output + instructions
 tools/                                  — esptool.exe for firmware flashing
@@ -90,6 +91,7 @@ previous_version_notes/                 — release notes for older versions
 
 | Dashboard | Required firmware protocol | Hardware       |
 |-----------|---------------------------|----------------|
+| v2.27     | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v2.26     | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v2.25     | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v2.24     | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |

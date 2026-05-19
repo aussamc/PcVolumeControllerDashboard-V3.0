@@ -9,9 +9,10 @@
     <UseWindowsForms>true</UseWindowsForms>
 
     <!-- Assembly identity — visible in Windows Explorer → Properties -->
-    <Version>2.26.0</Version>
-    <AssemblyVersion>2.26.0.0</AssemblyVersion>
-    <FileVersion>2.26.0.0</FileVersion>
+    <Version>2.27.0</Version>
+    <AssemblyVersion>2.27.0.0</AssemblyVersion>
+    <FileVersion>2.27.0.0</FileVersion>
+    <ApplicationIcon>Assets\app-icon.ico</ApplicationIcon>
     <Product>PC Volume Controller Dashboard</Product>
     <Description>Dashboard for the PC Volume Controller hardware device</Description>
     <Copyright>Copyright © 2026</Copyright>
@@ -27,6 +28,13 @@
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />
     <PackageReference Include="System.IO.Ports" Version="10.0.0" />
+  </ItemGroup>
+
+  <!-- App icon — copy to output so LoadAppIcon() can find it at runtime -->
+  <ItemGroup>
+    <Content Include="Assets\app-icon.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <!-- Exclude any old-version project directories that may exist on disk.
