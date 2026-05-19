@@ -29,7 +29,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.27";
+    private const string DashboardVersion = "2.28";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -72,6 +72,7 @@ public partial class MainWindow : Window
     private const int SerialReceiveBufferMaxBytes = 4096;
     private const int ChannelCount = 6;
     private const string StartupRegistryName = "PcVolumeControllerDashboard";
+    private const string MicTargetKey = "MIC_INPUT";
     private const int DwmwaUseImmersiveDarkMode = 20;
     private static readonly JsonSerializerOptions JsonWriteOptions = new() { WriteIndented = true };
     private const int WmDeviceChange = 0x0219;
@@ -89,6 +90,7 @@ public partial class MainWindow : Window
     private SerialPort? _serial;
     private MMDeviceEnumerator? _deviceEnumerator;
     private MMDevice? _defaultRenderDevice;
+    private MMDevice? _defaultCaptureDevice;
     private System.Threading.Timer? _statePollTimer;
     private System.Threading.Timer? _heartbeatTimer;
     private System.Threading.Timer? _audioSessionRefreshTimer;
@@ -133,6 +135,7 @@ public partial class MainWindow : Window
 
     private DashboardSettings _settings = new();
     private int _selectedChannelIndex = 0;
+    private bool _perChannelSensitivitySuppressEvents;
     private int _lastSentVolume = -1;
     private bool _lastSentMute;
     private string _lastSentLabel = string.Empty;
@@ -888,7 +891,8 @@ public partial class MainWindow : Window
                 LongPressButtonAction = ch.LongPressButtonAction,
                 DoublePressButtonAction = ch.DoublePressButtonAction,
                 RebindFallback = ch.RebindFallback,
-                OledDisplayMode = ch.OledDisplayMode
+                OledDisplayMode = ch.OledDisplayMode,
+                SensitivityPercent = ch.SensitivityPercent
             }).ToArray()
         };
 
@@ -1022,6 +1026,36 @@ public partial class MainWindow : Window
 
         string fb = _channels[_selectedChannelIndex].RebindFallback;
         ChannelRebindComboBox.SelectedIndex = fb == RebindFallbacks.DoNothing ? 1 : 0;
+    }
+
+    private void PerChannelSensitivityUseGlobalCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_perChannelSensitivitySuppressEvents) return;
+        bool useGlobal = PerChannelSensitivityUseGlobalCheckBox.IsChecked == true;
+        PerChannelSensitivityPanel.Visibility = useGlobal ? Visibility.Collapsed : Visibility.Visible;
+
+        if (_selectedChannelIndex >= 0 && _selectedChannelIndex < _settings.Channels.Length)
+        {
+            _settings.Channels[_selectedChannelIndex].SensitivityPercent = useGlobal ? -1
+                : (int)Math.Round(PerChannelSensitivitySlider.Value);
+        }
+        FlushUiToSettings();
+    }
+
+    private void PerChannelSensitivitySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_perChannelSensitivitySuppressEvents) return;
+        if (PerChannelSensitivityValueTextBlock == null) return;
+
+        int value = Math.Clamp((int)Math.Round(PerChannelSensitivitySlider.Value), 0, MaxEncoderSensitivityPercent);
+        PerChannelSensitivityValueTextBlock.Text = $"{value}%";
+
+        if (PerChannelSensitivityUseGlobalCheckBox.IsChecked != true
+            && _selectedChannelIndex >= 0 && _selectedChannelIndex < _settings.Channels.Length)
+        {
+            _settings.Channels[_selectedChannelIndex].SensitivityPercent = value;
+            FlushUiToSettings();
+        }
     }
 
     private void Slider_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -2879,6 +2913,12 @@ public partial class MainWindow : Window
                 return Math.Clamp(_defaultRenderDevice!.AudioEndpointVolume.MasterVolumeLevelScalar, 0f, 1f);
             }
 
+            if (target.IsMicInput)
+            {
+                if (_defaultCaptureDevice == null) return -1f;
+                return Math.Clamp(_defaultCaptureDevice.AudioEndpointVolume.MasterVolumeLevelScalar, 0f, 1f);
+            }
+
             var sessions = FindSessionsForKey(target.Key).ToList();
 
             if (sessions.Count == 0)
@@ -2926,6 +2966,15 @@ public partial class MainWindow : Window
                     _defaultRenderDevice.AudioEndpointVolume.Mute = false;
                 }
 
+                return;
+            }
+
+            if (target.IsMicInput)
+            {
+                if (_defaultCaptureDevice == null) return;
+                _defaultCaptureDevice.AudioEndpointVolume.MasterVolumeLevelScalar = v;
+                if (_defaultCaptureDevice.AudioEndpointVolume.Mute && v > 0f)
+                    _defaultCaptureDevice.AudioEndpointVolume.Mute = false;
                 return;
             }
 
@@ -3061,6 +3110,16 @@ public partial class MainWindow : Window
         {
             Log($"Audio device error: {ex.Message}");
         }
+
+        try
+        {
+            _defaultCaptureDevice?.Dispose();
+            _defaultCaptureDevice = _deviceEnumerator!.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Communications);
+        }
+        catch
+        {
+            _defaultCaptureDevice = null;
+        }
     }
 
     private void RefreshAudioSessions()
@@ -3071,6 +3130,8 @@ public partial class MainWindow : Window
 
             _audioTargets.Clear();
             _audioTargets.Add(AudioTargetItem.CreateMaster());
+            if (_defaultCaptureDevice != null)
+                _audioTargets.Add(AudioTargetItem.CreateMic());
 
             AudioSessionManager manager = _defaultRenderDevice!.AudioSessionManager;
 
@@ -3121,6 +3182,7 @@ public partial class MainWindow : Window
             .Concat(_channels.Select(channel => channel.TargetKey))
             .Where(key => !string.IsNullOrWhiteSpace(key))
             .Where(key => !key.Equals("MASTER", StringComparison.OrdinalIgnoreCase))
+            .Where(key => !key.Equals("MIC_INPUT", StringComparison.OrdinalIgnoreCase))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
@@ -3262,6 +3324,23 @@ public partial class MainWindow : Window
                 channel.Status = "Active";
                 channel.IsAppOffline = false;
             }
+            else if (target.IsMicInput)
+            {
+                if (_defaultCaptureDevice != null)
+                {
+                    channel.Volume = Math.Clamp((int)Math.Round(_defaultCaptureDevice.AudioEndpointVolume.MasterVolumeLevelScalar * 100), 0, 100);
+                    channel.Muted = _defaultCaptureDevice.AudioEndpointVolume.Mute;
+                    channel.Status = "Active";
+                }
+                else
+                {
+                    channel.Volume = 0;
+                    channel.Muted = false;
+                    channel.Status = "No device";
+                }
+                channel.IsAppOffline = false;
+                continue;
+            }
             else
             {
                 var sessions = FindSessionsForKey(target.Key).ToList();
@@ -3331,6 +3410,19 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (target.IsMicInput)
+        {
+            if (_defaultCaptureDevice == null) return;
+            int current = Math.Clamp((int)Math.Round(_defaultCaptureDevice.AudioEndpointVolume.MasterVolumeLevelScalar * 100), 0, 100);
+            int next = Math.Clamp(current + deltaPercent, 0, 100);
+            _defaultCaptureDevice.AudioEndpointVolume.MasterVolumeLevelScalar = next / 100.0f;
+            if (_defaultCaptureDevice.AudioEndpointVolume.Mute && next > 0)
+                _defaultCaptureDevice.AudioEndpointVolume.Mute = false;
+            if (IsAdvancedDebugLoggingEnabled())
+                Log($"Channel {channel.ChannelNumber} / Mic Input: {next}%");
+            return;
+        }
+
         var sessions = FindSessionsForKey(target.Key).ToList();
 
         if (sessions.Count == 0)
@@ -3391,6 +3483,15 @@ public partial class MainWindow : Window
             AudioEndpointVolume endpointVolume = _defaultRenderDevice!.AudioEndpointVolume;
             endpointVolume.Mute = !endpointVolume.Mute;
             Log(endpointVolume.Mute ? "Master muted" : "Master unmuted");
+            return;
+        }
+
+        if (target.IsMicInput)
+        {
+            if (_defaultCaptureDevice == null) return;
+            AudioEndpointVolume epv = _defaultCaptureDevice.AudioEndpointVolume;
+            epv.Mute = !epv.Mute;
+            Log(epv.Mute ? "Mic input muted" : "Mic input unmuted");
             return;
         }
 
@@ -3542,6 +3643,35 @@ public partial class MainWindow : Window
         if (ChannelRebindComboBox != null)
         {
             ChannelRebindComboBox.SelectedIndex = channel.RebindFallback == RebindFallbacks.DoNothing ? 1 : 0;
+        }
+
+        // Per-channel sensitivity
+        _perChannelSensitivitySuppressEvents = true;
+        try
+        {
+            int index = _selectedChannelIndex;
+            if (PerChannelSensitivityUseGlobalCheckBox != null
+                && index >= 0 && index < _settings.Channels.Length)
+            {
+                int chSens = _settings.Channels[index].SensitivityPercent;
+                bool useGlobal = chSens < 0;
+                PerChannelSensitivityUseGlobalCheckBox.IsChecked = useGlobal;
+                PerChannelSensitivityPanel.Visibility = useGlobal ? Visibility.Collapsed : Visibility.Visible;
+                if (!useGlobal)
+                {
+                    PerChannelSensitivitySlider.Value = Math.Clamp(chSens, 0, MaxEncoderSensitivityPercent);
+                    PerChannelSensitivityValueTextBlock.Text = $"{Math.Clamp(chSens, 0, MaxEncoderSensitivityPercent)}%";
+                }
+                else
+                {
+                    // Show slider at global value when in "use global" mode (informational, slider is hidden anyway)
+                    PerChannelSensitivitySlider.Value = Math.Clamp(_settings.EncoderSensitivityPercent, 0, MaxEncoderSensitivityPercent);
+                }
+            }
+        }
+        finally
+        {
+            _perChannelSensitivitySuppressEvents = false;
         }
     }
 
@@ -3766,7 +3896,13 @@ public partial class MainWindow : Window
 
     private int GetVolumeStepPercentForChannel(int channelIndex)
     {
-        return GetVolumeStepPercent();
+        if (channelIndex >= 0 && channelIndex < _settings.Channels.Length)
+        {
+            int perChannel = _settings.Channels[channelIndex].SensitivityPercent;
+            if (perChannel >= 0)
+                return GetVolumeStepPercentFromSensitivity(perChannel);
+        }
+        return GetVolumeStepPercent(); // fall back to global
     }
 
     private void AccelerationEnabledCheckBox_Changed(object sender, RoutedEventArgs e)
@@ -4025,6 +4161,11 @@ public partial class MainWindow : Window
         if (key.Equals("MASTER", StringComparison.OrdinalIgnoreCase))
         {
             return "Master";
+        }
+
+        if (key.Equals("MIC_INPUT", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Microphone Input";
         }
 
         if (key.StartsWith("PROC:", StringComparison.OrdinalIgnoreCase))
@@ -4552,6 +4693,15 @@ public partial class MainWindow : Window
         if (VolumeSmoothingEnabledCheckBox != null) _settings.VolumeSmoothingEnabled = VolumeSmoothingEnabledCheckBox.IsChecked == true;
         if (VolumeSmoothingSpeedComboBox != null) _settings.VolumeSmoothingSpeed = GetVolumeSmoothingSpeedFromUi();
         if (ThemeFollowSystemRadioButton != null) _settings.ThemeMode = GetThemeModeFromUi();
+
+        // Per-channel sensitivity for the currently viewed channel
+        if (PerChannelSensitivityUseGlobalCheckBox != null
+            && _selectedChannelIndex >= 0 && _selectedChannelIndex < _settings.Channels.Length)
+        {
+            bool useGlobal = PerChannelSensitivityUseGlobalCheckBox.IsChecked == true;
+            _settings.Channels[_selectedChannelIndex].SensitivityPercent = useGlobal ? -1
+                : Math.Clamp((int)Math.Round(PerChannelSensitivitySlider?.Value ?? 0), 0, MaxEncoderSensitivityPercent);
+        }
 
         SaveChannelsToSettings();
         SaveCurrentWindowSize();
@@ -6007,7 +6157,8 @@ public partial class MainWindow : Window
                         LongPressButtonAction = ch.LongPressButtonAction,
                         DoublePressButtonAction = ch.DoublePressButtonAction,
                         RebindFallback = ch.RebindFallback,
-                        OledDisplayMode = ch.OledDisplayMode
+                        OledDisplayMode = ch.OledDisplayMode,
+                        SensitivityPercent = ch.SensitivityPercent
                     }).ToArray()
                 });
                 settings.ActiveProfileName = "Default";
@@ -6630,6 +6781,7 @@ public partial class MainWindow : Window
         DisconnectSerial();
 
         _defaultRenderDevice?.Dispose();
+        _defaultCaptureDevice?.Dispose();
         _deviceEnumerator?.Dispose();
 
         if (_trayIcon != null)
@@ -6871,6 +7023,11 @@ public sealed class ChannelSettings
     // Empty string = inherit the global mode from OLED Setup.
     // Non-empty = override with this specific mode for this channel.
     public string OledDisplayMode { get; set; } = string.Empty;
+
+    // Per-channel encoder sensitivity override.
+    // -1 = inherit the global EncoderSensitivityPercent.
+    // 0–500 = use this value for this channel only.
+    public int SensitivityPercent { get; set; } = -1;
 }
 
 public sealed class AudioTargetItem
@@ -6884,8 +7041,9 @@ public sealed class AudioTargetItem
     public bool Muted { get; set; }
     public string State { get; set; } = string.Empty;
     public bool IsMaster { get; set; }
+    public bool IsMicInput { get; set; }
 
-    public bool IsActiveOrMaster => IsMaster || Session != null;
+    public bool IsActiveOrMaster => IsMaster || IsMicInput || Session != null;
 
     public string VolumeDisplay => $"{Volume}%";
     public string MuteDisplay => Muted ? "Yes" : "No";
@@ -6907,6 +7065,23 @@ public sealed class AudioTargetItem
             Muted = false,
             State = "Active",
             IsMaster = true
+        };
+    }
+
+    public static AudioTargetItem CreateMic()
+    {
+        return new AudioTargetItem
+        {
+            Key = "MIC_INPUT",
+            Label = "Microphone Input",
+            ProcessName = string.Empty,
+            ProcessId = 0,
+            Session = null,
+            Volume = 0,
+            Muted = false,
+            State = "Active",
+            IsMaster = false,
+            IsMicInput = true
         };
     }
 }
