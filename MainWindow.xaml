@@ -1,7 +1,7 @@
 ﻿<Window x:Class="PcVolumeControllerDashboard.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="PC Volume Controller Dashboard v2.28"
+        Title="PC Volume Controller Dashboard v2.29"
         Icon="Assets/app-icon.ico"
         Height="800"
         Width="1120"
@@ -858,6 +858,7 @@
                                                     <ComboBoxItem Content="Select next channel" />
                                                     <ComboBoxItem Content="Toggle assigned mute" />
                                                     <ComboBoxItem Content="No action" />
+                                                    <ComboBoxItem Content="Next profile" />
                                                 </ComboBox>
                                             </Grid>
 
@@ -876,6 +877,7 @@
                                                           SelectionChanged="ChannelLongPressActionComboBox_SelectionChanged">
                                                     <ComboBoxItem Content="Toggle assigned mute" />
                                                     <ComboBoxItem Content="No action" />
+                                                    <ComboBoxItem Content="Next profile" />
                                                 </ComboBox>
                                             </Grid>
 
@@ -894,6 +896,7 @@
                                                           SelectionChanged="ChannelDoublePressActionComboBox_SelectionChanged">
                                                     <ComboBoxItem Content="Toggle assigned mute" />
                                                     <ComboBoxItem Content="No action" />
+                                                    <ComboBoxItem Content="Next profile" />
                                                 </ComboBox>
                                             </Grid>
 
@@ -1503,8 +1506,87 @@
                             </StackPanel>
                         </Border>
 
+                        <Border BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="12"
+                                Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Global Hotkeys"
+                                           FontSize="18"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,4"/>
+                                <TextBlock Text="These hotkeys work system-wide even when the dashboard is minimized. All hotkeys are unassigned by default."
+                                           Foreground="{DynamicResource SecondaryForeground}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,0,0,12"/>
 
+                                <!-- Row template: Action | Current binding | [Set] [Clear] -->
+                                <Grid Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="50"/>
+                                        <ColumnDefinition Width="50"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Master volume up:" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" x:Name="HotkeyMasterVolUpTextBlock" Text="(unassigned)" VerticalAlignment="Center" Foreground="{DynamicResource SecondaryForeground}"/>
+                                    <Button Grid.Column="2" Content="Set" Height="26" Margin="4,0,2,0" Click="HotkeyMasterVolUp_Set"/>
+                                    <Button Grid.Column="3" Content="Clear" Height="26" Margin="2,0,0,0" Click="HotkeyMasterVolUp_Clear"/>
+                                </Grid>
 
+                                <Grid Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="50"/>
+                                        <ColumnDefinition Width="50"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Master volume down:" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" x:Name="HotkeyMasterVolDownTextBlock" Text="(unassigned)" VerticalAlignment="Center" Foreground="{DynamicResource SecondaryForeground}"/>
+                                    <Button Grid.Column="2" Content="Set" Height="26" Margin="4,0,2,0" Click="HotkeyMasterVolDown_Set"/>
+                                    <Button Grid.Column="3" Content="Clear" Height="26" Margin="2,0,0,0" Click="HotkeyMasterVolDown_Clear"/>
+                                </Grid>
+
+                                <Grid Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="50"/>
+                                        <ColumnDefinition Width="50"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Toggle master mute:" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" x:Name="HotkeyToggleMasterMuteTextBlock" Text="(unassigned)" VerticalAlignment="Center" Foreground="{DynamicResource SecondaryForeground}"/>
+                                    <Button Grid.Column="2" Content="Set" Height="26" Margin="4,0,2,0" Click="HotkeyToggleMasterMute_Set"/>
+                                    <Button Grid.Column="3" Content="Clear" Height="26" Margin="2,0,0,0" Click="HotkeyToggleMasterMute_Clear"/>
+                                </Grid>
+
+                                <Grid Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="50"/>
+                                        <ColumnDefinition Width="50"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Next profile:" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" x:Name="HotkeyCycleNextProfileTextBlock" Text="(unassigned)" VerticalAlignment="Center" Foreground="{DynamicResource SecondaryForeground}"/>
+                                    <Button Grid.Column="2" Content="Set" Height="26" Margin="4,0,2,0" Click="HotkeyCycleNextProfile_Set"/>
+                                    <Button Grid.Column="3" Content="Clear" Height="26" Margin="2,0,0,0" Click="HotkeyCycleNextProfile_Clear"/>
+                                </Grid>
+
+                                <Grid Margin="0,0,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="50"/>
+                                        <ColumnDefinition Width="50"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Show dashboard:" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" x:Name="HotkeyShowDashboardTextBlock" Text="(unassigned)" VerticalAlignment="Center" Foreground="{DynamicResource SecondaryForeground}"/>
+                                    <Button Grid.Column="2" Content="Set" Height="26" Margin="4,0,2,0" Click="HotkeyShowDashboard_Set"/>
+                                    <Button Grid.Column="3" Content="Clear" Height="26" Margin="2,0,0,0" Click="HotkeyShowDashboard_Clear"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
 
                         <Border BorderThickness="1"
                                 CornerRadius="8"
