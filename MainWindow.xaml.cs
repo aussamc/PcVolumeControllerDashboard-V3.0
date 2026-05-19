@@ -29,7 +29,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.25";
+    private const string DashboardVersion = "2.26";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -180,6 +180,12 @@ public partial class MainWindow : Window
     private Slider? _activeSliderDrag;
     private bool _profileComboBoxSuppressEvents;
 
+    // Set by LoadSettings when settings.json exists but cannot be parsed.
+    // The corruption dialog is shown after the window is fully initialised
+    // (via ShowPendingSettingsCorruptionDialogIfNeeded) so it has a valid owner.
+    private bool _settingsWereCorrupt;
+    private string? _settingsCorruptBackupRestored;
+
 
     public MainWindow()
     {
@@ -246,34 +252,37 @@ public partial class MainWindow : Window
 
         if (!_settings.FirstRunWizardCompleted && !_safeMode)
         {
-            Dispatcher.BeginInvoke(new Action(() =>
+            Dispatcher.InvokeAsync(() =>
             {
                 if (MainTabs != null && FirstRunWizardTab != null)
                 {
                     MainTabs.SelectedItem = FirstRunWizardTab;
                 }
-            }));
+            });
         }
 
         if (_settings.AutoConnectOnLaunch && !_safeMode)
         {
-            Dispatcher.BeginInvoke(new Action(() =>
+            Dispatcher.InvokeAsync(() =>
             {
                 if (_serial?.IsOpen != true)
                 {
                     TryAutoReconnect(GetAvailableComPorts());
                 }
-            }));
+            });
         }
 
         if (_settings.StartMinimizedToTray && _settings.MinimizeToTray)
         {
-            Dispatcher.BeginInvoke(new Action(() =>
+            Dispatcher.InvokeAsync(() =>
             {
                 HideToTray();
                 ShowTrayNotification("PC Volume Controller", "Dashboard started minimized to tray.");
-            }));
+            });
         }
+
+        // Show the corruption dialog after the window is fully rendered, so it has a valid owner.
+        Dispatcher.InvokeAsync(ShowPendingSettingsCorruptionDialogIfNeeded);
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -370,7 +379,7 @@ public partial class MainWindow : Window
 
         try
         {
-            Dispatcher.BeginInvoke(new Action(() =>
+            Dispatcher.InvokeAsync(() =>
             {
                 try
                 {
@@ -387,7 +396,7 @@ public partial class MainWindow : Window
                 {
                     System.Threading.Interlocked.Exchange(ref _statePollBusy, 0);
                 }
-            }));
+            });
         }
         catch
         {
@@ -404,7 +413,7 @@ public partial class MainWindow : Window
 
         try
         {
-            Dispatcher.BeginInvoke(new Action(() =>
+            Dispatcher.InvokeAsync(() =>
             {
                 try
                 {
@@ -414,7 +423,7 @@ public partial class MainWindow : Window
                 {
                     System.Threading.Interlocked.Exchange(ref _audioRefreshBusy, 0);
                 }
-            }));
+            });
         }
         catch
         {
@@ -431,7 +440,7 @@ public partial class MainWindow : Window
 
         try
         {
-            Dispatcher.BeginInvoke(new Action(() =>
+            Dispatcher.InvokeAsync(() =>
             {
                 try
                 {
@@ -445,7 +454,7 @@ public partial class MainWindow : Window
                 {
                     System.Threading.Interlocked.Exchange(ref _comRefreshBusy, 0);
                 }
-            }));
+            });
         }
         catch
         {
@@ -496,7 +505,7 @@ public partial class MainWindow : Window
 
     private void SaveSettingsButton_Click(object sender, RoutedEventArgs e)
     {
-        SaveSettingsFromUi();
+        FlushUiToSettings();
         ApplyStartupSetting();
         ApplyTheme();
         RefreshAudioSessions();
@@ -509,7 +518,7 @@ public partial class MainWindow : Window
 
     private void SaveOledSetupButton_Click(object sender, RoutedEventArgs e)
     {
-        SaveSettingsFromUi();
+        FlushUiToSettings();
         UpdateOledBrightnessLabel();
         UpdateOledSleepTimeoutLabel();
         UpdateOledConnectedIdleTimeoutLabel();
@@ -602,7 +611,7 @@ public partial class MainWindow : Window
 
         ApplySettingsToUi();
         ApplyStartupSetting();
-        SaveSettingsFromCurrentState();
+        FlushUiToSettings();
         UpdateFirstRunWizardStatus();
         Log("First-run wizard setup choices saved.");
     }
@@ -618,7 +627,7 @@ public partial class MainWindow : Window
     private void WizardCompleteButton_Click(object sender, RoutedEventArgs e)
     {
         _settings.FirstRunWizardCompleted = true;
-        SaveSettingsFromCurrentState();
+        FlushUiToSettings();
         UpdateFirstRunWizardStatus();
         Log("First-run wizard marked complete.");
 
@@ -682,7 +691,7 @@ public partial class MainWindow : Window
         string mode = GetChannelOledModeFromIndex(ChannelOledModeComboBox.SelectedIndex);
         SelectedChannel.OledDisplayMode = mode;
         SendChannelOledModeToDevice(_selectedChannelIndex);
-        SaveSettingsFromCurrentState();
+        FlushUiToSettings();
     }
 
     // --- Profiles ---
@@ -1008,7 +1017,7 @@ public partial class MainWindow : Window
 
         RefreshAllChannelStates();
         SendAllChannelStatesToDevice();
-        SaveSettingsFromCurrentState();
+        FlushUiToSettings();
     }
 
     private void ApplyRebindSettingsToUi()
@@ -1149,7 +1158,7 @@ public partial class MainWindow : Window
 
         channel.Status = target.IsActiveOrMaster ? "Active" : "Waiting for app";
 
-        SaveSettingsFromCurrentState();
+        FlushUiToSettings();
         RefreshAudioSessions();
         RefreshAllChannelStates();
         SendAllChannelStatesToDevice();
@@ -1169,7 +1178,7 @@ public partial class MainWindow : Window
             channel.FriendlyName = channel.AssignedLabel;
         }
 
-        SaveSettingsFromCurrentState();
+        FlushUiToSettings();
         RefreshAllChannelStates();
         SendAllChannelStatesToDevice();
         SendStateToDevice(force: true);
@@ -2048,7 +2057,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            Dispatcher.BeginInvoke(new Action(() =>
+            Dispatcher.InvokeAsync(() =>
             {
                 if (e.Reason == SessionSwitchReason.SessionLock)
                 {
@@ -2060,7 +2069,7 @@ public partial class MainWindow : Window
                     _sessionLocked = false;
                     UpdateControllerPowerStateFromPcActivity(forceEvaluate: true);
                 }
-            }));
+            });
         }
         catch
         {
@@ -2071,7 +2080,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            Dispatcher.BeginInvoke(new Action(() =>
+            Dispatcher.InvokeAsync(() =>
             {
                 if (e.Mode == PowerModes.Suspend)
                 {
@@ -2083,7 +2092,7 @@ public partial class MainWindow : Window
                     _systemSuspending = false;
                     SendControllerWake("PC_RESUME");
                 }
-            }));
+            });
         }
         catch
         {
@@ -2136,7 +2145,7 @@ public partial class MainWindow : Window
 
         _controllerSleepRequested = true;
         _controllerSleepReason = reason;
-        WriteSerialLine($"SLEEP,{MakeProtocolSafeLabel(reason)}", logOutgoing: true);
+        WriteSerialLine($"{ProtocolCommands.Sleep},{MakeProtocolSafeLabel(reason)}", logOutgoing: true);
         EspStatusTextBlock.Text = $"Connected - controller sleeping ({reason})";
         Log($"Controller sleep requested: {reason}");
         UpdateDiagnostics();
@@ -2158,7 +2167,7 @@ public partial class MainWindow : Window
 
         _controllerSleepRequested = false;
         _controllerSleepReason = string.Empty;
-        WriteSerialLine($"WAKE,{MakeProtocolSafeLabel(reason)}", logOutgoing: true);
+        WriteSerialLine($"{ProtocolCommands.Wake},{MakeProtocolSafeLabel(reason)}", logOutgoing: true);
         EspStatusTextBlock.Text = $"Connected - firmware {_espProtocolVersion} ({_espFirmwareName})";
         Log($"Controller wake requested: {reason}");
         SendAllChannelStatesToDevice();
@@ -2185,18 +2194,18 @@ public partial class MainWindow : Window
     {
         if (_serial?.IsOpen == true && _esp32HelloReceived)
         {
-            WriteSerialLine("PING", logOutgoing: false);
+            WriteSerialLine(ProtocolCommands.Ping, logOutgoing: false);
         }
     }
 
     private void RequestHelloFromDevice()
     {
-        WriteSerialLine("HELLO?", logOutgoing: false);
+        WriteSerialLine(ProtocolCommands.HelloQuery, logOutgoing: false);
     }
 
     private void SendDisconnectToDevice()
     {
-        WriteSerialLine("DISCONNECT", logOutgoing: false);
+        WriteSerialLine(ProtocolCommands.Disconnect, logOutgoing: false);
     }
 
     private void OnSerialDataReceived(object sender, SerialDataReceivedEventArgs e)
@@ -2250,7 +2259,7 @@ public partial class MainWindow : Window
 
             foreach (string line in completeLines)
             {
-                Dispatcher.BeginInvoke(new Action(() => HandleDeviceMessage(line)));
+                Dispatcher.InvokeAsync(() => HandleDeviceMessage(line));
             }
         }
         catch (InvalidOperationException)
@@ -2276,7 +2285,7 @@ public partial class MainWindow : Window
 
         try
         {
-            Dispatcher.BeginInvoke(new Action(DisconnectSerialDueToError));
+            Dispatcher.InvokeAsync(DisconnectSerialDueToError);
         }
         catch
         {
@@ -2310,9 +2319,9 @@ public partial class MainWindow : Window
         _lastEspMessage = line;
         _lastEspMessageTime = DateTime.Now;
 
-        if (!_esp32HelloReceived && command != "HELLO")
+        if (!_esp32HelloReceived && command != ProtocolCommands.Hello)
         {
-            if (!string.Equals(line, "PONG", StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(line, ProtocolCommands.Pong, StringComparison.OrdinalIgnoreCase))
             {
                 Log($"Ignoring pre-identity serial data from {_serial?.PortName ?? "unknown port"}: {line}");
             }
@@ -2320,40 +2329,40 @@ public partial class MainWindow : Window
         }
 
         // Normal heartbeat traffic arrives once per second. Keep it out of the log so the log remains useful.
-        bool duplicateHelloAfterIdentity = command == "HELLO" &&
+        bool duplicateHelloAfterIdentity = command == ProtocolCommands.Hello &&
             _esp32HelloReceived &&
             _activeConnectionState.Equals("Connected", StringComparison.OrdinalIgnoreCase);
 
-        bool suppressNormalEncoderLog = command == "ENC" && !IsAdvancedDebugLoggingEnabled();
+        bool suppressNormalEncoderLog = command == ProtocolCommands.EncoderTurn && !IsAdvancedDebugLoggingEnabled();
 
-        if (!string.Equals(line, "PONG", StringComparison.OrdinalIgnoreCase) && !duplicateHelloAfterIdentity && !suppressNormalEncoderLog)
+        if (!string.Equals(line, ProtocolCommands.Pong, StringComparison.OrdinalIgnoreCase) && !duplicateHelloAfterIdentity && !suppressNormalEncoderLog)
         {
             Log($"ESP32 -> PC: {line}");
         }
 
         switch (command)
         {
-            case "HELLO":
+            case ProtocolCommands.Hello:
                 HandleHelloMessage(parts, line);
                 break;
 
-            case "PONG":
+            case ProtocolCommands.Pong:
                 MarkEsp32Seen("heartbeat");
                 UpdateDiagnostics();
                 break;
 
-            case "DBG":
+            case ProtocolCommands.Debug:
                 MarkEsp32Seen("debug");
                 Log($"ESP32 debug: {string.Join(",", parts.Skip(1))}");
                 break;
 
-            case "ENC":
+            case ProtocolCommands.EncoderTurn:
                 MarkEsp32Seen("encoder");
                 HandleEncoderMessage(parts);
                 break;
 
-            case "BTN":
-            case "BTN_SHORT":
+            case ProtocolCommands.ButtonLegacy:
+            case ProtocolCommands.ButtonShort:
                 MarkEsp32Seen("button");
                 RegisterHardwareButtonEvent(parts);
                 if (_controllerSleepRequested)
@@ -2369,7 +2378,7 @@ public partial class MainWindow : Window
                 ApplyShortButtonAction(parts);
                 break;
 
-            case "BTN_LONG":
+            case ProtocolCommands.ButtonLong:
                 MarkEsp32Seen("button long");
                 RegisterHardwareButtonEvent(parts);
                 if (_controllerSleepRequested)
@@ -2385,7 +2394,7 @@ public partial class MainWindow : Window
                 ApplyLongButtonAction(parts);
                 break;
 
-            case "BTN_DOUBLE":
+            case ProtocolCommands.ButtonDouble:
                 MarkEsp32Seen("button double");
                 RegisterHardwareButtonEvent(parts);
                 if (_controllerSleepRequested)
@@ -2401,7 +2410,7 @@ public partial class MainWindow : Window
                 ApplyDoubleButtonAction(parts);
                 break;
 
-            case "SLEEPING":
+            case ProtocolCommands.Sleeping:
                 MarkEsp32Seen("sleep ack");
                 if (HardwareTestStatusTextBlock != null)
                 {
@@ -2409,7 +2418,7 @@ public partial class MainWindow : Window
                 }
                 break;
 
-            case "AWAKE":
+            case ProtocolCommands.Awake:
                 MarkEsp32Seen("wake ack");
                 if (HardwareTestStatusTextBlock != null)
                 {
@@ -2417,22 +2426,22 @@ public partial class MainWindow : Window
                 }
                 break;
 
-            case "OLEDCFG_ACK":
+            case ProtocolCommands.OledCfgAck:
                 MarkEsp32Seen("oled config ack");
                 Log($"ESP32 OLED config applied: {string.Join(',', parts.Skip(1))}");
                 break;
 
-            case "OLED_IDLE_START":
+            case ProtocolCommands.OledIdleStart:
                 MarkEsp32Seen("oled idle start");
                 Log($"ESP32 OLED idle started: {string.Join(',', parts.Skip(1))}");
                 break;
 
-            case "OLED_IDLE_END":
+            case ProtocolCommands.OledIdleEnd:
                 MarkEsp32Seen("oled idle end");
                 Log($"ESP32 OLED idle ended: {string.Join(',', parts.Skip(1))}");
                 break;
 
-            case "ERR":
+            case ProtocolCommands.Error:
                 Log($"ESP32 error: {string.Join(',', parts.Skip(1))}");
                 break;
         }
@@ -2706,7 +2715,7 @@ public partial class MainWindow : Window
             {
                 try
                 {
-                    Dispatcher.BeginInvoke(new Action(() => ApplySmoothedEncoderDelta(encoderChannel, deltaToApply)));
+                    Dispatcher.InvokeAsync(() => ApplySmoothedEncoderDelta(encoderChannel, deltaToApply));
                 }
                 catch
                 {
@@ -2951,7 +2960,7 @@ public partial class MainWindow : Window
         {
             _smoothingTimer = new System.Threading.Timer(_ =>
             {
-                try { Dispatcher.BeginInvoke(new Action(SmoothingTick)); }
+                try { Dispatcher.InvokeAsync(SmoothingTick); }
                 catch { }
             }, null, SmoothingTickMs, SmoothingTickMs);
         }
@@ -3599,7 +3608,7 @@ public partial class MainWindow : Window
             string status = MakeProtocolSafeLabel(channel.Status);
             int muted = channel.Muted ? 1 : 0;
 
-            string message = $"CHSTATE,{channel.ChannelIndex},{label},{channel.Volume},{muted},{status}";
+            string message = $"{ProtocolCommands.ChannelState},{channel.ChannelIndex},{label},{channel.Volume},{muted},{status}";
 
             WriteSerialLine(message);
             _lastStateSent = message;
@@ -3612,11 +3621,11 @@ public partial class MainWindow : Window
     {
         return GetDisplayModeFromUi() switch
         {
-            DisplayModes.LargeVolume => "LARGE_VOLUME",
-            DisplayModes.MuteStatus => "MUTE_STATUS",
-            DisplayModes.AppOrDeviceName => "APP_OR_DEVICE_NAME",
-            DisplayModes.BarPercent => "BAR_PERCENT",
-            _ => "APP_VOLUME"
+            DisplayModes.LargeVolume => ProtocolCommands.DisplayModeLargeVolume,
+            DisplayModes.MuteStatus => ProtocolCommands.DisplayModeMuteStatus,
+            DisplayModes.AppOrDeviceName => ProtocolCommands.DisplayModeAppName,
+            DisplayModes.BarPercent => ProtocolCommands.DisplayModeBarPercent,
+            _ => ProtocolCommands.DisplayModeAppVolume
         };
     }
 
@@ -3639,11 +3648,11 @@ public partial class MainWindow : Window
         if (string.IsNullOrEmpty(dashboardMode)) return string.Empty;
         return dashboardMode switch
         {
-            DisplayModes.LargeVolume     => "LARGE_VOLUME",
-            DisplayModes.MuteStatus      => "MUTE_STATUS",
-            DisplayModes.AppOrDeviceName => "APP_OR_DEVICE_NAME",
-            DisplayModes.BarPercent      => "BAR_PERCENT",
-            _                            => "APP_VOLUME"
+            DisplayModes.LargeVolume     => ProtocolCommands.DisplayModeLargeVolume,
+            DisplayModes.MuteStatus      => ProtocolCommands.DisplayModeMuteStatus,
+            DisplayModes.AppOrDeviceName => ProtocolCommands.DisplayModeAppName,
+            DisplayModes.BarPercent      => ProtocolCommands.DisplayModeBarPercent,
+            _                            => ProtocolCommands.DisplayModeAppVolume
         };
     }
 
@@ -3676,7 +3685,7 @@ public partial class MainWindow : Window
         if (channelIndex < 0 || channelIndex >= ChannelCount) return;
 
         string mode = GetChannelOledModeProtocolValue(_channels[channelIndex].OledDisplayMode);
-        string message = $"DISPMODE,{channelIndex},{mode}";
+        string message = $"{ProtocolCommands.DisplayMode},{channelIndex},{mode}";
         WriteSerialLine(message, logOutgoing: true);
     }
 
@@ -3707,7 +3716,7 @@ public partial class MainWindow : Window
         string connectedIdleAction = GetOledConnectedIdleActionProtocolValue();
         int connectedIdleTimeout = GetOledConnectedIdleTimeoutMinutesFromUi();
         int antiBurnIn = IsOledAntiBurnInEnabledFromUi() ? 1 : 0;
-        string message = $"OLEDCFG,{mode},{brightness},{disconnectedTimeout},{connectedIdleAction},{connectedIdleTimeout},{antiBurnIn}";
+        string message = $"{ProtocolCommands.OledConfig},{mode},{brightness},{disconnectedTimeout},{connectedIdleAction},{connectedIdleTimeout},{antiBurnIn}";
         WriteSerialLine(message, logOutgoing: true);
         _lastStateSent = message;
         UpdateDiagnostics();
@@ -4219,7 +4228,7 @@ public partial class MainWindow : Window
         }
         else
         {
-            Dispatcher.BeginInvoke(action);
+            Dispatcher.InvokeAsync(action);
         }
     }
 
@@ -4275,7 +4284,7 @@ public partial class MainWindow : Window
 
     protected override void OnClosing(CancelEventArgs e)
     {
-        SaveSettingsFromCurrentState();
+        FlushUiToSettings();
 
         bool minimizeToTray = MinimizeToTrayCheckBox?.IsChecked == true || _settings.MinimizeToTray;
 
@@ -4451,31 +4460,31 @@ public partial class MainWindow : Window
         Height = Math.Max(height, MinHeight);
     }
 
-    private void SaveSettingsFromUi()
+    private void FlushUiToSettings()
     {
         _settings.SelectedChannelIndex = _selectedChannelIndex;
 
-        _settings.AutoConnectOnLaunch = AutoConnectCheckBox.IsChecked == true;
-        _settings.ScanAllComPortsIfRememberedMissing = ScanAllComPortsCheckBox.IsChecked == true;
-        _settings.MinimizeToTray = MinimizeToTrayCheckBox.IsChecked == true;
-        _settings.StartMinimizedToTray = StartMinimizedToTrayCheckBox.IsChecked == true;
-        _settings.StartWithWindows = StartWithWindowsCheckBox.IsChecked == true;
-        _settings.AdvancedDebugLogging = AdvancedDebugLoggingCheckBox.IsChecked == true;
-        _settings.OledDisplayMode = GetDisplayModeFromUi();
-        _settings.OledBrightnessPercent = GetOledBrightnessPercentFromUi();
-        _settings.OledSleepTimeoutMinutes = GetOledSleepTimeoutMinutesFromUi();
-        _settings.OledConnectedIdleAction = GetOledConnectedIdleActionFromUi();
-        _settings.OledConnectedIdleTimeoutMinutes = GetOledConnectedIdleTimeoutMinutesFromUi();
-        _settings.OledAntiBurnInEnabled = IsOledAntiBurnInEnabledFromUi();
-        _settings.EncoderSensitivityPercent = GetEncoderSensitivityPercentFromUi();
-        _settings.AccelerationEnabled = AccelerationEnabledCheckBox?.IsChecked == true;
-        _settings.AccelerationPreset = GetAccelerationPresetFromUi();
+        if (AutoConnectCheckBox != null) _settings.AutoConnectOnLaunch = AutoConnectCheckBox.IsChecked == true;
+        if (ScanAllComPortsCheckBox != null) _settings.ScanAllComPortsIfRememberedMissing = ScanAllComPortsCheckBox.IsChecked == true;
+        if (MinimizeToTrayCheckBox != null) _settings.MinimizeToTray = MinimizeToTrayCheckBox.IsChecked == true;
+        if (StartMinimizedToTrayCheckBox != null) _settings.StartMinimizedToTray = StartMinimizedToTrayCheckBox.IsChecked == true;
+        if (StartWithWindowsCheckBox != null) _settings.StartWithWindows = StartWithWindowsCheckBox.IsChecked == true;
+        if (AdvancedDebugLoggingCheckBox != null) _settings.AdvancedDebugLogging = AdvancedDebugLoggingCheckBox.IsChecked == true;
+        if (DisplayModeComboBox != null) _settings.OledDisplayMode = GetDisplayModeFromUi();
+        if (OledBrightnessSlider != null) _settings.OledBrightnessPercent = GetOledBrightnessPercentFromUi();
+        if (OledSleepTimeoutSlider != null) _settings.OledSleepTimeoutMinutes = GetOledSleepTimeoutMinutesFromUi();
+        if (OledConnectedIdleActionComboBox != null) _settings.OledConnectedIdleAction = GetOledConnectedIdleActionFromUi();
+        if (OledConnectedIdleTimeoutSlider != null) _settings.OledConnectedIdleTimeoutMinutes = GetOledConnectedIdleTimeoutMinutesFromUi();
+        if (OledAntiBurnInCheckBox != null) _settings.OledAntiBurnInEnabled = IsOledAntiBurnInEnabledFromUi();
+        if (EncoderSensitivitySlider != null) _settings.EncoderSensitivityPercent = GetEncoderSensitivityPercentFromUi();
+        if (AccelerationEnabledCheckBox != null) _settings.AccelerationEnabled = AccelerationEnabledCheckBox.IsChecked == true;
+        if (AccelerationPresetComboBox != null) _settings.AccelerationPreset = GetAccelerationPresetFromUi();
         if (AccelThresholdSlider != null) _settings.AccelThresholdMs = (int)Math.Round(AccelThresholdSlider.Value);
         if (AccelMaxMultiplierSlider != null) _settings.AccelMaxMultiplier = (float)AccelMaxMultiplierSlider.Value;
         if (AccelCurveSlider != null) _settings.AccelCurveExponent = (float)AccelCurveSlider.Value;
-        _settings.VolumeSmoothingEnabled = VolumeSmoothingEnabledCheckBox?.IsChecked == true;
-        _settings.VolumeSmoothingSpeed = GetVolumeSmoothingSpeedFromUi();
-        _settings.ThemeMode = GetThemeModeFromUi();
+        if (VolumeSmoothingEnabledCheckBox != null) _settings.VolumeSmoothingEnabled = VolumeSmoothingEnabledCheckBox.IsChecked == true;
+        if (VolumeSmoothingSpeedComboBox != null) _settings.VolumeSmoothingSpeed = GetVolumeSmoothingSpeedFromUi();
+        if (ThemeFollowSystemRadioButton != null) _settings.ThemeMode = GetThemeModeFromUi();
 
         SaveChannelsToSettings();
         SaveCurrentWindowSize();
@@ -4780,7 +4789,7 @@ public partial class MainWindow : Window
         {
             try
             {
-                Dispatcher.BeginInvoke(new Action(() =>
+                Dispatcher.InvokeAsync(() =>
                 {
                     if (System.Threading.Interlocked.Exchange(ref _fullStateSendQueued, 0) == 1)
                     {
@@ -4792,7 +4801,7 @@ public partial class MainWindow : Window
                             Log($"Coalesced STATE update sent after {reason}.");
                         }
                     }
-                }));
+                });
             }
             catch
             {
@@ -4860,44 +4869,156 @@ public partial class MainWindow : Window
 
     private void LoadSettings()
     {
+        string path = GetSettingsPath();
+
+        if (!File.Exists(path))
+        {
+            _settings = DashboardSettings.CreateDefault();
+            return;
+        }
+
+        // Attempt to parse the settings file.
+        bool parseSucceeded = false;
         try
         {
-            string path = GetSettingsPath();
-
-            if (!File.Exists(path))
-            {
-                _settings = DashboardSettings.CreateDefault();
-                return;
-            }
-
             string json = File.ReadAllText(path);
-            _settings = JsonSerializer.Deserialize<DashboardSettings>(json) ?? DashboardSettings.CreateDefault();
-
-            bool migrated = NormalizeSettings(_settings);
-
-            if (_settings.ChannelTargetKeys != null && _settings.ChannelTargetKeys.Length == ChannelCount)
+            DashboardSettings? parsed = JsonSerializer.Deserialize<DashboardSettings>(json);
+            if (parsed != null)
             {
-                bool channelsLookEmpty = _settings.Channels.All(channel => string.IsNullOrWhiteSpace(channel.TargetKey));
-
-                if (channelsLookEmpty)
-                {
-                    for (int i = 0; i < ChannelCount; i++)
-                    {
-                        _settings.Channels[i].TargetKey = _settings.ChannelTargetKeys[i] ?? string.Empty;
-                        _settings.Channels[i].FriendlyName = MakeDisplayLabelFromTargetKey(_settings.Channels[i].TargetKey);
-                    }
-                }
-            }
-
-            if (migrated)
-            {
-                SaveSettings();
+                _settings = parsed;
+                parseSucceeded = true;
             }
         }
         catch
         {
-            _settings = DashboardSettings.CreateDefault();
+            // parseSucceeded stays false
         }
+
+        if (!parseSucceeded)
+        {
+            // File exists but is corrupt. Let the user decide what to do after startup.
+            _settingsWereCorrupt = true;
+            _settingsCorruptBackupRestored = null;
+
+            // Try to auto-locate the most recent backup to offer to the user.
+            string backupDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "PcVolumeController", "setup_backups");
+            string? latestBackup = null;
+            if (Directory.Exists(backupDir))
+            {
+                latestBackup = Directory.GetFiles(backupDir, "settings-*.json")
+                    .OrderByDescending(File.GetLastWriteTime)
+                    .FirstOrDefault();
+            }
+
+            _settingsCorruptBackupRestored = latestBackup;
+
+            // Use factory defaults for this session; the dialog will let the user choose.
+            _settings = DashboardSettings.CreateDefault();
+            return;
+        }
+
+        bool migrated = NormalizeSettings(_settings);
+
+        if (_settings.ChannelTargetKeys != null && _settings.ChannelTargetKeys.Length == ChannelCount)
+        {
+            bool channelsLookEmpty = _settings.Channels.All(channel => string.IsNullOrWhiteSpace(channel.TargetKey));
+
+            if (channelsLookEmpty)
+            {
+                for (int i = 0; i < ChannelCount; i++)
+                {
+                    _settings.Channels[i].TargetKey = _settings.ChannelTargetKeys[i] ?? string.Empty;
+                    _settings.Channels[i].FriendlyName = MakeDisplayLabelFromTargetKey(_settings.Channels[i].TargetKey);
+                }
+            }
+        }
+
+        if (migrated)
+        {
+            SaveSettings();
+        }
+    }
+
+    /// <summary>
+    /// Shows the settings-corruption recovery dialog if the file was corrupt at startup.
+    /// Must be called after the window is visible so it has a valid owner.
+    /// </summary>
+    private void ShowPendingSettingsCorruptionDialogIfNeeded()
+    {
+        if (!_settingsWereCorrupt)
+        {
+            return;
+        }
+
+        _settingsWereCorrupt = false;
+        string backupPath = _settingsCorruptBackupRestored ?? string.Empty;
+        bool hasBackup = File.Exists(backupPath);
+
+        string message = hasBackup
+            ? $"Your settings file could not be read (it may be corrupt).\n\n" +
+              $"A backup is available from {File.GetLastWriteTime(backupPath):g}.\n\n" +
+              $"What would you like to do?"
+            : "Your settings file could not be read (it may be corrupt) and no backup was found.\n\n" +
+              "The dashboard has started with factory defaults.";
+
+        if (!hasBackup)
+        {
+            System.Windows.MessageBox.Show(this, message,
+                "Settings File Corrupt",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            SaveSettings();
+            return;
+        }
+
+        // YesNo: Yes = Restore Backup, No = Start Fresh
+        MessageBoxResult result = System.Windows.MessageBox.Show(this,
+            message + "\n\nClick Yes to restore the backup, or No to start with factory defaults.",
+            "Settings File Corrupt",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.Yes);
+
+        // Yes = restore backup, No = start fresh
+        if (result == MessageBoxResult.Yes) // Restore backup
+        {
+            try
+            {
+                string json = File.ReadAllText(backupPath);
+                DashboardSettings? restored = JsonSerializer.Deserialize<DashboardSettings>(json);
+                if (restored != null)
+                {
+                    NormalizeSettings(restored);
+                    _settings = restored;
+                    File.Copy(backupPath, GetSettingsPath(), overwrite: true);
+                    ApplySettingsToUi();
+                    ApplySettingsToChannels();
+                    ApplyTheme();
+                    Log("Settings restored from backup: " + backupPath);
+                    System.Windows.MessageBox.Show(this,
+                        "Settings restored successfully from backup.",
+                        "Settings Restored",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"Backup restore failed: {ex.Message}");
+                System.Windows.MessageBox.Show(this,
+                    $"Backup restore failed: {ex.Message}\n\nStarting with factory defaults.",
+                    "Restore Failed",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+        }
+
+        // No or restore failed — keep factory defaults and save them
+        SaveSettings();
+        Log("Settings were corrupt. Started with factory defaults.");
     }
 
     private void ApplySettingsToChannels()
@@ -4924,84 +5045,7 @@ public partial class MainWindow : Window
         RefreshProfileUi();
     }
 
-    private void SaveSettingsFromCurrentState()
-    {
-        _settings.SelectedChannelIndex = _selectedChannelIndex;
-
-        if (AutoConnectCheckBox != null)
-        {
-            _settings.AutoConnectOnLaunch = AutoConnectCheckBox.IsChecked == true;
-        }
-
-        if (ScanAllComPortsCheckBox != null)
-        {
-            _settings.ScanAllComPortsIfRememberedMissing = ScanAllComPortsCheckBox.IsChecked == true;
-        }
-
-        if (MinimizeToTrayCheckBox != null)
-        {
-            _settings.MinimizeToTray = MinimizeToTrayCheckBox.IsChecked == true;
-        }
-
-        if (StartMinimizedToTrayCheckBox != null)
-        {
-            _settings.StartMinimizedToTray = StartMinimizedToTrayCheckBox.IsChecked == true;
-        }
-
-        if (StartWithWindowsCheckBox != null)
-        {
-            _settings.StartWithWindows = StartWithWindowsCheckBox.IsChecked == true;
-        }
-
-        if (AdvancedDebugLoggingCheckBox != null)
-        {
-            _settings.AdvancedDebugLogging = AdvancedDebugLoggingCheckBox.IsChecked == true;
-        }
-
-        if (DisplayModeComboBox != null)
-        {
-            _settings.OledDisplayMode = GetDisplayModeFromUi();
-        }
-
-        if (OledBrightnessSlider != null)
-        {
-            _settings.OledBrightnessPercent = GetOledBrightnessPercentFromUi();
-        }
-
-        if (OledSleepTimeoutSlider != null)
-        {
-            _settings.OledSleepTimeoutMinutes = GetOledSleepTimeoutMinutesFromUi();
-        }
-
-        if (OledConnectedIdleActionComboBox != null)
-        {
-            _settings.OledConnectedIdleAction = GetOledConnectedIdleActionFromUi();
-        }
-
-        if (OledConnectedIdleTimeoutSlider != null)
-        {
-            _settings.OledConnectedIdleTimeoutMinutes = GetOledConnectedIdleTimeoutMinutesFromUi();
-        }
-
-        if (OledAntiBurnInCheckBox != null)
-        {
-            _settings.OledAntiBurnInEnabled = IsOledAntiBurnInEnabledFromUi();
-        }
-
-        if (EncoderSensitivitySlider != null)
-        {
-            _settings.EncoderSensitivityPercent = GetEncoderSensitivityPercentFromUi();
-        }
-
-        if (ThemeFollowSystemRadioButton != null)
-        {
-            _settings.ThemeMode = GetThemeModeFromUi();
-        }
-
-        SaveChannelsToSettings();
-        SaveCurrentWindowSize();
-        SaveSettings();
-    }
+    // Removed: SaveSettingsFromCurrentState() — replaced by FlushUiToSettings()
 
     private void SaveChannelsToSettings()
     {
@@ -5436,7 +5480,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            bool isHeartbeat = message.Equals("PING", StringComparison.OrdinalIgnoreCase) || message.Equals("PONG", StringComparison.OrdinalIgnoreCase);
+            bool isHeartbeat = message.Equals(ProtocolCommands.Ping, StringComparison.OrdinalIgnoreCase) || message.Equals(ProtocolCommands.Pong, StringComparison.OrdinalIgnoreCase);
             bool showHeartbeat = ShowHeartbeatDebugCheckBox?.IsChecked == true;
             bool advanced = IsAdvancedDebugLoggingEnabled();
 
@@ -5628,7 +5672,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            SaveSettingsFromCurrentState();
+            FlushUiToSettings();
             Microsoft.Win32.SaveFileDialog dialog = new()
             {
                 Title = "Export PC Volume Controller setup",
@@ -5721,6 +5765,23 @@ public partial class MainWindow : Window
             string backupPath = Path.Combine(backupDirectory, $"settings-{reason}-{DateTime.Now:yyyyMMdd-HHmmss}.json");
             File.Copy(settingsPath, backupPath, overwrite: false);
             Log($"Backed up current setup to: {backupPath}");
+
+            // Keep only the 10 most recent backup files; prune anything older.
+            try
+            {
+                string[] existing = Directory.GetFiles(backupDirectory, "settings-*.json")
+                    .OrderByDescending(File.GetLastWriteTime)
+                    .Skip(10)
+                    .ToArray();
+                foreach (string old in existing)
+                {
+                    File.Delete(old);
+                }
+            }
+            catch
+            {
+                // Pruning failure is non-critical; do not disrupt normal operation.
+            }
         }
         catch (Exception ex)
         {
@@ -6062,19 +6123,19 @@ public partial class MainWindow : Window
 
     private void SendHardwareTestPatternButton_Click(object sender, RoutedEventArgs e)
     {
-        WriteSerialLine("TEST_DISPLAY", logOutgoing: true);
+        WriteSerialLine(ProtocolCommands.TestDisplay, logOutgoing: true);
     }
 
     private void SendShowOledIdentButton_Click(object sender, RoutedEventArgs e)
     {
-        WriteSerialLine("SHOW_IDENT", logOutgoing: true);
+        WriteSerialLine(ProtocolCommands.ShowIdent, logOutgoing: true);
     }
 
     private void SendHardwareSleepButton_Click(object sender, RoutedEventArgs e)
     {
         if (CanSendSleepWakeTestCommand("SLEEP"))
         {
-            WriteSerialLine("SLEEP,TEST", logOutgoing: true);
+            WriteSerialLine($"{ProtocolCommands.Sleep},TEST", logOutgoing: true);
         }
     }
 
@@ -6082,7 +6143,7 @@ public partial class MainWindow : Window
     {
         if (CanSendSleepWakeTestCommand("WAKE"))
         {
-            WriteSerialLine("WAKE,TEST", logOutgoing: true);
+            WriteSerialLine($"{ProtocolCommands.Wake},TEST", logOutgoing: true);
         }
     }
 
@@ -6171,8 +6232,8 @@ public partial class MainWindow : Window
             };
 
             using Process process = new() { StartInfo = psi, EnableRaisingEvents = true };
-            process.OutputDataReceived += (_, args) => { if (args.Data != null) Dispatcher.BeginInvoke(new Action(() => AppendFirmwareFlashOutput(args.Data))); };
-            process.ErrorDataReceived += (_, args) => { if (args.Data != null) Dispatcher.BeginInvoke(new Action(() => AppendFirmwareFlashOutput(args.Data))); };
+            process.OutputDataReceived += (_, args) => { if (args.Data != null) Dispatcher.InvokeAsync(() => AppendFirmwareFlashOutput(args.Data)); };
+            process.ErrorDataReceived += (_, args) => { if (args.Data != null) Dispatcher.InvokeAsync(() => AppendFirmwareFlashOutput(args.Data)); };
 
             process.Start();
             process.BeginOutputReadLine();
@@ -6189,7 +6250,7 @@ public partial class MainWindow : Window
             {
                 AppendFirmwareFlashOutput("Waiting for controller to reboot, then reconnecting...");
                 _manualDisconnectRequested = false;
-                _ = Dispatcher.BeginInvoke(new Action(() => TryAutoReconnect(GetAvailableComPorts())));
+                _ = Dispatcher.InvokeAsync(() => TryAutoReconnect(GetAvailableComPorts()));
             }
         }
         catch (Exception ex)
@@ -6452,7 +6513,7 @@ public partial class MainWindow : Window
             }
             else
             {
-                Dispatcher.BeginInvoke(new Action(UpdateUi));
+                Dispatcher.InvokeAsync(UpdateUi);
             }
         }
         catch
@@ -6552,6 +6613,48 @@ public static class OledIdleActions
     {
         return action is Off or DimTo10 or DimTo20 or DimTo30 or DimTo40 or DimTo50 or DimTo60 or DimTo70;
     }
+}
+
+/// <summary>
+/// All serial protocol command strings exchanged between the dashboard and firmware.
+/// Centralising them here means a protocol change only requires editing this one class.
+/// </summary>
+public static class ProtocolCommands
+{
+    // ── Inbound (ESP32 → dashboard) ──────────────────────────────────────────
+    public const string Hello         = "HELLO";
+    public const string Pong          = "PONG";
+    public const string Debug         = "DBG";
+    public const string EncoderTurn   = "ENC";
+    public const string ButtonLegacy  = "BTN";
+    public const string ButtonShort   = "BTN_SHORT";
+    public const string ButtonLong    = "BTN_LONG";
+    public const string ButtonDouble  = "BTN_DOUBLE";
+    public const string Sleeping      = "SLEEPING";
+    public const string Awake         = "AWAKE";
+    public const string OledCfgAck    = "OLEDCFG_ACK";
+    public const string OledIdleStart = "OLED_IDLE_START";
+    public const string OledIdleEnd   = "OLED_IDLE_END";
+    public const string Error         = "ERR";
+
+    // ── Outbound (dashboard → ESP32) ─────────────────────────────────────────
+    public const string Sleep         = "SLEEP";
+    public const string Wake          = "WAKE";
+    public const string Ping          = "PING";
+    public const string HelloQuery    = "HELLO?";
+    public const string Disconnect    = "DISCONNECT";
+    public const string ChannelState  = "CHSTATE";
+    public const string DisplayMode   = "DISPMODE";
+    public const string OledConfig    = "OLEDCFG";
+    public const string TestDisplay   = "TEST_DISPLAY";
+    public const string ShowIdent     = "SHOW_IDENT";
+
+    // ── Display mode protocol values ─────────────────────────────────────────
+    public const string DisplayModeAppVolume   = "APP_VOLUME";
+    public const string DisplayModeLargeVolume = "LARGE_VOLUME";
+    public const string DisplayModeMuteStatus  = "MUTE_STATUS";
+    public const string DisplayModeAppName     = "APP_OR_DEVICE_NAME";
+    public const string DisplayModeBarPercent  = "BAR_PERCENT";
 }
 
 public static class DisplayModes
