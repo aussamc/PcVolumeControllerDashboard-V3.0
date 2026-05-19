@@ -29,7 +29,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.21";
+    private const string DashboardVersion = "2.23";
     private const string RequiredProtocolVersion = "2.21";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -45,7 +45,7 @@ public partial class MainWindow : Window
     private const int BaseVolumeStepPercent = 2;
     private const int MaxEncoderSensitivityPercent = 500;
     private const int MaxVolumeStepPercent = 25;
-    private const int EncoderApplyIntervalMs = 55;
+    private const int EncoderApplyIntervalMs = 25;
     private const int EncoderReverseGuardMs = 140;
     private const int EncoderReverseConfirmEvents = 2;
     private const int EncoderMaxCoalescedDelta = 5;
@@ -53,8 +53,8 @@ public partial class MainWindow : Window
     // --- DIAGNOSTIC: set true to bypass ALL software debounce/coalescing/reverse-guard.
     // Every raw ENC event is logged with timestamp, direction and inter-event interval
     // so you can see exactly what the hardware sends with no filtering in the way.
-    // Flip back to false once analysis is complete and revert in the next version.
-    private const bool EncoderDebounceDisabled = true;
+    // Normally false; flip to true temporarily for hardware analysis.
+    private const bool EncoderDebounceDisabled = false;
     private const int StatePollMs = 500;
     private const int HeartbeatMs = 1000;
     private const int AudioSessionRefreshCheckMs = 2500;
@@ -668,6 +668,55 @@ public partial class MainWindow : Window
 
         SelectedChannel.DoublePressButtonAction = GetSelectedChannelDoublePressActionFromUi();
     }
+
+    // --- Auto-Rebind tab ---
+
+    private void RebindFallbackComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.ComboBox cb || _channels.Count == 0)
+        {
+            return;
+        }
+
+        if (cb.Tag is not int channelIndex || channelIndex < 0 || channelIndex >= ChannelCount)
+        {
+            return;
+        }
+
+        _channels[channelIndex].RebindFallback = cb.SelectedIndex == 1
+            ? RebindFallbacks.DoNothing
+            : RebindFallbacks.ShowInactive;
+
+        RefreshAllChannelStates();
+        SendAllChannelStatesToDevice();
+        SaveSettingsFromCurrentState();
+    }
+
+    private void ApplyRebindSettingsToUi()
+    {
+        for (int i = 0; i < ChannelCount; i++)
+        {
+            System.Windows.Controls.ComboBox? cb = GetRebindComboBoxForChannel(i);
+            if (cb == null)
+            {
+                continue;
+            }
+
+            string fb = _channels.Count > i ? _channels[i].RebindFallback : RebindFallbacks.ShowInactive;
+            cb.SelectedIndex = fb == RebindFallbacks.DoNothing ? 1 : 0;
+        }
+    }
+
+    private System.Windows.Controls.ComboBox? GetRebindComboBoxForChannel(int channelIndex) => channelIndex switch
+    {
+        0 => Channel1RebindComboBox,
+        1 => Channel2RebindComboBox,
+        2 => Channel3RebindComboBox,
+        3 => Channel4RebindComboBox,
+        4 => Channel5RebindComboBox,
+        5 => Channel6RebindComboBox,
+        _ => null
+    };
 
     private void Slider_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
@@ -2194,7 +2243,12 @@ public partial class MainWindow : Window
 
         DateTime now = DateTime.Now;
 
-        // --- DIAGNOSTIC: bypass all debounce, coalescing, and reverse-guard ---
+        // --- DIAGNOSTIC: bypass all debounce, coalescing, and reverse-guard.
+        // EncoderDebounceDisabled is a compile-time constant. One branch of this if/else is
+        // always dead code — the pragma suppresses CS0162 for whichever branch that is.
+        // Normal operation: EncoderDebounceDisabled=false → diagnostic body is dead code.
+        // Hardware analysis: flip to true → normal debounce body becomes dead code.
+#pragma warning disable CS0162 // Intentional — one branch is always dead (controlled by const)
         if (EncoderDebounceDisabled)
         {
             double rawIntervalMs;
@@ -2214,9 +2268,9 @@ public partial class MainWindow : Window
             BeginApplySmoothedEncoderDelta(encoderChannel, rawDelta);
             return;
         }
+#pragma warning restore CS0162
         // --- end diagnostic ---
 
-#pragma warning disable CS0162 // Unreachable code — intentional while EncoderDebounceDisabled=true
         lock (_encoderSmoothingLock)
         {
             int lastDirection = _encoderLastDirection[encoderChannel];
@@ -2278,7 +2332,6 @@ public partial class MainWindow : Window
 
             ScheduleEncoderCoalesceTimerLocked(encoderChannel, delayMs);
         }
-#pragma warning restore CS0162
     }
 
     private int GetEncoderApplyDelayMsLocked(int encoderChannel, DateTime now)
@@ -2361,7 +2414,8 @@ public partial class MainWindow : Window
 
         // Measure time since the previous apply for this channel (used by acceleration).
         DateTime now = DateTime.Now;
-        double intervalMs = _accelPrevApplyAt[encoderChannel] == default
+        bool isFirstEvent = _accelPrevApplyAt[encoderChannel] == default;
+        double intervalMs = isFirstEvent
             ? double.MaxValue
             : (now - _accelPrevApplyAt[encoderChannel]).TotalMilliseconds;
         _accelPrevApplyAt[encoderChannel] = now;
@@ -2372,9 +2426,6 @@ public partial class MainWindow : Window
             : baseStep;
 
         int deltaPercent = smoothedDelta * step;
-
-        // Capture whether this is the first event on this channel so the log message is legible.
-        bool isFirstEvent = _accelPrevApplyAt[encoderChannel] == default;
 
         if (IsAdvancedDebugLoggingEnabled())
         {
@@ -2869,7 +2920,11 @@ public partial class MainWindow : Window
             {
                 channel.Volume = 0;
                 channel.Muted = true;
-                channel.Status = string.IsNullOrWhiteSpace(channel.TargetKey) ? "Unassigned" : "Waiting for app";
+                bool isProc = !string.IsNullOrWhiteSpace(channel.TargetKey);
+                channel.IsAppOffline = isProc;
+                channel.Status = isProc
+                    ? (channel.RebindFallback == RebindFallbacks.ShowInactive ? "App offline" : "Waiting")
+                    : "Unassigned";
                 continue;
             }
 
@@ -2878,6 +2933,7 @@ public partial class MainWindow : Window
                 channel.Volume = GetMasterVolumePercent();
                 channel.Muted = GetMasterMute();
                 channel.Status = "Active";
+                channel.IsAppOffline = false;
             }
             else
             {
@@ -2887,13 +2943,17 @@ public partial class MainWindow : Window
                 {
                     channel.Volume = 0;
                     channel.Muted = true;
-                    channel.Status = "Waiting for app";
+                    channel.IsAppOffline = true;
+                    channel.Status = channel.RebindFallback == RebindFallbacks.ShowInactive
+                        ? "App offline"
+                        : "Waiting";
                 }
                 else
                 {
                     channel.Volume = sessions[0].Volume;
                     channel.Muted = sessions[0].Muted;
                     channel.Status = sessions.Count == 1 ? "Active" : $"Active x{sessions.Count}";
+                    channel.IsAppOffline = false;
                 }
             }
         }
@@ -4459,10 +4519,12 @@ public partial class MainWindow : Window
             _channels[i].ButtonAction = ChannelButtonActions.IsValid(_settings.Channels[i].ButtonAction) ? _settings.Channels[i].ButtonAction : ChannelButtonActions.NoAction;
             _channels[i].LongPressButtonAction = ChannelButtonActions.IsValidLongPressAction(_settings.Channels[i].LongPressButtonAction) ? _settings.Channels[i].LongPressButtonAction : ChannelButtonActions.NoAction;
             _channels[i].DoublePressButtonAction = ChannelButtonActions.IsValidDoublePressAction(_settings.Channels[i].DoublePressButtonAction) ? _settings.Channels[i].DoublePressButtonAction : ChannelButtonActions.NoAction;
+            _channels[i].RebindFallback = RebindFallbacks.IsValid(_settings.Channels[i].RebindFallback) ? _settings.Channels[i].RebindFallback : RebindFallbacks.ShowInactive;
         }
 
         RefreshChannelAssignmentLabels();
         RefreshAllChannelStates();
+        ApplyRebindSettingsToUi();
     }
 
     private void SaveSettingsFromCurrentState()
@@ -4552,7 +4614,8 @@ public partial class MainWindow : Window
             FriendlyName = channel.FriendlyName,
             ButtonAction = ChannelButtonActions.IsValid(channel.ButtonAction) ? channel.ButtonAction : ChannelButtonActions.ToggleAssignedMute,
             LongPressButtonAction = ChannelButtonActions.IsValidLongPressAction(channel.LongPressButtonAction) ? channel.LongPressButtonAction : ChannelButtonActions.NoAction,
-            DoublePressButtonAction = ChannelButtonActions.IsValidDoublePressAction(channel.DoublePressButtonAction) ? channel.DoublePressButtonAction : ChannelButtonActions.NoAction
+            DoublePressButtonAction = ChannelButtonActions.IsValidDoublePressAction(channel.DoublePressButtonAction) ? channel.DoublePressButtonAction : ChannelButtonActions.NoAction,
+            RebindFallback = RebindFallbacks.IsValid(channel.RebindFallback) ? channel.RebindFallback : RebindFallbacks.ShowInactive
         }).ToArray();
 
         _settings.ChannelTargetKeys = _settings.Channels.Select(channel => channel.TargetKey).ToArray();
@@ -5332,6 +5395,11 @@ public partial class MainWindow : Window
             {
                 channel.DoublePressButtonAction = ChannelButtonActions.NoAction;
             }
+
+            if (!RebindFallbacks.IsValid(channel.RebindFallback))
+            {
+                channel.RebindFallback = RebindFallbacks.ShowInactive;
+            }
         }
 
         // v3 → v4: Short press default restored to ToggleAssignedMute.  The v2→v3 migration
@@ -5813,10 +5881,12 @@ public partial class MainWindow : Window
         Log("PC Volume Controller Dashboard started.");
         Log($"Dashboard version: v{DashboardVersion}");
         Log($"Required ESP32 protocol: v{RequiredProtocolVersion}");
+#pragma warning disable CS0162 // Intentional — dead code when EncoderDebounceDisabled=false
         if (EncoderDebounceDisabled)
         {
             Log("WARNING: EncoderDebounceDisabled=true — all software debounce/coalescing/reverse-guard is bypassed. Every raw ENC event is logged with [RAW] prefix. For diagnostic use only.");
         }
+#pragma warning restore CS0162
         Log($"Last remembered controller port: {(string.IsNullOrWhiteSpace(_settings.LastComPort) ? "none" : _settings.LastComPort)}");
         string[] startupPorts = GetAvailableComPorts();
         Log($"Actual COM ports at startup: {(startupPorts.Length == 0 ? "none" : string.Join(", ", startupPorts))}");
@@ -6071,9 +6141,9 @@ public sealed class DashboardSettings
     //                      higher = boost activates at slower turning speeds.
     // AccelMaxMultiplier — step multiplier at maximum speed (interval ≈ 0 ms).
     // AccelCurveExponent — shape of the ramp; < 1 = early kick-in, 1 = linear, > 1 = late.
-    public int   AccelThresholdMs     { get; set; } = 120;
-    public float AccelMaxMultiplier   { get; set; } = 4.0f;
-    public float AccelCurveExponent   { get; set; } = 0.7f;
+    public int   AccelThresholdMs     { get; set; } = 150;
+    public float AccelMaxMultiplier   { get; set; } = 8.0f;
+    public float AccelCurveExponent   { get; set; } = 0.5f;
 
     public string ThemeMode { get; set; } = ThemeModes.FollowSystem;
     public string OledDisplayMode { get; set; } = DisplayModes.AppNameAndVolume;
@@ -6124,6 +6194,11 @@ public sealed class ChannelSettings
     public string ButtonAction { get; set; } = ChannelButtonActions.ToggleAssignedMute;
     public string LongPressButtonAction { get; set; } = ChannelButtonActions.NoAction;
     public string DoublePressButtonAction { get; set; } = ChannelButtonActions.NoAction;
+
+    // What to do when the assigned app is not running.
+    // ShowInactive: grey out channel row + OLED shows "App offline"
+    // DoNothing:    channel stays silently inactive (previous behaviour)
+    public string RebindFallback { get; set; } = RebindFallbacks.ShowInactive;
 }
 
 public sealed class AudioTargetItem
@@ -6178,6 +6253,13 @@ public sealed class ChannelMappingItem
     public bool Muted { get; set; } = true;
     public string Status { get; set; } = "Unassigned";
 
+    // True when the channel has a PROC: assignment but the app is not currently running.
+    // Used by the ListView ItemContainerStyle to grey out the row.
+    public bool IsAppOffline { get; set; }
+
+    // Fallback behaviour when the assigned app is not running.
+    public string RebindFallback { get; set; } = RebindFallbacks.ShowInactive;
+
     public string ChannelDisplay => ChannelNumber.ToString();
 
     public string DisplayLabel
@@ -6200,4 +6282,12 @@ public sealed class ChannelMappingItem
 
     public string VolumeDisplay => $"{Volume}%";
     public string MuteDisplay => Muted ? "Yes" : "No";
+}
+
+public static class RebindFallbacks
+{
+    public const string ShowInactive = "ShowInactive";
+    public const string DoNothing    = "DoNothing";
+
+    public static bool IsValid(string? v) => v is ShowInactive or DoNothing;
 }
