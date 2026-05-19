@@ -29,7 +29,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.26";
+    private const string DashboardVersion = "2.27";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -94,6 +94,7 @@ public partial class MainWindow : Window
     private System.Threading.Timer? _audioSessionRefreshTimer;
     private System.Threading.Timer? _comPortRefreshTimer;
     private Forms.NotifyIcon? _trayIcon;
+    private Forms.ToolStripMenuItem? _trayProfileMenuItem;
 
     private readonly bool _safeMode = Environment.GetCommandLineArgs()
         .Any(arg => string.Equals(arg, "--safe", StringComparison.OrdinalIgnoreCase));
@@ -283,6 +284,8 @@ public partial class MainWindow : Window
 
         // Show the corruption dialog after the window is fully rendered, so it has a valid owner.
         Dispatcher.InvokeAsync(ShowPendingSettingsCorruptionDialogIfNeeded);
+
+        UpdateStatusBar();
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -503,19 +506,6 @@ public partial class MainWindow : Window
         SendStateToDevice(force: true);
     }
 
-    private void SaveSettingsButton_Click(object sender, RoutedEventArgs e)
-    {
-        FlushUiToSettings();
-        ApplyStartupSetting();
-        ApplyTheme();
-        RefreshAudioSessions();
-        RefreshAllChannelStates();
-        SendAllChannelStatesToDevice();
-        SendStateToDevice(force: true);
-        SendOledSettingsToDevice(logIfNotConnected: false);
-        Log("Settings saved.");
-    }
-
     private void SaveOledSetupButton_Click(object sender, RoutedEventArgs e)
     {
         FlushUiToSettings();
@@ -631,6 +621,11 @@ public partial class MainWindow : Window
         UpdateFirstRunWizardStatus();
         Log("First-run wizard marked complete.");
 
+        if (FirstRunWizardTab != null)
+        {
+            FirstRunWizardTab.Visibility = Visibility.Collapsed;
+        }
+
         if (MainTabs != null)
         {
             MainTabs.SelectedIndex = 0;
@@ -717,6 +712,9 @@ public partial class MainWindow : Window
         {
             DeleteProfileButton.IsEnabled = _settings.Profiles.Count > 1;
         }
+
+        UpdateStatusBar();
+        BuildTrayProfileMenu();
     }
 
     private void ProfileComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -997,21 +995,16 @@ public partial class MainWindow : Window
         return dialog.ShowDialog() == true ? result : null;
     }
 
-    // --- Auto-Rebind tab ---
+    // --- Per-channel rebind fallback (merged into Per-Channel Controls) ---
 
-    private void RebindFallbackComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void ChannelRebindComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (sender is not System.Windows.Controls.ComboBox cb || _channels.Count == 0)
+        if (ChannelRebindComboBox == null || _channels.Count == 0)
         {
             return;
         }
 
-        if (cb.Tag is not int channelIndex || channelIndex < 0 || channelIndex >= ChannelCount)
-        {
-            return;
-        }
-
-        _channels[channelIndex].RebindFallback = cb.SelectedIndex == 1
+        _channels[_selectedChannelIndex].RebindFallback = ChannelRebindComboBox.SelectedIndex == 1
             ? RebindFallbacks.DoNothing
             : RebindFallbacks.ShowInactive;
 
@@ -1022,29 +1015,14 @@ public partial class MainWindow : Window
 
     private void ApplyRebindSettingsToUi()
     {
-        for (int i = 0; i < ChannelCount; i++)
+        if (ChannelRebindComboBox == null || _channels.Count == 0)
         {
-            System.Windows.Controls.ComboBox? cb = GetRebindComboBoxForChannel(i);
-            if (cb == null)
-            {
-                continue;
-            }
-
-            string fb = _channels.Count > i ? _channels[i].RebindFallback : RebindFallbacks.ShowInactive;
-            cb.SelectedIndex = fb == RebindFallbacks.DoNothing ? 1 : 0;
+            return;
         }
-    }
 
-    private System.Windows.Controls.ComboBox? GetRebindComboBoxForChannel(int channelIndex) => channelIndex switch
-    {
-        0 => Channel1RebindComboBox,
-        1 => Channel2RebindComboBox,
-        2 => Channel3RebindComboBox,
-        3 => Channel4RebindComboBox,
-        4 => Channel5RebindComboBox,
-        5 => Channel6RebindComboBox,
-        _ => null
-    };
+        string fb = _channels[_selectedChannelIndex].RebindFallback;
+        ChannelRebindComboBox.SelectedIndex = fb == RebindFallbacks.DoNothing ? 1 : 0;
+    }
 
     private void Slider_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
@@ -2051,6 +2029,26 @@ public partial class MainWindow : Window
                 }
             }
         }
+
+        UpdateStatusBar();
+    }
+
+    private void UpdateStatusBar()
+    {
+        if (StatusBarConnectionText == null) return;
+
+        bool connected = _serial?.IsOpen == true && _esp32HelloReceived;
+        StatusBarConnectionText.Text = connected ? "Connected" : "Disconnected";
+        StatusBarDot.Fill = connected
+            ? (WpfBrush)FindResource("ConnectionGoodForeground")
+            : (WpfBrush)FindResource("ConnectionBadForeground");
+
+        StatusBarProfileText.Text = _settings.Profiles.Count > 1
+            ? $"Profile: {_settings.ActiveProfileName}"
+            : string.Empty;
+
+        string fw = _espProtocolVersion != "Unknown" ? $"Firmware v{_espFirmwareName}" : string.Empty;
+        StatusBarFirmwareText.Text = fw;
     }
 
     private void OnSessionSwitch(object sender, SessionSwitchEventArgs e)
@@ -3540,6 +3538,11 @@ public partial class MainWindow : Window
         {
             ChannelOledModeComboBox.SelectedIndex = GetChannelOledModeIndex(channel.OledDisplayMode);
         }
+
+        if (ChannelRebindComboBox != null)
+        {
+            ChannelRebindComboBox.SelectedIndex = channel.RebindFallback == RebindFallbacks.DoNothing ? 1 : 0;
+        }
     }
 
     private void SendStateIfChanged()
@@ -4183,11 +4186,25 @@ public partial class MainWindow : Window
         return cleaned.Length <= 18 ? cleaned : cleaned[..18];
     }
 
+    private static System.Drawing.Icon LoadAppIcon()
+    {
+        try
+        {
+            // Load icon from the embedded application resource (Assets/app-icon.ico).
+            string exeDir = AppDomain.CurrentDomain.BaseDirectory;
+            string icoPath = Path.Combine(exeDir, "Assets", "app-icon.ico");
+            if (File.Exists(icoPath))
+                return new System.Drawing.Icon(icoPath);
+        }
+        catch { }
+        return System.Drawing.SystemIcons.Application;
+    }
+
     private void SetupTrayIcon()
     {
         _trayIcon = new Forms.NotifyIcon
         {
-            Icon = System.Drawing.SystemIcons.Application,
+            Icon = LoadAppIcon(),
             Text = "PC Volume Controller",
             Visible = true,
             ContextMenuStrip = new Forms.ContextMenuStrip()
@@ -4218,6 +4235,40 @@ public partial class MainWindow : Window
         _trayIcon.ContextMenuStrip.Items.Add("Open Log Folder", null, (_, _) => DispatchUi(OpenLogFolder));
         _trayIcon.ContextMenuStrip.Items.Add("Exit", null, (_, _) => DispatchUi(ExitApplication));
         _trayIcon.DoubleClick += (_, _) => DispatchUi(RestoreFromTray);
+
+        BuildTrayProfileMenu();
+    }
+
+    private void BuildTrayProfileMenu()
+    {
+        if (_trayIcon?.ContextMenuStrip == null) return;
+
+        // Remove the old profile menu item if it exists
+        if (_trayProfileMenuItem != null)
+        {
+            _trayIcon.ContextMenuStrip.Items.Remove(_trayProfileMenuItem);
+            _trayProfileMenuItem.Dispose();
+            _trayProfileMenuItem = null;
+        }
+
+        if (_settings.Profiles.Count <= 1) return; // no submenu needed for single profile
+
+        _trayProfileMenuItem = new Forms.ToolStripMenuItem("Switch Profile");
+
+        foreach (ProfileEntry profile in _settings.Profiles)
+        {
+            string profileName = profile.Name;
+            var item = new Forms.ToolStripMenuItem(profileName)
+            {
+                Checked = profileName == _settings.ActiveProfileName
+            };
+            item.Click += (_, _) => Dispatcher.InvokeAsync(() => SwitchToProfile(profileName));
+            _trayProfileMenuItem.DropDownItems.Add(item);
+        }
+
+        // Insert before the last separator/exit item (index 2 = after Open and Connect)
+        int insertIndex = Math.Min(2, _trayIcon.ContextMenuStrip.Items.Count);
+        _trayIcon.ContextMenuStrip.Items.Insert(insertIndex, _trayProfileMenuItem);
     }
 
     private void DispatchUi(Action action)
@@ -4406,6 +4457,22 @@ public partial class MainWindow : Window
         if (WizardScanAllCheckBox != null)
         {
             WizardScanAllCheckBox.IsChecked = _settings.ScanAllComPortsIfRememberedMissing;
+        }
+
+        if (FirstRunWizardTab != null)
+        {
+            FirstRunWizardTab.Visibility = _settings.FirstRunWizardCompleted
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+        }
+    }
+
+    private void ShowFirstRunWizardButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (FirstRunWizardTab != null)
+        {
+            FirstRunWizardTab.Visibility = Visibility.Visible;
+            MainTabs.SelectedItem = FirstRunWizardTab;
         }
     }
 
@@ -6400,6 +6467,16 @@ public partial class MainWindow : Window
             {
                 SettingsLogFolderButton.Content = GetLogDirectory();
                 SettingsLogFolderButton.ToolTip = "Open log folder";
+            }
+
+            if (FirmwareSourceTextBlock != null)
+            {
+                string firmwareDir = System.IO.Path.Combine(
+                    System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? string.Empty,
+                    $"Computer_Volume_Controller_v{RequiredProtocolVersion}");
+                bool exists = System.IO.Directory.Exists(firmwareDir);
+                FirmwareSourceTextBlock.Text = $"Bundled firmware source: Computer_Volume_Controller_v{RequiredProtocolVersion}" +
+                                               (exists ? string.Empty : " (not found in build directory)");
             }
         }
         catch
