@@ -29,7 +29,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.29";
+    private const string DashboardVersion = "2.30";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -139,7 +139,7 @@ public partial class MainWindow : Window
     private int _lastSentVolume = -1;
     private bool _lastSentMute;
     private string _lastSentLabel = string.Empty;
-    private string _lastAudioSessionSnapshot = string.Empty;
+    private HashSet<string> _lastAudioSessionSnapshot = new(StringComparer.OrdinalIgnoreCase);
     private string _lastStateSent = "--";
     private string _lastEspMessage = "--";
     private DateTime? _lastEspMessageTime;
@@ -183,6 +183,7 @@ public partial class MainWindow : Window
     private DateTime _lastSleepWakeTestCommandAt = DateTime.MinValue;
     private Slider? _activeSliderDrag;
     private bool _profileComboBoxSuppressEvents;
+    private AudioDeviceNotificationClient? _audioDeviceNotificationClient;
 
     // Set by LoadSettings when settings.json exists but cannot be parsed.
     // The corruption dialog is shown after the window is fully initialised
@@ -197,6 +198,7 @@ public partial class MainWindow : Window
         timeBeginPeriod(1);
 
         InitializeComponent();
+        Title = $"PC Volume Controller Dashboard v{DashboardVersion}";
 
         AudioSessionsListView.ItemsSource = _audioTargets;
         ChannelTargetComboBox.ItemsSource = _audioTargets;
@@ -208,6 +210,18 @@ public partial class MainWindow : Window
         SystemEvents.PowerModeChanged += OnPowerModeChanged;
 
         _deviceEnumerator = new MMDeviceEnumerator();
+        _audioDeviceNotificationClient = new AudioDeviceNotificationClient(() =>
+        {
+            Dispatcher.InvokeAsync(() =>
+            {
+                Log("Default audio device changed — refreshing audio sessions.");
+                RefreshDefaultAudioDevice();
+                RefreshAudioSessions();
+                RefreshAllChannelStates();
+                SendAllChannelStatesToDevice();
+            });
+        });
+        _deviceEnumerator.RegisterEndpointNotificationCallback(_audioDeviceNotificationClient);
         RefreshDefaultAudioDevice();
 
         BuildChannels();
@@ -470,28 +484,40 @@ public partial class MainWindow : Window
             return;
         }
 
-        try
+        // Enumerate COM ports on the background thread to avoid blocking the UI thread.
+        // GetPortNames() can be slow on systems with many COM drivers.
+        _ = System.Threading.Tasks.Task.Run(() =>
         {
-            Dispatcher.InvokeAsync(() =>
+            try
             {
-                try
+                string[] ports = SerialPort.GetPortNames()
+                    .Where(p => !string.IsNullOrWhiteSpace(p))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(NormalizeComPortForSort)
+                    .ToArray();
+
+                Dispatcher.InvokeAsync(() =>
                 {
-                    RefreshComPortsIfChanged();
-                }
-                catch (Exception ex)
-                {
-                    Log($"COM refresh error: {ex.Message}");
-                }
-                finally
-                {
-                    System.Threading.Interlocked.Exchange(ref _comRefreshBusy, 0);
-                }
-            });
-        }
-        catch
-        {
-            System.Threading.Interlocked.Exchange(ref _comRefreshBusy, 0);
-        }
+                    try
+                    {
+                        RefreshComPortsIfChanged(portsHint: ports);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"COM refresh error: {ex.Message}");
+                    }
+                    finally
+                    {
+                        System.Threading.Interlocked.Exchange(ref _comRefreshBusy, 0);
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Log($"COM port enumeration error: {ex.Message}");
+                System.Threading.Interlocked.Exchange(ref _comRefreshBusy, 0);
+            }
+        });
     }
 
     private void RequestManualDisconnect(string source)
@@ -1458,17 +1484,20 @@ public partial class MainWindow : Window
 
     private ChannelMappingItem SelectedChannel => _channels[_selectedChannelIndex];
 
-    private void RefreshComPortsIfChanged()
+    private void RefreshComPortsIfChanged(string[]? portsHint = null)
     {
-        UpdateComPortAndConnectionState(forceRefresh: false, reason: "auto refresh");
+        UpdateComPortAndConnectionState(forceRefresh: false, reason: "auto refresh", portsHint: portsHint);
     }
 
-    private void UpdateComPortAndConnectionState(bool forceRefresh = false, string reason = "auto refresh")
+    private void UpdateComPortAndConnectionState(bool forceRefresh = false, string reason = "auto refresh", string[]? portsHint = null)
     {
         PrunePhantomComPorts();
         UpdateRememberedControllerPortPresence(reason);
 
-        string[] ports = GetAvailableComPorts();
+        // Use the pre-enumerated port list if one was provided (e.g. from background enumeration).
+        string[] ports = portsHint != null
+            ? portsHint.Where(p => !IsPortTemporarilyPhantom(p)).ToArray()
+            : GetAvailableComPorts();
         string? connectedPort = _serial?.PortName;
         bool serialOpen = _serial?.IsOpen == true;
         bool connectedPortStillExists = serialOpen && !string.IsNullOrWhiteSpace(connectedPort) &&
@@ -2663,6 +2692,7 @@ public partial class MainWindow : Window
 
     private void HandleEncoderMessage(string[] parts)
     {
+        if (_channels.Count == 0) return;
         RegisterHardwareEncoderEvent(parts);
 
         if (_controllerSleepRequested)
@@ -2950,7 +2980,7 @@ public partial class MainWindow : Window
         }
 
         directChange:
-        ChangeChannelVolume(encoderChannel, deltaPercent);
+        ChangeChannelVolumeWithComHandling(encoderChannel, deltaPercent);
         RefreshAllChannelStates();
         SendAllChannelStatesToDevice();
         SendStateToDevice(force: true);
@@ -3113,6 +3143,16 @@ public partial class MainWindow : Window
                 }
             }
         }
+        catch (System.Runtime.InteropServices.COMException comEx)
+        {
+            Log($"Audio session expired in SetChannelVolumeAbsolute (HRESULT 0x{comEx.HResult:X8}) — scheduling refresh.");
+            Dispatcher.InvokeAsync(() =>
+            {
+                RefreshAudioSessions();
+                RefreshAllChannelStates();
+                SendAllChannelStatesToDevice();
+            });
+        }
         catch (Exception ex)
         {
             Log($"SetChannelVolumeAbsolute error: {ex.Message}");
@@ -3126,7 +3166,7 @@ public partial class MainWindow : Window
             _smoothingTimer = new System.Threading.Timer(_ =>
             {
                 try { Dispatcher.InvokeAsync(SmoothingTick); }
-                catch { }
+                catch (Exception ex) { Log($"Smoothing timer dispatch error: {ex.Message}"); }
             }, null, SmoothingTickMs, SmoothingTickMs);
         }
     }
@@ -3283,7 +3323,7 @@ public partial class MainWindow : Window
             ChannelTargetComboBox.Items.Refresh();
             AudioSessionsListView.Items.Refresh();
 
-            _lastAudioSessionSnapshot = GetAudioTargetSnapshotFromCurrentList();
+            _lastAudioSessionSnapshot = GetAudioSessionSnapshot();
 
             Log($"Loaded {_audioTargets.Count} target(s).");
         }
@@ -3336,14 +3376,14 @@ public partial class MainWindow : Window
     {
         try
         {
-            string currentSnapshot = GetCurrentAudioSessionSnapshot();
+            HashSet<string> current = GetCurrentAudioSessionSnapshot();
 
-            if (currentSnapshot == _lastAudioSessionSnapshot)
+            if (current.SetEquals(_lastAudioSessionSnapshot))
             {
                 return;
             }
 
-            _lastAudioSessionSnapshot = currentSnapshot;
+            _lastAudioSessionSnapshot = current;
 
             RefreshAudioSessions();
             RefreshAllChannelStates();
@@ -3358,7 +3398,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private string GetCurrentAudioSessionSnapshot()
+    private HashSet<string> GetCurrentAudioSessionSnapshot()
     {
         EnsureAudioDevice();
 
@@ -3368,10 +3408,7 @@ public partial class MainWindow : Window
 
         SessionCollection sessions = manager.Sessions;
 
-        List<string> keys = new()
-        {
-            "MASTER"
-        };
+        HashSet<string> keys = new(StringComparer.OrdinalIgnoreCase) { "MASTER" };
 
         if (sessions != null)
         {
@@ -3379,12 +3416,7 @@ public partial class MainWindow : Window
             {
                 AudioTargetItem? target = TryCreateAudioTargetFromSession(sessions, i);
 
-                if (target == null)
-                {
-                    continue;
-                }
-
-                if (!keys.Contains(target.Key, StringComparer.OrdinalIgnoreCase))
+                if (target != null)
                 {
                     keys.Add(target.Key);
                 }
@@ -3393,32 +3425,27 @@ public partial class MainWindow : Window
 
         foreach (ChannelSettings channel in _settings.Channels)
         {
-            if (!string.IsNullOrWhiteSpace(channel.TargetKey) &&
-                !keys.Contains(channel.TargetKey, StringComparer.OrdinalIgnoreCase))
+            if (!string.IsNullOrWhiteSpace(channel.TargetKey))
             {
                 keys.Add(channel.TargetKey);
             }
         }
 
-        keys.Sort(StringComparer.OrdinalIgnoreCase);
-
-        return string.Join("|", keys);
+        return keys;
     }
 
-    private string GetAudioTargetSnapshotFromCurrentList()
+    private HashSet<string> GetAudioSessionSnapshot()
     {
-        List<string> keys = _audioTargets
-            .Select(target => target.Key)
-            .Where(key => !string.IsNullOrWhiteSpace(key))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(key => key, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        return string.Join("|", keys);
+        return _audioTargets
+            .Select(t => t.Key)
+            .Where(k => !string.IsNullOrWhiteSpace(k))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
     private void RefreshAllChannelStates()
     {
+        try
+        {
         foreach (ChannelMappingItem channel in _channels)
         {
             AudioTargetItem? target = FindTargetByKey(channel.TargetKey);
@@ -3485,11 +3512,26 @@ public partial class MainWindow : Window
         ChannelMappingsListView.Items.Refresh();
         UpdateSelectedChannelUi();
         UpdateOledPreviewPanels();
+        }
+        catch (System.Runtime.InteropServices.COMException comEx)
+        {
+            Log($"Audio session expired in RefreshAllChannelStates (HRESULT 0x{comEx.HResult:X8}) — scheduling refresh.");
+            Dispatcher.InvokeAsync(() =>
+            {
+                RefreshAudioSessions();
+                RefreshAllChannelStates();
+                SendAllChannelStatesToDevice();
+            });
+        }
+        catch (Exception ex)
+        {
+            Log($"RefreshAllChannelStates error: {ex.Message}");
+        }
     }
 
     private void ChangeSelectedChannelVolume(int deltaPercent)
     {
-        ChangeChannelVolume(_selectedChannelIndex, deltaPercent);
+        ChangeChannelVolumeWithComHandling(_selectedChannelIndex, deltaPercent);
     }
 
     private void ChangeChannelVolume(int channelIndex, int deltaPercent)
@@ -3575,6 +3617,28 @@ public partial class MainWindow : Window
         }
     }
 
+    private void ChangeChannelVolumeWithComHandling(int channelIndex, int deltaPercent)
+    {
+        try
+        {
+            ChangeChannelVolume(channelIndex, deltaPercent);
+        }
+        catch (System.Runtime.InteropServices.COMException comEx)
+        {
+            Log($"Audio session expired in ChangeChannelVolume (HRESULT 0x{comEx.HResult:X8}) — scheduling refresh.");
+            Dispatcher.InvokeAsync(() =>
+            {
+                RefreshAudioSessions();
+                RefreshAllChannelStates();
+                SendAllChannelStatesToDevice();
+            });
+        }
+        catch (Exception ex)
+        {
+            Log($"ChangeChannelVolume error: {ex.Message}");
+        }
+    }
+
     private void ToggleSelectedChannelMute()
     {
         ToggleChannelMute(_selectedChannelIndex);
@@ -3587,6 +3651,8 @@ public partial class MainWindow : Window
             return;
         }
 
+        try
+        {
         ChannelMappingItem channel = _channels[channelIndex];
         AudioTargetItem? target = FindTargetByKey(channel.TargetKey);
 
@@ -3632,10 +3698,26 @@ public partial class MainWindow : Window
         }
 
         Log(nextMute ? $"{target.Label} muted" : $"{target.Label} unmuted");
+        }
+        catch (System.Runtime.InteropServices.COMException comEx)
+        {
+            Log($"Audio session expired in ToggleChannelMute (HRESULT 0x{comEx.HResult:X8}) — scheduling refresh.");
+            Dispatcher.InvokeAsync(() =>
+            {
+                RefreshAudioSessions();
+                RefreshAllChannelStates();
+                SendAllChannelStatesToDevice();
+            });
+        }
+        catch (Exception ex)
+        {
+            Log($"ToggleChannelMute error: {ex.Message}");
+        }
     }
 
     private void ApplyShortButtonAction(string[] parts)
     {
+        if (_channels.Count == 0) return;
         int channelIndex = _selectedChannelIndex;
 
         if (parts.Length > 1 && int.TryParse(parts[1], out int parsedFirmwareChannel) && parsedFirmwareChannel >= 0 && parsedFirmwareChannel < ExpectedChannelCount)
@@ -3671,6 +3753,7 @@ public partial class MainWindow : Window
 
     private void ApplyLongButtonAction(string[] parts)
     {
+        if (_channels.Count == 0) return;
         int channelIndex = _selectedChannelIndex;
 
         if (parts.Length > 1 && int.TryParse(parts[1], out int parsedFirmwareChannel) && parsedFirmwareChannel >= 0 && parsedFirmwareChannel < ExpectedChannelCount)
@@ -3708,6 +3791,7 @@ public partial class MainWindow : Window
 
     private void ApplyDoubleButtonAction(string[] parts)
     {
+        if (_channels.Count == 0) return;
         int channelIndex = _selectedChannelIndex;
 
         if (parts.Length > 1 && int.TryParse(parts[1], out int parsedFirmwareChannel) && parsedFirmwareChannel >= 0 && parsedFirmwareChannel < ExpectedChannelCount)
@@ -4474,7 +4558,7 @@ public partial class MainWindow : Window
             if (File.Exists(icoPath))
                 return new System.Drawing.Icon(icoPath);
         }
-        catch { }
+        catch { /* Static context — cannot call Log; fall back to system icon. */ }
         return System.Drawing.SystemIcons.Application;
     }
 
@@ -5276,6 +5360,7 @@ public partial class MainWindow : Window
         }
 
         bool migrated = NormalizeSettings(_settings);
+        Log($"Settings loaded (version {_settings.SettingsVersion}, {_settings.Profiles?.Count ?? 0} profile(s)).");
 
         if (_settings.ChannelTargetKeys != null && _settings.ChannelTargetKeys.Length == ChannelCount)
         {
@@ -5388,7 +5473,8 @@ public partial class MainWindow : Window
         {
             _channels[i].TargetKey = _settings.Channels[i].TargetKey ?? string.Empty;
             _channels[i].FriendlyName = _settings.Channels[i].FriendlyName ?? string.Empty;
-            _channels[i].ButtonAction = ChannelButtonActions.IsValid(_settings.Channels[i].ButtonAction) ? _settings.Channels[i].ButtonAction : ChannelButtonActions.NoAction;
+            // Default for ButtonAction is ToggleAssignedMute (not NoAction) to match intended out-of-box behaviour.
+            _channels[i].ButtonAction = ChannelButtonActions.IsValid(_settings.Channels[i].ButtonAction) ? _settings.Channels[i].ButtonAction : ChannelButtonActions.ToggleAssignedMute;
             _channels[i].LongPressButtonAction = ChannelButtonActions.IsValidLongPressAction(_settings.Channels[i].LongPressButtonAction) ? _settings.Channels[i].LongPressButtonAction : ChannelButtonActions.NoAction;
             _channels[i].DoublePressButtonAction = ChannelButtonActions.IsValidDoublePressAction(_settings.Channels[i].DoublePressButtonAction) ? _settings.Channels[i].DoublePressButtonAction : ChannelButtonActions.NoAction;
             _channels[i].RebindFallback = RebindFallbacks.IsValid(_settings.Channels[i].RebindFallback) ? _settings.Channels[i].RebindFallback : RebindFallbacks.ShowInactive;
@@ -5398,6 +5484,7 @@ public partial class MainWindow : Window
         RefreshChannelAssignmentLabels();
         RefreshAllChannelStates();
         ApplyRebindSettingsToUi();
+        UpdateSelectedChannelUi(); // refreshes per-channel sensitivity controls for the selected channel
         RefreshProfileUi();
     }
 
@@ -5405,15 +5492,22 @@ public partial class MainWindow : Window
 
     private void SaveChannelsToSettings()
     {
-        _settings.Channels = _channels.Select(channel => new ChannelSettings
+        ChannelSettings[] previous = _settings.Channels;
+
+        // IMPORTANT: SensitivityPercent is set in _settings.Channels[i] by FlushUiToSettings()
+        // BEFORE this method is called. Preserve it by copying from 'previous' — do NOT move
+        // this call above the SensitivityPercent assignment in FlushUiToSettings().
+        _settings.Channels = _channels.Select((channel, i) => new ChannelSettings
         {
-            TargetKey = channel.TargetKey,
+            TargetKey    = channel.TargetKey,
             FriendlyName = channel.FriendlyName,
-            ButtonAction = ChannelButtonActions.IsValid(channel.ButtonAction) ? channel.ButtonAction : ChannelButtonActions.ToggleAssignedMute,
-            LongPressButtonAction = ChannelButtonActions.IsValidLongPressAction(channel.LongPressButtonAction) ? channel.LongPressButtonAction : ChannelButtonActions.NoAction,
+            ButtonAction          = ChannelButtonActions.IsValid(channel.ButtonAction)                     ? channel.ButtonAction                     : ChannelButtonActions.ToggleAssignedMute,
+            LongPressButtonAction = ChannelButtonActions.IsValidLongPressAction(channel.LongPressButtonAction)  ? channel.LongPressButtonAction  : ChannelButtonActions.NoAction,
             DoublePressButtonAction = ChannelButtonActions.IsValidDoublePressAction(channel.DoublePressButtonAction) ? channel.DoublePressButtonAction : ChannelButtonActions.NoAction,
-            RebindFallback = RebindFallbacks.IsValid(channel.RebindFallback) ? channel.RebindFallback : RebindFallbacks.ShowInactive,
-            OledDisplayMode = IsValidChannelOledMode(channel.OledDisplayMode) ? channel.OledDisplayMode : string.Empty
+            RebindFallback  = RebindFallbacks.IsValid(channel.RebindFallback) ? channel.RebindFallback : RebindFallbacks.ShowInactive,
+            OledDisplayMode = IsValidChannelOledMode(channel.OledDisplayMode) ? channel.OledDisplayMode : string.Empty,
+            // Preserve fields that live only in ChannelSettings, not in ChannelMappingItem.
+            SensitivityPercent = (i < previous.Length) ? previous[i].SensitivityPercent : -1,
         }).ToArray();
 
         _settings.ChannelTargetKeys = _settings.Channels.Select(channel => channel.TargetKey).ToArray();
@@ -6785,6 +6879,10 @@ public partial class MainWindow : Window
         {
             Log("WARNING: EncoderDebounceDisabled=true — all software debounce/coalescing/reverse-guard is bypassed. Every raw ENC event is logged with [RAW] prefix. For diagnostic use only.");
         }
+        else
+        {
+            Log("Encoder debounce: enabled (normal operation).");
+        }
 #pragma warning restore CS0162
         Log($"Last remembered controller port: {(string.IsNullOrWhiteSpace(_settings.LastComPort) ? "none" : _settings.LastComPort)}");
         string[] startupPorts = GetAvailableComPorts();
@@ -6962,6 +7060,12 @@ public partial class MainWindow : Window
 
         DisconnectSerial();
 
+        if (_audioDeviceNotificationClient != null && _deviceEnumerator != null)
+        {
+            try { _deviceEnumerator.UnregisterEndpointNotificationCallback(_audioDeviceNotificationClient); }
+            catch (Exception ex) { Log($"Audio notification unregister error: {ex.Message}"); }
+        }
+
         _defaultRenderDevice?.Dispose();
         _defaultCaptureDevice?.Dispose();
         _deviceEnumerator?.Dispose();
@@ -6980,6 +7084,25 @@ public partial class MainWindow : Window
             UnregisterAllHotkeys(hwnd);
 
         base.OnClosed(e);
+    }
+
+    private sealed class AudioDeviceNotificationClient : NAudio.CoreAudioApi.Interfaces.IMMNotificationClient
+    {
+        private readonly Action _onDefaultDeviceChanged;
+        public AudioDeviceNotificationClient(Action onDefaultDeviceChanged)
+            => _onDefaultDeviceChanged = onDefaultDeviceChanged;
+
+        public void OnDefaultDeviceChanged(DataFlow flow, Role role, string defaultDeviceId)
+        {
+            if ((flow == DataFlow.Render   && role == Role.Multimedia)   ||
+                (flow == DataFlow.Capture  && role == Role.Communications))
+                _onDefaultDeviceChanged();
+        }
+
+        public void OnDeviceAdded(string pwstrDeviceId) { }
+        public void OnDeviceRemoved(string pwstrDeviceId) { }
+        public void OnDeviceStateChanged(string deviceId, DeviceState newState) { }
+        public void OnPropertyValueChanged(string pwstrDeviceId, PropertyKey key) { }
     }
 }
 
