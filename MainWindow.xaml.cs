@@ -29,8 +29,8 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.23";
-    private const string RequiredProtocolVersion = "2.21";
+    private const string DashboardVersion = "2.24";
+    private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
     private const int ExpectedChannelCount = 6;
@@ -667,6 +667,21 @@ public partial class MainWindow : Window
         }
 
         SelectedChannel.DoublePressButtonAction = GetSelectedChannelDoublePressActionFromUi();
+    }
+
+    // --- Per-channel OLED mode ---
+
+    private void ChannelOledModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ChannelOledModeComboBox == null || _channels.Count == 0)
+        {
+            return;
+        }
+
+        string mode = GetChannelOledModeFromIndex(ChannelOledModeComboBox.SelectedIndex);
+        SelectedChannel.OledDisplayMode = mode;
+        SendChannelOledModeToDevice(_selectedChannelIndex);
+        SaveSettingsFromCurrentState();
     }
 
     // --- Auto-Rebind tab ---
@@ -2175,6 +2190,7 @@ public partial class MainWindow : Window
         SendAllChannelStatesToDevice();
         SendStateToDevice(force: true);
         SendOledSettingsToDevice(logIfNotConnected: false);
+        SendAllChannelOledModesToDevice();
         SendPingToDevice();
 
         UpdateVersionHeader();
@@ -3206,6 +3222,11 @@ public partial class MainWindow : Window
         {
             ChannelDoublePressActionComboBox.SelectedIndex = GetDoublePressActionIndex(channel.DoublePressButtonAction);
         }
+
+        if (ChannelOledModeComboBox != null)
+        {
+            ChannelOledModeComboBox.SelectedIndex = GetChannelOledModeIndex(channel.OledDisplayMode);
+        }
     }
 
     private void SendStateIfChanged()
@@ -3293,6 +3314,76 @@ public partial class MainWindow : Window
             DisplayModes.BarPercent => "BAR_PERCENT",
             _ => "APP_VOLUME"
         };
+    }
+
+    // Returns true if the string is a valid per-channel OLED mode value.
+    // Empty string is valid (means "use global default").
+    private static bool IsValidChannelOledMode(string? mode)
+    {
+        if (string.IsNullOrEmpty(mode)) return true;   // empty = use global — always valid
+        return mode is DisplayModes.AppNameAndVolume
+                    or DisplayModes.LargeVolume
+                    or DisplayModes.MuteStatus
+                    or DisplayModes.AppOrDeviceName
+                    or DisplayModes.BarPercent;
+    }
+
+    // Converts a dashboard display-mode constant to the firmware protocol string.
+    // Empty input → empty output (firmware interprets empty as "use global").
+    private static string GetChannelOledModeProtocolValue(string dashboardMode)
+    {
+        if (string.IsNullOrEmpty(dashboardMode)) return string.Empty;
+        return dashboardMode switch
+        {
+            DisplayModes.LargeVolume     => "LARGE_VOLUME",
+            DisplayModes.MuteStatus      => "MUTE_STATUS",
+            DisplayModes.AppOrDeviceName => "APP_OR_DEVICE_NAME",
+            DisplayModes.BarPercent      => "BAR_PERCENT",
+            _                            => "APP_VOLUME"
+        };
+    }
+
+    // Gets the per-channel mode index for ChannelOledModeComboBox.
+    // Index 0 = Use global default (""), 1-5 = specific modes.
+    private static int GetChannelOledModeIndex(string dashboardMode) => dashboardMode switch
+    {
+        DisplayModes.AppNameAndVolume => 1,
+        DisplayModes.LargeVolume      => 2,
+        DisplayModes.MuteStatus       => 3,
+        DisplayModes.AppOrDeviceName  => 4,
+        DisplayModes.BarPercent       => 5,
+        _                             => 0   // empty or unrecognised → "Use global default"
+    };
+
+    // Gets the dashboard mode constant from a ComboBox index.
+    private static string GetChannelOledModeFromIndex(int index) => index switch
+    {
+        1 => DisplayModes.AppNameAndVolume,
+        2 => DisplayModes.LargeVolume,
+        3 => DisplayModes.MuteStatus,
+        4 => DisplayModes.AppOrDeviceName,
+        5 => DisplayModes.BarPercent,
+        _ => string.Empty   // 0 or any other = use global default
+    };
+
+    private void SendChannelOledModeToDevice(int channelIndex)
+    {
+        if (_serial?.IsOpen != true || !_esp32HelloReceived) return;
+        if (channelIndex < 0 || channelIndex >= ChannelCount) return;
+
+        string mode = GetChannelOledModeProtocolValue(_channels[channelIndex].OledDisplayMode);
+        string message = $"DISPMODE,{channelIndex},{mode}";
+        WriteSerialLine(message, logOutgoing: true);
+    }
+
+    private void SendAllChannelOledModesToDevice()
+    {
+        if (_serial?.IsOpen != true || !_esp32HelloReceived) return;
+
+        for (int i = 0; i < ChannelCount; i++)
+        {
+            SendChannelOledModeToDevice(i);
+        }
     }
 
     private void SendOledSettingsToDevice(bool logIfNotConnected)
@@ -4520,6 +4611,7 @@ public partial class MainWindow : Window
             _channels[i].LongPressButtonAction = ChannelButtonActions.IsValidLongPressAction(_settings.Channels[i].LongPressButtonAction) ? _settings.Channels[i].LongPressButtonAction : ChannelButtonActions.NoAction;
             _channels[i].DoublePressButtonAction = ChannelButtonActions.IsValidDoublePressAction(_settings.Channels[i].DoublePressButtonAction) ? _settings.Channels[i].DoublePressButtonAction : ChannelButtonActions.NoAction;
             _channels[i].RebindFallback = RebindFallbacks.IsValid(_settings.Channels[i].RebindFallback) ? _settings.Channels[i].RebindFallback : RebindFallbacks.ShowInactive;
+            _channels[i].OledDisplayMode = IsValidChannelOledMode(_settings.Channels[i].OledDisplayMode) ? _settings.Channels[i].OledDisplayMode : string.Empty;
         }
 
         RefreshChannelAssignmentLabels();
@@ -4615,7 +4707,8 @@ public partial class MainWindow : Window
             ButtonAction = ChannelButtonActions.IsValid(channel.ButtonAction) ? channel.ButtonAction : ChannelButtonActions.ToggleAssignedMute,
             LongPressButtonAction = ChannelButtonActions.IsValidLongPressAction(channel.LongPressButtonAction) ? channel.LongPressButtonAction : ChannelButtonActions.NoAction,
             DoublePressButtonAction = ChannelButtonActions.IsValidDoublePressAction(channel.DoublePressButtonAction) ? channel.DoublePressButtonAction : ChannelButtonActions.NoAction,
-            RebindFallback = RebindFallbacks.IsValid(channel.RebindFallback) ? channel.RebindFallback : RebindFallbacks.ShowInactive
+            RebindFallback = RebindFallbacks.IsValid(channel.RebindFallback) ? channel.RebindFallback : RebindFallbacks.ShowInactive,
+            OledDisplayMode = IsValidChannelOledMode(channel.OledDisplayMode) ? channel.OledDisplayMode : string.Empty
         }).ToArray();
 
         _settings.ChannelTargetKeys = _settings.Channels.Select(channel => channel.TargetKey).ToArray();
@@ -5399,6 +5492,11 @@ public partial class MainWindow : Window
             if (!RebindFallbacks.IsValid(channel.RebindFallback))
             {
                 channel.RebindFallback = RebindFallbacks.ShowInactive;
+            }
+
+            if (!IsValidChannelOledMode(channel.OledDisplayMode))
+            {
+                channel.OledDisplayMode = string.Empty;
             }
         }
 
@@ -6199,6 +6297,11 @@ public sealed class ChannelSettings
     // ShowInactive: grey out channel row + OLED shows "App offline"
     // DoNothing:    channel stays silently inactive (previous behaviour)
     public string RebindFallback { get; set; } = RebindFallbacks.ShowInactive;
+
+    // Per-channel OLED display mode.
+    // Empty string = inherit the global mode from OLED Setup.
+    // Non-empty = override with this specific mode for this channel.
+    public string OledDisplayMode { get; set; } = string.Empty;
 }
 
 public sealed class AudioTargetItem
@@ -6259,6 +6362,9 @@ public sealed class ChannelMappingItem
 
     // Fallback behaviour when the assigned app is not running.
     public string RebindFallback { get; set; } = RebindFallbacks.ShowInactive;
+
+    // Per-channel OLED display mode override. Empty = inherit global mode.
+    public string OledDisplayMode { get; set; } = string.Empty;
 
     public string ChannelDisplay => ChannelNumber.ToString();
 
