@@ -33,7 +33,8 @@ Settings are saved to `%APPDATA%\PcVolumeController\settings.json` and restored 
 
 - **6-channel control** — six independent encoder knobs, each mapped to any Windows audio session.
 - **Per-channel audio targets** — assign any encoder to any running audio session, or to master volume.
-- **Per-channel sensitivity** — tune how fast each encoder changes volume.
+- **Per-channel sensitivity** — each encoder has its own sensitivity override, or inherits the global setting.
+- **Microphone input control** — assign any encoder to the default capture device to control microphone volume.
 - **Per-channel short-button action** — select next channel, toggle mute, or no action.
 - **Per-channel OLED display** — each encoder has its own SSD1315 OLED showing channel name and volume.
 - **Named profiles** — save and switch between named sets of channel assignments instantly from the Audio tab.
@@ -91,6 +92,7 @@ previous_version_notes/                 — release notes for older versions
 
 | Dashboard | Required firmware protocol | Hardware       |
 |-----------|---------------------------|----------------|
+| v2.28     | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v2.27     | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v2.26     | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v2.25     | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
