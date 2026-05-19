@@ -29,7 +29,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.28";
+    private const string DashboardVersion = "2.29";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -298,6 +298,8 @@ public partial class MainWindow : Window
         HwndSource? source = PresentationSource.FromVisual(this) as HwndSource;
         source?.AddHook(WndProc);
 
+        RegisterAllHotkeys();
+
         ApplyTheme();
     }
 
@@ -311,6 +313,13 @@ public partial class MainWindow : Window
             {
                 QueueDebouncedDeviceChangeRefresh($"Windows device-change event 0x{eventType:X}");
             }
+        }
+
+        if (msg == WmHotKey)
+        {
+            HandleHotkeyEvent(wParam.ToInt32());
+            handled = true;
+            return IntPtr.Zero;
         }
 
         return IntPtr.Zero;
@@ -375,6 +384,23 @@ public partial class MainWindow : Window
 
     [DllImport("user32.dll")]
     private static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);
+
+    [DllImport("user32.dll")] private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
+    [DllImport("user32.dll")] private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+
+    private const int WmHotKey      = 0x0312;
+    private const int HotkeyIdBase  = 0x9000;
+    private const int HotkeyIdMasterVolumeUp   = HotkeyIdBase + 0;
+    private const int HotkeyIdMasterVolumeDown = HotkeyIdBase + 1;
+    private const int HotkeyIdToggleMasterMute = HotkeyIdBase + 2;
+    private const int HotkeyIdCycleNextProfile = HotkeyIdBase + 3;
+    private const int HotkeyIdShowDashboard    = HotkeyIdBase + 4;
+
+    private static readonly int[] AllHotkeyIds =
+    {
+        HotkeyIdMasterVolumeUp, HotkeyIdMasterVolumeDown,
+        HotkeyIdToggleMasterMute, HotkeyIdCycleNextProfile, HotkeyIdShowDashboard
+    };
 
     private void QueueStatePollTick()
     {
@@ -740,6 +766,98 @@ public partial class MainWindow : Window
         }
 
         SwitchToProfile(newName);
+    }
+
+    private void CycleToNextProfile()
+    {
+        if (_settings.Profiles.Count < 2) return;
+
+        int currentIndex = _settings.Profiles.FindIndex(p => p.Name == _settings.ActiveProfileName);
+        int nextIndex = (currentIndex + 1) % _settings.Profiles.Count;
+        string nextName = _settings.Profiles[nextIndex].Name;
+        SwitchToProfile(nextName);
+    }
+
+    private void RegisterAllHotkeys()
+    {
+        IntPtr hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero) return;
+
+        UnregisterAllHotkeys(hwnd);
+
+        RegisterHotkeyIfAssigned(hwnd, HotkeyIdMasterVolumeUp,   _settings.Hotkeys.MasterVolumeUp);
+        RegisterHotkeyIfAssigned(hwnd, HotkeyIdMasterVolumeDown, _settings.Hotkeys.MasterVolumeDown);
+        RegisterHotkeyIfAssigned(hwnd, HotkeyIdToggleMasterMute, _settings.Hotkeys.ToggleMasterMute);
+        RegisterHotkeyIfAssigned(hwnd, HotkeyIdCycleNextProfile, _settings.Hotkeys.CycleNextProfile);
+        RegisterHotkeyIfAssigned(hwnd, HotkeyIdShowDashboard,    _settings.Hotkeys.ShowDashboard);
+    }
+
+    private static void RegisterHotkeyIfAssigned(IntPtr hwnd, int id, HotkeyBinding binding)
+    {
+        if (!binding.IsAssigned) return;
+        RegisterHotKey(hwnd, id, (uint)binding.Modifiers, (uint)binding.VirtualKey);
+    }
+
+    private static void UnregisterAllHotkeys(IntPtr hwnd)
+    {
+        foreach (int id in AllHotkeyIds)
+            UnregisterHotKey(hwnd, id);
+    }
+
+    private void HandleHotkeyEvent(int id)
+    {
+        switch (id)
+        {
+            case HotkeyIdMasterVolumeUp:
+                try
+                {
+                    EnsureAudioDevice();
+                    int cur = GetMasterVolumePercent();
+                    int next = Math.Clamp(cur + GetVolumeStepPercent(), 0, 100);
+                    _defaultRenderDevice!.AudioEndpointVolume.MasterVolumeLevelScalar = next / 100.0f;
+                    if (_defaultRenderDevice.AudioEndpointVolume.Mute && next > 0)
+                        _defaultRenderDevice.AudioEndpointVolume.Mute = false;
+                    RefreshAllChannelStates();
+                    SendAllChannelStatesToDevice();
+                }
+                catch (Exception ex) { Log($"Hotkey master vol up error: {ex.Message}"); }
+                break;
+
+            case HotkeyIdMasterVolumeDown:
+                try
+                {
+                    EnsureAudioDevice();
+                    int cur = GetMasterVolumePercent();
+                    int next = Math.Clamp(cur - GetVolumeStepPercent(), 0, 100);
+                    _defaultRenderDevice!.AudioEndpointVolume.MasterVolumeLevelScalar = next / 100.0f;
+                    if (_defaultRenderDevice.AudioEndpointVolume.Mute && next > 0)
+                        _defaultRenderDevice.AudioEndpointVolume.Mute = false;
+                    RefreshAllChannelStates();
+                    SendAllChannelStatesToDevice();
+                }
+                catch (Exception ex) { Log($"Hotkey master vol down error: {ex.Message}"); }
+                break;
+
+            case HotkeyIdToggleMasterMute:
+                try
+                {
+                    EnsureAudioDevice();
+                    AudioEndpointVolume epv = _defaultRenderDevice!.AudioEndpointVolume;
+                    epv.Mute = !epv.Mute;
+                    RefreshAllChannelStates();
+                    SendAllChannelStatesToDevice();
+                }
+                catch (Exception ex) { Log($"Hotkey toggle mute error: {ex.Message}"); }
+                break;
+
+            case HotkeyIdCycleNextProfile:
+                CycleToNextProfile();
+                break;
+
+            case HotkeyIdShowDashboard:
+                RestoreFromTray();
+                break;
+        }
     }
 
     private void SwitchToProfile(string profileName)
@@ -3540,6 +3658,10 @@ public partial class MainWindow : Window
                 Log($"Channel {channelIndex + 1} short-press action is set to No action.");
                 break;
 
+            case ChannelButtonActions.CycleNextProfile:
+                CycleToNextProfile();
+                break;
+
             case ChannelButtonActions.SelectNextChannel:
             default:
                 SelectNextChannel();
@@ -3569,6 +3691,10 @@ public partial class MainWindow : Window
 
             case ChannelButtonActions.NoAction:
                 Log($"Channel {channelIndex + 1} long-press action is set to No action.");
+                break;
+
+            case ChannelButtonActions.CycleNextProfile:
+                CycleToNextProfile();
                 break;
 
             default:
@@ -3602,6 +3728,10 @@ public partial class MainWindow : Window
 
             case ChannelButtonActions.NoAction:
                 Log($"Channel {channelIndex + 1} double-press action is set to No action.");
+                break;
+
+            case ChannelButtonActions.CycleNextProfile:
+                CycleToNextProfile();
                 break;
 
             default:
@@ -4077,6 +4207,7 @@ public partial class MainWindow : Window
         {
             1 => ChannelButtonActions.ToggleAssignedMute,
             2 => ChannelButtonActions.NoAction,
+            3 => ChannelButtonActions.CycleNextProfile,
             _ => ChannelButtonActions.SelectNextChannel
         };
     }
@@ -4087,6 +4218,7 @@ public partial class MainWindow : Window
         {
             0 => ChannelButtonActions.ToggleAssignedMute,
             1 => ChannelButtonActions.NoAction,
+            2 => ChannelButtonActions.CycleNextProfile,
             _ => ChannelButtonActions.ToggleAssignedMute
         };
     }
@@ -4097,6 +4229,7 @@ public partial class MainWindow : Window
         {
             ChannelButtonActions.ToggleAssignedMute => 1,
             ChannelButtonActions.NoAction => 2,
+            ChannelButtonActions.CycleNextProfile => 3,
             _ => 0
         };
     }
@@ -4107,6 +4240,7 @@ public partial class MainWindow : Window
         {
             ChannelButtonActions.ToggleAssignedMute => 0,
             ChannelButtonActions.NoAction => 1,
+            ChannelButtonActions.CycleNextProfile => 2,
             _ => 0
         };
     }
@@ -4117,6 +4251,7 @@ public partial class MainWindow : Window
         {
             0 => ChannelButtonActions.ToggleAssignedMute,
             1 => ChannelButtonActions.NoAction,
+            2 => ChannelButtonActions.CycleNextProfile,
             _ => ChannelButtonActions.NoAction
         };
     }
@@ -4127,6 +4262,7 @@ public partial class MainWindow : Window
         {
             ChannelButtonActions.ToggleAssignedMute => 0,
             ChannelButtonActions.NoAction => 1,
+            ChannelButtonActions.CycleNextProfile => 2,
             _ => 1
         };
     }
@@ -4137,6 +4273,7 @@ public partial class MainWindow : Window
         {
             ChannelButtonActions.ToggleAssignedMute => "Toggle assigned mute",
             ChannelButtonActions.NoAction => "No action",
+            ChannelButtonActions.CycleNextProfile => "Next profile",
             _ => "Select next channel"
         };
     }
@@ -4571,6 +4708,8 @@ public partial class MainWindow : Window
         ThemeFollowSystemRadioButton.IsChecked = _settings.ThemeMode == ThemeModes.FollowSystem;
         ThemeLightRadioButton.IsChecked = _settings.ThemeMode == ThemeModes.Light;
         ThemeDarkRadioButton.IsChecked = _settings.ThemeMode == ThemeModes.Dark;
+
+        UpdateHotkeyLabels();
     }
 
     private void ApplyFirstRunWizardSettingsToUi()
@@ -6761,6 +6900,49 @@ public partial class MainWindow : Window
         return Path.Combine(GetLogDirectory(), $"dashboard-{timestamp}.log");
     }
 
+    // ── Global Hotkey UI handlers ────────────────────────────────────────────────
+
+    private void UpdateHotkeyLabels()
+    {
+        if (HotkeyMasterVolUpTextBlock    != null) HotkeyMasterVolUpTextBlock.Text    = _settings.Hotkeys.MasterVolumeUp.ToDisplayString();
+        if (HotkeyMasterVolDownTextBlock  != null) HotkeyMasterVolDownTextBlock.Text  = _settings.Hotkeys.MasterVolumeDown.ToDisplayString();
+        if (HotkeyToggleMasterMuteTextBlock != null) HotkeyToggleMasterMuteTextBlock.Text = _settings.Hotkeys.ToggleMasterMute.ToDisplayString();
+        if (HotkeyCycleNextProfileTextBlock != null) HotkeyCycleNextProfileTextBlock.Text = _settings.Hotkeys.CycleNextProfile.ToDisplayString();
+        if (HotkeyShowDashboardTextBlock  != null) HotkeyShowDashboardTextBlock.Text  = _settings.Hotkeys.ShowDashboard.ToDisplayString();
+    }
+
+    private void SetHotkeyBinding(string actionName, HotkeyBinding current, Action<HotkeyBinding> apply)
+    {
+        var dialog = new HotkeyPickerDialog(actionName, current) { Owner = this };
+        if (dialog.ShowDialog() == true && dialog.Result != null)
+        {
+            apply(dialog.Result);
+            FlushUiToSettings();
+            UpdateHotkeyLabels();
+            RegisterAllHotkeys();
+        }
+    }
+
+    private void HotkeyMasterVolUp_Set(object sender, RoutedEventArgs e)    => SetHotkeyBinding("Master Volume Up",   _settings.Hotkeys.MasterVolumeUp,   b => _settings.Hotkeys.MasterVolumeUp   = b);
+    private void HotkeyMasterVolDown_Set(object sender, RoutedEventArgs e)  => SetHotkeyBinding("Master Volume Down", _settings.Hotkeys.MasterVolumeDown, b => _settings.Hotkeys.MasterVolumeDown = b);
+    private void HotkeyToggleMasterMute_Set(object sender, RoutedEventArgs e) => SetHotkeyBinding("Toggle Master Mute", _settings.Hotkeys.ToggleMasterMute, b => _settings.Hotkeys.ToggleMasterMute = b);
+    private void HotkeyCycleNextProfile_Set(object sender, RoutedEventArgs e) => SetHotkeyBinding("Next Profile",       _settings.Hotkeys.CycleNextProfile, b => _settings.Hotkeys.CycleNextProfile = b);
+    private void HotkeyShowDashboard_Set(object sender, RoutedEventArgs e)  => SetHotkeyBinding("Show Dashboard",      _settings.Hotkeys.ShowDashboard,    b => _settings.Hotkeys.ShowDashboard    = b);
+
+    private void ClearHotkeyBinding(Action<HotkeyBinding> apply)
+    {
+        apply(new HotkeyBinding { Enabled = false });
+        FlushUiToSettings();
+        UpdateHotkeyLabels();
+        RegisterAllHotkeys();
+    }
+
+    private void HotkeyMasterVolUp_Clear(object sender, RoutedEventArgs e)    => ClearHotkeyBinding(b => _settings.Hotkeys.MasterVolumeUp   = b);
+    private void HotkeyMasterVolDown_Clear(object sender, RoutedEventArgs e)  => ClearHotkeyBinding(b => _settings.Hotkeys.MasterVolumeDown = b);
+    private void HotkeyToggleMasterMute_Clear(object sender, RoutedEventArgs e) => ClearHotkeyBinding(b => _settings.Hotkeys.ToggleMasterMute = b);
+    private void HotkeyCycleNextProfile_Clear(object sender, RoutedEventArgs e) => ClearHotkeyBinding(b => _settings.Hotkeys.CycleNextProfile = b);
+    private void HotkeyShowDashboard_Clear(object sender, RoutedEventArgs e)  => ClearHotkeyBinding(b => _settings.Hotkeys.ShowDashboard    = b);
+
     protected override void OnClosed(EventArgs e)
     {
         _statePollTimer?.Dispose();
@@ -6793,6 +6975,10 @@ public partial class MainWindow : Window
 
         timeEndPeriod(1);
 
+        IntPtr hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        if (hwnd != IntPtr.Zero)
+            UnregisterAllHotkeys(hwnd);
+
         base.OnClosed(e);
     }
 }
@@ -6809,22 +6995,55 @@ public static class ChannelButtonActions
     public const string SelectNextChannel = "SelectNextChannel";
     public const string ToggleAssignedMute = "ToggleAssignedMute";
     public const string NoAction = "NoAction";
+    public const string CycleNextProfile = "CycleNextProfile";
 
     public static bool IsValid(string? action)
     {
-        return action is SelectNextChannel or ToggleAssignedMute or NoAction;
+        return action is SelectNextChannel or ToggleAssignedMute or NoAction or CycleNextProfile;
     }
 
-    // Long press and double press only support ToggleAssignedMute and NoAction.
+    // Long press and double press only support ToggleAssignedMute, NoAction, and CycleNextProfile.
     public static bool IsValidLongPressAction(string? action)
     {
-        return action is ToggleAssignedMute or NoAction;
+        return action is ToggleAssignedMute or NoAction or CycleNextProfile;
     }
 
     public static bool IsValidDoublePressAction(string? action)
     {
-        return action is ToggleAssignedMute or NoAction;
+        return action is ToggleAssignedMute or NoAction or CycleNextProfile;
     }
+}
+
+public sealed class HotkeyBinding
+{
+    public bool Enabled { get; set; }
+    public int Modifiers { get; set; }   // MOD_ALT=1, MOD_CONTROL=2, MOD_SHIFT=4, MOD_WIN=8
+    public int VirtualKey { get; set; }  // Win32 virtual-key code; 0 = unassigned
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsAssigned => Enabled && VirtualKey != 0;
+
+    public string ToDisplayString()
+    {
+        if (!IsAssigned) return "(unassigned)";
+        var parts = new System.Collections.Generic.List<string>();
+        if ((Modifiers & 8) != 0) parts.Add("Win");
+        if ((Modifiers & 2) != 0) parts.Add("Ctrl");
+        if ((Modifiers & 4) != 0) parts.Add("Shift");
+        if ((Modifiers & 1) != 0) parts.Add("Alt");
+        string keyName = ((Forms.Keys)VirtualKey).ToString();
+        parts.Add(keyName);
+        return string.Join("+", parts);
+    }
+}
+
+public sealed class HotkeySettings
+{
+    public HotkeyBinding MasterVolumeUp   { get; set; } = new();
+    public HotkeyBinding MasterVolumeDown { get; set; } = new();
+    public HotkeyBinding ToggleMasterMute { get; set; } = new();
+    public HotkeyBinding CycleNextProfile { get; set; } = new();
+    public HotkeyBinding ShowDashboard    { get; set; } = new();
 }
 
 public static class OledIdleActions
@@ -6978,6 +7197,9 @@ public sealed class DashboardSettings
     // above so older code paths continue to work unchanged.
     public List<ProfileEntry> Profiles { get; set; } = new();
     public string ActiveProfileName { get; set; } = string.Empty;
+
+    // Global system hotkeys (v2.29+).
+    public HotkeySettings Hotkeys { get; set; } = new HotkeySettings();
 
     public static DashboardSettings CreateDefault()
     {
