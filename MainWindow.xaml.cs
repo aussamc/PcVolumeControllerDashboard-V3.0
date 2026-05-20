@@ -29,7 +29,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.35";
+    private const string DashboardVersion = "2.36";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -140,6 +140,7 @@ public partial class MainWindow : Window
     private DashboardSettings _settings = new();
     private int _selectedChannelIndex = 0;
     private bool _perChannelSensitivitySuppressEvents;
+    private bool _suppressPresetCallbacks;
     private int _lastSentVolume = -1;
     private bool _lastSentMute;
     private string _lastSentLabel = string.Empty;
@@ -1208,6 +1209,54 @@ public partial class MainWindow : Window
                 : (int)Math.Round(PerChannelSensitivitySlider.Value);
         }
         FlushUiToSettings();
+    }
+
+    private void PresetVolume_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_suppressPresetCallbacks) return;
+        if (sender is not System.Windows.Controls.Slider slider) return;
+        object? tagObj = slider.Tag;
+        if (tagObj is not string tagStr || !int.TryParse(tagStr, out int presetIndex)) return;
+
+        int vol = (int)Math.Round(slider.Value);
+
+        // Update label
+        TextBlock? label = presetIndex switch
+        {
+            0 => Preset1VolumeValueTextBlock,
+            1 => Preset2VolumeValueTextBlock,
+            2 => Preset3VolumeValueTextBlock,
+            _ => null
+        };
+        if (label != null) label.Text = $"{vol}%";
+
+        // Save
+        SavePreset(presetIndex, volumePercent: vol, name: null);
+    }
+
+    private void PresetName_LostFocus(object sender, RoutedEventArgs e)
+    {
+        if (_suppressPresetCallbacks) return;
+        if (sender is not System.Windows.Controls.TextBox tb) return;
+        object? tagObj = tb.Tag;
+        if (tagObj is not string tagStr || !int.TryParse(tagStr, out int presetIndex)) return;
+
+        SavePreset(presetIndex, volumePercent: null, name: tb.Text.Trim());
+    }
+
+    private void SavePreset(int presetIndex, int? volumePercent, string? name)
+    {
+        int ch = _selectedChannelIndex;
+        if (ch < 0 || ch >= _channels.Count) return;
+        if (_settings.Channels == null || ch >= _settings.Channels.Length) return;
+
+        VolumePreset[] presets = _settings.Channels[ch].Presets;
+        if (presets == null || presetIndex >= presets.Length) return;
+
+        if (volumePercent.HasValue) presets[presetIndex].VolumePercent = volumePercent.Value;
+        if (name != null) presets[presetIndex].Name = name;
+
+        SaveSettings();
     }
 
     private void PerChannelSensitivitySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -4065,6 +4114,16 @@ public partial class MainWindow : Window
                 CycleOutputDevice();
                 break;
 
+            case ChannelButtonActions.ApplyPreset1:
+                ApplyVolumePreset(channelIndex, 0);
+                break;
+            case ChannelButtonActions.ApplyPreset2:
+                ApplyVolumePreset(channelIndex, 1);
+                break;
+            case ChannelButtonActions.ApplyPreset3:
+                ApplyVolumePreset(channelIndex, 2);
+                break;
+
             case ChannelButtonActions.SelectNextChannel:
             default:
                 SelectNextChannel();
@@ -4103,6 +4162,16 @@ public partial class MainWindow : Window
 
             case ChannelButtonActions.CycleOutputDevice:
                 CycleOutputDevice();
+                break;
+
+            case ChannelButtonActions.ApplyPreset1:
+                ApplyVolumePreset(channelIndex, 0);
+                break;
+            case ChannelButtonActions.ApplyPreset2:
+                ApplyVolumePreset(channelIndex, 1);
+                break;
+            case ChannelButtonActions.ApplyPreset3:
+                ApplyVolumePreset(channelIndex, 2);
                 break;
 
             default:
@@ -4147,10 +4216,54 @@ public partial class MainWindow : Window
                 CycleOutputDevice();
                 break;
 
+            case ChannelButtonActions.ApplyPreset1:
+                ApplyVolumePreset(channelIndex, 0);
+                break;
+            case ChannelButtonActions.ApplyPreset2:
+                ApplyVolumePreset(channelIndex, 1);
+                break;
+            case ChannelButtonActions.ApplyPreset3:
+                ApplyVolumePreset(channelIndex, 2);
+                break;
+
             default:
                 Log($"Channel {channelIndex + 1} double-press action is set to No action.");
                 break;
         }
+    }
+
+    private void ApplyVolumePreset(int channelIndex, int presetIndex)
+    {
+        if (channelIndex < 0 || channelIndex >= _channels.Count) return;
+        if (_settings.Channels == null || channelIndex >= _settings.Channels.Length) return;
+
+        VolumePreset[] presets = _settings.Channels[channelIndex].Presets;
+        if (presets == null || presetIndex >= presets.Length) return;
+
+        VolumePreset preset = presets[presetIndex];
+        float normalised = Math.Clamp(preset.VolumePercent / 100f, 0f, 1f);
+
+        if (_settings.VolumeSmoothingEnabled)
+        {
+            lock (_encoderSmoothingLock)
+            {
+                _smoothingTargetVolumes[channelIndex] = normalised;
+                _smoothingActive[channelIndex] = true;
+            }
+            EnsureSmoothingTimerRunning();
+        }
+        else
+        {
+            SetChannelVolumeAbsolute(channelIndex, normalised);
+            if (channelIndex < _channels.Count)
+                _channels[channelIndex].Volume = preset.VolumePercent;
+        }
+
+        // Show overlay if enabled
+        ShowVolumeOverlay(channelIndex, preset.VolumePercent);
+
+        string presetName = string.IsNullOrWhiteSpace(preset.Name) ? $"Preset {presetIndex + 1}" : preset.Name;
+        Log($"Channel {channelIndex + 1}: applied {presetName} ({preset.VolumePercent}%).");
     }
 
     private void UpdateSelectedChannelUi()
@@ -4215,6 +4328,35 @@ public partial class MainWindow : Window
         finally
         {
             _perChannelSensitivitySuppressEvents = false;
+        }
+
+        // Populate volume presets
+        _suppressPresetCallbacks = true;
+        try
+        {
+            int index = _selectedChannelIndex;
+            if (_settings.Channels != null && index < _settings.Channels.Length)
+            {
+                VolumePreset[] presets = _settings.Channels[index].Presets;
+                if (presets != null && presets.Length >= 3)
+                {
+                    Preset1NameTextBox.Text = presets[0].Name;
+                    Preset1VolumeSlider.Value = presets[0].VolumePercent;
+                    Preset1VolumeValueTextBlock.Text = $"{presets[0].VolumePercent}%";
+
+                    Preset2NameTextBox.Text = presets[1].Name;
+                    Preset2VolumeSlider.Value = presets[1].VolumePercent;
+                    Preset2VolumeValueTextBlock.Text = $"{presets[1].VolumePercent}%";
+
+                    Preset3NameTextBox.Text = presets[2].Name;
+                    Preset3VolumeSlider.Value = presets[2].VolumePercent;
+                    Preset3VolumeValueTextBlock.Text = $"{presets[2].VolumePercent}%";
+                }
+            }
+        }
+        finally
+        {
+            _suppressPresetCallbacks = false;
         }
     }
 
@@ -4622,6 +4764,9 @@ public partial class MainWindow : Window
             2 => ChannelButtonActions.NoAction,
             3 => ChannelButtonActions.CycleNextProfile,
             4 => ChannelButtonActions.CycleOutputDevice,
+            5 => ChannelButtonActions.ApplyPreset1,
+            6 => ChannelButtonActions.ApplyPreset2,
+            7 => ChannelButtonActions.ApplyPreset3,
             _ => ChannelButtonActions.SelectNextChannel
         };
     }
@@ -4634,6 +4779,9 @@ public partial class MainWindow : Window
             1 => ChannelButtonActions.NoAction,
             2 => ChannelButtonActions.CycleNextProfile,
             3 => ChannelButtonActions.CycleOutputDevice,
+            4 => ChannelButtonActions.ApplyPreset1,
+            5 => ChannelButtonActions.ApplyPreset2,
+            6 => ChannelButtonActions.ApplyPreset3,
             _ => ChannelButtonActions.ToggleAssignedMute
         };
     }
@@ -4646,6 +4794,9 @@ public partial class MainWindow : Window
             ChannelButtonActions.NoAction => 2,
             ChannelButtonActions.CycleNextProfile => 3,
             ChannelButtonActions.CycleOutputDevice => 4,
+            ChannelButtonActions.ApplyPreset1 => 5,
+            ChannelButtonActions.ApplyPreset2 => 6,
+            ChannelButtonActions.ApplyPreset3 => 7,
             _ => 0
         };
     }
@@ -4658,6 +4809,9 @@ public partial class MainWindow : Window
             ChannelButtonActions.NoAction => 1,
             ChannelButtonActions.CycleNextProfile => 2,
             ChannelButtonActions.CycleOutputDevice => 3,
+            ChannelButtonActions.ApplyPreset1 => 4,
+            ChannelButtonActions.ApplyPreset2 => 5,
+            ChannelButtonActions.ApplyPreset3 => 6,
             _ => 0
         };
     }
@@ -4670,6 +4824,9 @@ public partial class MainWindow : Window
             1 => ChannelButtonActions.NoAction,
             2 => ChannelButtonActions.CycleNextProfile,
             3 => ChannelButtonActions.CycleOutputDevice,
+            4 => ChannelButtonActions.ApplyPreset1,
+            5 => ChannelButtonActions.ApplyPreset2,
+            6 => ChannelButtonActions.ApplyPreset3,
             _ => ChannelButtonActions.NoAction
         };
     }
@@ -4682,6 +4839,9 @@ public partial class MainWindow : Window
             ChannelButtonActions.NoAction => 1,
             ChannelButtonActions.CycleNextProfile => 2,
             ChannelButtonActions.CycleOutputDevice => 3,
+            ChannelButtonActions.ApplyPreset1 => 4,
+            ChannelButtonActions.ApplyPreset2 => 5,
+            ChannelButtonActions.ApplyPreset3 => 6,
             _ => 1
         };
     }
@@ -4694,6 +4854,9 @@ public partial class MainWindow : Window
             ChannelButtonActions.NoAction => "No action",
             ChannelButtonActions.CycleNextProfile => "Next profile",
             ChannelButtonActions.CycleOutputDevice => "Cycle output device",
+            ChannelButtonActions.ApplyPreset1 => "Apply preset 1",
+            ChannelButtonActions.ApplyPreset2 => "Apply preset 2",
+            ChannelButtonActions.ApplyPreset3 => "Apply preset 3",
             _ => "Select next channel"
         };
     }
@@ -5868,6 +6031,9 @@ public partial class MainWindow : Window
             OledDisplayMode = IsValidChannelOledMode(channel.OledDisplayMode) ? channel.OledDisplayMode : string.Empty,
             // Preserve fields that live only in ChannelSettings, not in ChannelMappingItem.
             SensitivityPercent = (i < previous.Length) ? previous[i].SensitivityPercent : -1,
+            Presets = (i < previous.Length && previous[i].Presets != null)
+                ? previous[i].Presets
+                : new[] { new VolumePreset { Name = "", VolumePercent = 25 }, new VolumePreset { Name = "", VolumePercent = 50 }, new VolumePreset { Name = "", VolumePercent = 75 } },
         }).ToArray();
 
         _settings.ChannelTargetKeys = _settings.Channels.Select(channel => channel.TargetKey).ToArray();
@@ -7504,21 +7670,27 @@ public static class ChannelButtonActions
     public const string NoAction = "NoAction";
     public const string CycleNextProfile = "CycleNextProfile";
     public const string CycleOutputDevice = "CycleOutputDevice";
+    public const string ApplyPreset1 = "ApplyPreset1";
+    public const string ApplyPreset2 = "ApplyPreset2";
+    public const string ApplyPreset3 = "ApplyPreset3";
 
     public static bool IsValid(string? action)
     {
-        return action is SelectNextChannel or ToggleAssignedMute or NoAction or CycleNextProfile or CycleOutputDevice;
+        return action is SelectNextChannel or ToggleAssignedMute or NoAction or CycleNextProfile or CycleOutputDevice
+            or ApplyPreset1 or ApplyPreset2 or ApplyPreset3;
     }
 
-    // Long press and double press only support ToggleAssignedMute, NoAction, CycleNextProfile, and CycleOutputDevice.
+    // Long press and double press only support ToggleAssignedMute, NoAction, CycleNextProfile, CycleOutputDevice, and ApplyPreset*.
     public static bool IsValidLongPressAction(string? action)
     {
-        return action is ToggleAssignedMute or NoAction or CycleNextProfile or CycleOutputDevice;
+        return action is ToggleAssignedMute or NoAction or CycleNextProfile or CycleOutputDevice
+            or ApplyPreset1 or ApplyPreset2 or ApplyPreset3;
     }
 
     public static bool IsValidDoublePressAction(string? action)
     {
-        return action is ToggleAssignedMute or NoAction or CycleNextProfile or CycleOutputDevice;
+        return action is ToggleAssignedMute or NoAction or CycleNextProfile or CycleOutputDevice
+            or ApplyPreset1 or ApplyPreset2 or ApplyPreset3;
     }
 }
 
@@ -7766,6 +7938,20 @@ public sealed class ChannelSettings
     // -1 = inherit the global EncoderSensitivityPercent.
     // 0–500 = use this value for this channel only.
     public int SensitivityPercent { get; set; } = -1;
+
+    // Per-channel volume presets. Index 0 = Preset 1, 1 = Preset 2, 2 = Preset 3.
+    public VolumePreset[] Presets { get; set; } = new[]
+    {
+        new VolumePreset { Name = "", VolumePercent = 25 },
+        new VolumePreset { Name = "", VolumePercent = 50 },
+        new VolumePreset { Name = "", VolumePercent = 75 },
+    };
+}
+
+public sealed class VolumePreset
+{
+    public string Name { get; set; } = "";
+    public int VolumePercent { get; set; } = 50;
 }
 
 public sealed class AudioTargetItem
