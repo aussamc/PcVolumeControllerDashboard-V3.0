@@ -29,7 +29,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.30";
+    private const string DashboardVersion = "2.31";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -81,6 +81,9 @@ public partial class MainWindow : Window
     private const int DbtDevNodesChanged = 0x0007;
 
     private readonly ObservableCollection<AudioTargetItem> _audioTargets = new();
+    private readonly Dictionary<string, AudioTargetItem> _audioTargetCache =
+        new(StringComparer.OrdinalIgnoreCase);
+    private int _audioSessionRefreshInProgress; // used as bool via Interlocked
     private readonly ObservableCollection<ChannelMappingItem> _channels = new();
     private readonly ObservableCollection<string> _availableComPorts = new();
     private readonly object _serialLock = new();
@@ -3282,6 +3285,11 @@ public partial class MainWindow : Window
 
     private void RefreshAudioSessions()
     {
+        if (System.Threading.Interlocked.Exchange(ref _audioSessionRefreshInProgress, 1) == 1)
+        {
+            Log("RefreshAudioSessions: skipped (already in progress).");
+            return;
+        }
         try
         {
             EnsureAudioDevice();
@@ -3325,11 +3333,20 @@ public partial class MainWindow : Window
 
             _lastAudioSessionSnapshot = GetAudioSessionSnapshot();
 
+            // Rebuild the lookup cache so FindTargetByKey() is O(1).
+            _audioTargetCache.Clear();
+            foreach (AudioTargetItem cacheTarget in _audioTargets)
+                _audioTargetCache[cacheTarget.Key] = cacheTarget;
+
             Log($"Loaded {_audioTargets.Count} target(s).");
         }
         catch (Exception ex)
         {
             Log($"Session refresh error: {ex.Message}");
+        }
+        finally
+        {
+            System.Threading.Interlocked.Exchange(ref _audioSessionRefreshInProgress, 0);
         }
     }
 
@@ -3454,11 +3471,22 @@ public partial class MainWindow : Window
             {
                 channel.Volume = 0;
                 channel.Muted = true;
-                bool isProc = !string.IsNullOrWhiteSpace(channel.TargetKey);
-                channel.IsAppOffline = isProc;
-                channel.Status = isProc
-                    ? (channel.RebindFallback == RebindFallbacks.ShowInactive ? "App offline" : "Waiting")
-                    : "Unassigned";
+                bool hasKey = !string.IsNullOrWhiteSpace(channel.TargetKey);
+                channel.IsAppOffline = hasKey;
+                if (!hasKey)
+                {
+                    channel.Status = "Unassigned";
+                }
+                else if (channel.TargetKey!.StartsWith("PROC:", StringComparison.OrdinalIgnoreCase))
+                {
+                    channel.Status = channel.RebindFallback == RebindFallbacks.ShowInactive
+                        ? "App offline"
+                        : "Waiting";
+                }
+                else
+                {
+                    channel.Status = "Target unavailable";
+                }
                 continue;
             }
 
@@ -3476,14 +3504,15 @@ public partial class MainWindow : Window
                     channel.Volume = Math.Clamp((int)Math.Round(_defaultCaptureDevice.AudioEndpointVolume.MasterVolumeLevelScalar * 100), 0, 100);
                     channel.Muted = _defaultCaptureDevice.AudioEndpointVolume.Mute;
                     channel.Status = "Active";
+                    channel.IsAppOffline = false;
                 }
                 else
                 {
                     channel.Volume = 0;
                     channel.Muted = false;
-                    channel.Status = "No device";
+                    channel.Status = "No microphone";
+                    channel.IsAppOffline = true;
                 }
-                channel.IsAppOffline = false;
                 continue;
             }
             else
@@ -4362,14 +4391,11 @@ public partial class MainWindow : Window
         };
     }
 
-    private AudioTargetItem? FindTargetByKey(string key)
+    private AudioTargetItem? FindTargetByKey(string? key)
     {
-        if (string.IsNullOrWhiteSpace(key))
-        {
-            return null;
-        }
-
-        return _audioTargets.FirstOrDefault(t => t.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
+        if (string.IsNullOrEmpty(key)) return null;
+        _audioTargetCache.TryGetValue(key, out AudioTargetItem? target);
+        return target;
     }
 
     private static string MakeProcessKey(string processName)
