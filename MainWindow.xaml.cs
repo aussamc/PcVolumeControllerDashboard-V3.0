@@ -29,7 +29,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.31";
+    private const string DashboardVersion = "2.32";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -1326,6 +1326,15 @@ public partial class MainWindow : Window
         Log($"Channel {channel.ChannelNumber} assigned to {target.Label}.");
     }
 
+    private void ChannelDisplayNameTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        int len = ChannelDisplayNameTextBox.Text.Length;
+        DisplayNameCharCountTextBlock.Text = $"{len} / 16";
+        DisplayNameCharCountTextBlock.Foreground = len >= 16
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(0xAA, 0x1F, 0x1F))
+            : (WpfSolidColorBrush)FindResource("SecondaryForeground");
+    }
+
     private void SaveDisplayNameButton_Click(object sender, RoutedEventArgs e)
     {
         ChannelMappingItem channel = _channels[_selectedChannelIndex];
@@ -2464,6 +2473,7 @@ public partial class MainWindow : Window
     private void BeginDisconnectAfterSerialError(string message)
     {
         Log(message);
+        ShowWarning($"Serial connection lost: {message} Reconnection will be attempted automatically.");
 
         try
         {
@@ -2472,6 +2482,20 @@ public partial class MainWindow : Window
         catch
         {
         }
+    }
+
+    private void ShowWarning(string message)
+    {
+        Dispatcher.InvokeAsync(() =>
+        {
+            WarningBannerText.Text = message;
+            WarningBanner.Visibility = Visibility.Visible;
+        });
+    }
+
+    private void DismissWarningButton_Click(object sender, RoutedEventArgs e)
+    {
+        WarningBanner.Visibility = Visibility.Collapsed;
     }
 
     private void DisconnectSerialDueToError()
@@ -3266,10 +3290,13 @@ public partial class MainWindow : Window
             _defaultRenderDevice = _deviceEnumerator!.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
 
             Log($"Default output device: {_defaultRenderDevice.FriendlyName}");
+            // Clear any prior audio warning if we now have a device
+            Dispatcher.InvokeAsync(() => { if (WarningBanner.Visibility == Visibility.Visible && WarningBannerText.Text.StartsWith("No audio")) WarningBanner.Visibility = Visibility.Collapsed; });
         }
         catch (Exception ex)
         {
             Log($"Audio device error: {ex.Message}");
+            ShowWarning("No audio output device found. Audio control is unavailable. Check your Windows sound settings.");
         }
 
         try
@@ -5839,6 +5866,18 @@ public partial class MainWindow : Window
             ? new WpfSolidColorBrush(WpfColor.FromRgb(255, 190, 100))
             : new WpfSolidColorBrush(WpfColor.FromRgb(176, 96, 0));
 
+        WpfBrush warningBannerBackground = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(0x3D, 0x2E, 0x00))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(0xFF, 0xF3, 0xCD));
+
+        WpfBrush warningBannerBorder = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(0x6B, 0x4F, 0x00))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(0xFF, 0xEE, 0xBA));
+
+        WpfBrush warningBannerForeground = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(0xFF, 0xD9, 0x66))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(0x85, 0x64, 0x04));
+
         Resources["AppBackground"] = appBackground;
         Resources["CardBackground"] = cardBackground;
         Resources["AppForeground"] = appForeground;
@@ -5873,6 +5912,9 @@ public partial class MainWindow : Window
         Resources["ConnectionGoodForeground"] = connectionGood;
         Resources["ConnectionBadForeground"] = connectionBad;
         Resources["WarningForeground"] = warning;
+        Resources["WarningBannerBackground"] = warningBannerBackground;
+        Resources["WarningBannerBorder"] = warningBannerBorder;
+        Resources["WarningBannerForeground"] = warningBannerForeground;
 
         Background = appBackground;
         Foreground = appForeground;

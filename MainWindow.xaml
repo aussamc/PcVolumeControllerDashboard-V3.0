@@ -47,6 +47,9 @@
         <SolidColorBrush x:Key="ConnectionGoodForeground" Color="#0B7A18" />
         <SolidColorBrush x:Key="ConnectionBadForeground" Color="#AA1F1F" />
         <SolidColorBrush x:Key="WarningForeground" Color="#B06000" />
+        <SolidColorBrush x:Key="WarningBannerBackground" Color="#FFF3CD" />
+        <SolidColorBrush x:Key="WarningBannerBorder" Color="#FFEEBA" />
+        <SolidColorBrush x:Key="WarningBannerForeground" Color="#856404" />
 
         <Style TargetType="{x:Type TextBlock}">
             <Setter Property="Foreground" Value="{DynamicResource AppForeground}" />
@@ -491,6 +494,7 @@
         <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
@@ -518,10 +522,41 @@
                     Height="34"
                     Margin="16,0,0,0"
                     VerticalAlignment="Top"
+                    ToolTip="Exit the PC Volume Controller Dashboard"
                     Click="CloseAppButton_Click" />
         </Grid>
 
-        <TabControl x:Name="MainTabs" Grid.Row="1">
+        <!-- Warning banner — shown when audio or serial errors occur -->
+        <Border x:Name="WarningBanner"
+                Grid.Row="1"
+                Background="{DynamicResource WarningBannerBackground}"
+                BorderBrush="{DynamicResource WarningBannerBorder}"
+                BorderThickness="1"
+                CornerRadius="6"
+                Padding="10,8"
+                Margin="0,0,0,8"
+                Visibility="Collapsed">
+            <DockPanel LastChildFill="True">
+                <Button x:Name="DismissWarningButton"
+                        Content="✕"
+                        Width="24" Height="24"
+                        Padding="0"
+                        DockPanel.Dock="Right"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Foreground="{DynamicResource WarningBannerForeground}"
+                        Cursor="Hand"
+                        ToolTip="Dismiss this warning"
+                        Click="DismissWarningButton_Click" />
+                <TextBlock x:Name="WarningBannerText"
+                           Text=""
+                           VerticalAlignment="Center"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource WarningBannerForeground}" />
+            </DockPanel>
+        </Border>
+
+        <TabControl x:Name="MainTabs" Grid.Row="2">
             <TabItem Header="Audio">
                 <Grid Margin="0,12,0,0" Background="{DynamicResource AppBackground}">
                     <Grid.RowDefinitions>
@@ -557,7 +592,8 @@
                             <ComboBox Grid.Row="0" Grid.Column="1"
                                       x:Name="ComPortComboBox"
                                       Height="30"
-                                      Margin="0,0,8,0" />
+                                      Margin="0,0,8,0"
+                                      ToolTip="Select the COM port your controller is connected to" />
 
                             <Button Grid.Row="0" Grid.Column="2"
                                     x:Name="RefreshPortsButton"
@@ -565,6 +601,7 @@
                                     Width="90"
                                     Height="30"
                                     Margin="0,0,8,0"
+                                    ToolTip="Refresh the list of available COM ports"
                                     Click="RefreshPortsButton_Click" />
 
                             <Button Grid.Row="0" Grid.Column="3"
@@ -573,6 +610,7 @@
                                     Width="110"
                                     Height="30"
                                     Style="{StaticResource PrimaryButton}"
+                                    ToolTip="Connect to or disconnect from the selected controller"
                                     Click="ConnectButton_Click" />
 
                             <TextBlock Grid.Row="0" Grid.Column="4"
@@ -614,14 +652,16 @@
                                       Height="30"
                                       Margin="0,0,8,0"
                                       DockPanel.Dock="Left"
+                                      ToolTip="Select an active channel mapping profile"
                                       SelectionChanged="ProfileComboBox_SelectionChanged" />
                             <Button x:Name="NewProfileButton"
-                                    Content="New"
+                                    Content="_New"
                                     Width="60"
                                     Height="30"
                                     Margin="0,0,6,0"
                                     DockPanel.Dock="Left"
                                     Style="{StaticResource PrimaryButton}"
+                                    ToolTip="Create a new channel mapping profile"
                                     Click="NewProfileButton_Click" />
                             <Button x:Name="RenameProfileButton"
                                     Content="Rename"
@@ -629,6 +669,7 @@
                                     Height="30"
                                     Margin="0,0,6,0"
                                     DockPanel.Dock="Left"
+                                    ToolTip="Rename the current profile"
                                     Click="RenameProfileButton_Click" />
                             <Button x:Name="DuplicateProfileButton"
                                     Content="Duplicate"
@@ -636,12 +677,14 @@
                                     Height="30"
                                     Margin="0,0,6,0"
                                     DockPanel.Dock="Left"
+                                    ToolTip="Duplicate the current profile with a new name"
                                     Click="DuplicateProfileButton_Click" />
                             <Button x:Name="DeleteProfileButton"
                                     Content="Delete"
                                     Width="65"
                                     Height="30"
                                     DockPanel.Dock="Left"
+                                    ToolTip="Delete the current profile (cannot be undone)"
                                     Click="DeleteProfileButton_Click" />
                         </DockPanel>
                     </Border>
@@ -679,54 +722,72 @@
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
 
-                                        <TextBlock Grid.Column="0"
+                                        <TextBlock Grid.Row="0" Grid.Column="0"
                                                    Text="Channel:"
                                                    VerticalAlignment="Center"
                                                    Margin="0,0,8,0" />
 
-                                        <ComboBox Grid.Column="1"
+                                        <ComboBox Grid.Row="0" Grid.Column="1"
                                                   x:Name="LogicalChannelComboBox"
                                                   Height="30"
                                                   Margin="0,0,12,0"
+                                                  ToolTip="Select which encoder channel to configure"
                                                   SelectionChanged="LogicalChannelComboBox_SelectionChanged" />
 
-                                        <TextBlock Grid.Column="2"
+                                        <TextBlock Grid.Row="0" Grid.Column="2"
                                                    Text="Assign to:"
                                                    VerticalAlignment="Center"
                                                    Margin="0,0,8,0" />
 
-                                        <ComboBox Grid.Column="3"
+                                        <ComboBox Grid.Row="0" Grid.Column="3"
                                                   x:Name="ChannelTargetComboBox"
                                                   Height="30"
                                                   Margin="0,0,12,0"
+                                                  ToolTip="Select the Windows audio session to assign to this channel"
                                                   DisplayMemberPath="Label" />
 
-                                        <TextBlock Grid.Column="4"
+                                        <TextBlock Grid.Row="0" Grid.Column="4"
                                                    Text="Display:"
                                                    VerticalAlignment="Center"
                                                    Margin="0,0,8,0" />
 
-                                        <TextBox Grid.Column="5"
+                                        <TextBox Grid.Row="0" Grid.Column="5"
                                                  x:Name="ChannelDisplayNameTextBox"
                                                  Height="30"
-                                                 Margin="0,0,12,0" />
+                                                 MaxLength="16"
+                                                 Margin="0,0,12,0"
+                                                 ToolTip="Friendly name shown on the OLED display (max 16 characters)"
+                                                 TextChanged="ChannelDisplayNameTextBox_TextChanged" />
 
-                                        <Button Grid.Column="6"
+                                        <Button Grid.Row="0" Grid.Column="6"
                                                 x:Name="AssignChannelButton"
-                                                Content="Assign"
+                                                Content="_Assign"
                                                 Width="80"
                                                 Height="30"
                                                 Margin="0,0,8,0"
                                                 Style="{StaticResource PrimaryButton}"
+                                                ToolTip="Assign the selected audio target to the selected channel"
                                                 Click="AssignChannelButton_Click" />
 
-                                        <Button Grid.Column="7"
+                                        <Button Grid.Row="0" Grid.Column="7"
                                                 x:Name="SaveDisplayNameButton"
                                                 Content="Save Name"
                                                 Width="90"
                                                 Height="30"
+                                                ToolTip="Save this display name to the selected channel"
                                                 Click="SaveDisplayNameButton_Click" />
+
+                                        <TextBlock x:Name="DisplayNameCharCountTextBlock"
+                                                   Grid.Row="1" Grid.Column="5"
+                                                   Text="0 / 16"
+                                                   FontSize="10"
+                                                   Foreground="{DynamicResource SecondaryForeground}"
+                                                   Margin="0,2,12,0" />
                                     </Grid>
                                 </StackPanel>
 
@@ -854,6 +915,7 @@
                                                 <ComboBox Grid.Column="1"
                                                           x:Name="ChannelButtonActionComboBox"
                                                           Height="30"
+                                                          ToolTip="Action triggered when the encoder button is pressed briefly"
                                                           SelectionChanged="ChannelButtonActionComboBox_SelectionChanged">
                                                     <ComboBoxItem Content="Select next channel" />
                                                     <ComboBoxItem Content="Toggle assigned mute" />
@@ -874,6 +936,7 @@
                                                 <ComboBox Grid.Column="1"
                                                           x:Name="ChannelLongPressActionComboBox"
                                                           Height="30"
+                                                          ToolTip="Action triggered when the encoder button is held for ~1 second"
                                                           SelectionChanged="ChannelLongPressActionComboBox_SelectionChanged">
                                                     <ComboBoxItem Content="Toggle assigned mute" />
                                                     <ComboBoxItem Content="No action" />
@@ -893,6 +956,7 @@
                                                 <ComboBox Grid.Column="1"
                                                           x:Name="ChannelDoublePressActionComboBox"
                                                           Height="30"
+                                                          ToolTip="Action triggered when the encoder button is pressed twice quickly"
                                                           SelectionChanged="ChannelDoublePressActionComboBox_SelectionChanged">
                                                     <ComboBoxItem Content="Toggle assigned mute" />
                                                     <ComboBoxItem Content="No action" />
@@ -912,6 +976,7 @@
                                                 <ComboBox Grid.Column="1"
                                                           x:Name="ChannelOledModeComboBox"
                                                           Height="30"
+                                                          ToolTip="What to show on the OLED display for this channel"
                                                           SelectionChanged="ChannelOledModeComboBox_SelectionChanged">
                                                     <ComboBoxItem Content="Use global default" />
                                                     <ComboBoxItem Content="App name + volume" />
@@ -929,6 +994,7 @@
                                                 </Grid.ColumnDefinitions>
                                                 <TextBlock Grid.Column="0" Text="App offline:" VerticalAlignment="Center" Margin="0,0,8,0" />
                                                 <ComboBox Grid.Column="1" x:Name="ChannelRebindComboBox" Height="30"
+                                                          ToolTip="What to do when this channel's assigned app is not running"
                                                           SelectionChanged="ChannelRebindComboBox_SelectionChanged">
                                                     <ComboBoxItem Content="Show Inactive" />
                                                     <ComboBoxItem Content="Do Nothing" />
@@ -948,6 +1014,7 @@
                                                     <CheckBox x:Name="PerChannelSensitivityUseGlobalCheckBox"
                                                               Content="Use global"
                                                               Margin="0,4,0,4"
+                                                              ToolTip="Use the global encoder sensitivity setting for this channel"
                                                               Checked="PerChannelSensitivityUseGlobalCheckBox_Changed"
                                                               Unchecked="PerChannelSensitivityUseGlobalCheckBox_Changed" />
                                                     <Grid x:Name="PerChannelSensitivityPanel" Visibility="Collapsed">
@@ -961,6 +1028,7 @@
                                                                 Maximum="500"
                                                                 TickFrequency="10"
                                                                 IsSnapToTickEnabled="False"
+                                                                ToolTip="Per-channel encoder sensitivity (overrides the global setting)"
                                                                 ValueChanged="PerChannelSensitivitySlider_ValueChanged"
                                                                 PreviewMouseLeftButtonDown="Slider_PreviewMouseLeftButtonDown"
                                                                 PreviewMouseMove="Slider_PreviewMouseMove"
@@ -983,6 +1051,7 @@
                                                 Width="110"
                                                 Height="34"
                                                 Margin="0,0,8,8"
+                                                ToolTip="Switch OLED selection to the previous channel"
                                                 Click="PreviousChannelButton_Click" />
 
                                         <Button x:Name="NextChannelButton"
@@ -990,6 +1059,7 @@
                                                 Width="110"
                                                 Height="34"
                                                 Margin="0,0,8,8"
+                                                ToolTip="Switch OLED selection to the next channel"
                                                 Click="NextChannelButton_Click" />
 
                                         <Button x:Name="VolumeDownButton"
@@ -997,6 +1067,7 @@
                                                 Width="90"
                                                 Height="34"
                                                 Margin="0,0,8,8"
+                                                ToolTip="Decrease the volume of the selected channel"
                                                 Click="VolumeDownButton_Click" />
 
                                         <Button x:Name="VolumeUpButton"
@@ -1004,6 +1075,7 @@
                                                 Width="90"
                                                 Height="34"
                                                 Margin="0,0,8,8"
+                                                ToolTip="Increase the volume of the selected channel"
                                                 Click="VolumeUpButton_Click" />
 
                                         <Button x:Name="MuteButton"
@@ -1011,6 +1083,7 @@
                                                 Width="130"
                                                 Height="34"
                                                 Margin="0,0,8,8"
+                                                ToolTip="Toggle mute for the selected channel"
                                                 Click="MuteButton_Click" />
                                     </WrapPanel>
 
@@ -1031,6 +1104,7 @@
                                             Height="30"
                                             HorizontalAlignment="Left"
                                             Margin="0,0,0,8"
+                                            ToolTip="Manually refresh the list of Windows audio sessions"
                                             Click="RefreshSessionsButton_Click" />
                                 </StackPanel>
 
@@ -1096,6 +1170,7 @@
                                         Maximum="100"
                                         TickFrequency="5"
                                         IsSnapToTickEnabled="False"
+                                        ToolTip="OLED display brightness (0% = off, 100% = maximum)"
                                         ValueChanged="OledBrightnessSlider_ValueChanged"
                                         PreviewMouseLeftButtonDown="Slider_PreviewMouseLeftButtonDown"
                                         PreviewMouseMove="Slider_PreviewMouseMove"
@@ -1114,6 +1189,7 @@
                                         Maximum="60"
                                         TickFrequency="1"
                                         IsSnapToTickEnabled="True"
+                                        ToolTip="How long to wait before sleeping the display when the controller is disconnected"
                                         ValueChanged="OledSleepTimeoutSlider_ValueChanged"
                                         PreviewMouseLeftButtonDown="Slider_PreviewMouseLeftButtonDown"
                                         PreviewMouseMove="Slider_PreviewMouseMove"
@@ -1150,6 +1226,7 @@
                                         Maximum="60"
                                         TickFrequency="1"
                                         IsSnapToTickEnabled="True"
+                                        ToolTip="How long to wait before dimming/turning off the display when idle"
                                         ValueChanged="OledConnectedIdleTimeoutSlider_ValueChanged"
                                         PreviewMouseLeftButtonDown="Slider_PreviewMouseLeftButtonDown"
                                         PreviewMouseMove="Slider_PreviewMouseMove"
@@ -1162,6 +1239,7 @@
                                 <CheckBox x:Name="OledAntiBurnInCheckBox"
                                           Content="Enable anti-burn-in pixel shifting"
                                           IsChecked="True"
+                                          ToolTip="Shifts pixels slightly over time to prevent OLED burn-in"
                                           Checked="OledAntiBurnInCheckBox_Changed"
                                           Unchecked="OledAntiBurnInCheckBox_Changed"
                                           Margin="0,0,0,0" />
@@ -1380,11 +1458,12 @@
                         </Border>
 
                         <Button x:Name="SaveOledSetupButton"
-                                Content="Save OLED Setup"
+                                Content="Save _OLED Setup"
                                 Width="160"
                                 Height="34"
                                 HorizontalAlignment="Left"
                                 Margin="0,0,0,12"
+                                ToolTip="Save OLED settings and send configuration to the controller"
                                 Click="SaveOledSetupButton_Click" />
                     </StackPanel>
                 </ScrollViewer>
@@ -1444,7 +1523,7 @@
                                 <WrapPanel Margin="0,8,0,0">
                                     <Button x:Name="OpenCurrentLogFileButton" Content="Open Current Log" Width="140" Height="30" Margin="0,0,8,8" Click="OpenCurrentLogFileButton_Click" />
                                     <Button x:Name="CopyLogFolderPathButton" Content="Copy Log Folder Path" Width="170" Height="30" Margin="0,0,8,8" Click="CopyLogFolderPathButton_Click" />
-                                    <Button x:Name="ExportDiagnosticsZipButton" Content="Export Diagnostics Zip" Width="170" Height="30" Margin="0,0,8,8" Click="ExportDiagnosticsZipButton_Click" />
+                                    <Button x:Name="ExportDiagnosticsZipButton" Content="Export Diagnostics Zip" Width="170" Height="30" Margin="0,0,8,8" ToolTip="Export a diagnostics zip containing logs and settings for bug reports" Click="ExportDiagnosticsZipButton_Click" />
                                 </WrapPanel>
                             </StackPanel>
                         </Border>
@@ -1461,11 +1540,13 @@
 
                                 <CheckBox x:Name="AutoConnectCheckBox"
                                           Content="Auto-connect on launch"
-                                          Margin="0,0,0,8" />
+                                          Margin="0,0,0,8"
+                                          ToolTip="Automatically connect to the controller when the dashboard opens" />
 
                                 <CheckBox x:Name="ScanAllComPortsCheckBox"
                                           Content="Scan all COM ports if remembered controller is missing"
-                                          Margin="0,0,0,8" />
+                                          Margin="0,0,0,8"
+                                          ToolTip="Scan all COM ports for the controller if the remembered port is not found. Leave off for daily use." />
 
                                 <TextBlock Text="Leave this off for daily use so the dashboard waits for the remembered controller port instead of probing unrelated COM ports."
                                            Foreground="{DynamicResource SecondaryForeground}"
@@ -1474,19 +1555,23 @@
 
                                 <CheckBox x:Name="MinimizeToTrayCheckBox"
                                           Content="Minimize to system tray"
-                                          Margin="0,0,0,8" />
+                                          Margin="0,0,0,8"
+                                          ToolTip="Minimize the dashboard to the system tray instead of closing" />
 
                                 <CheckBox x:Name="StartMinimizedToTrayCheckBox"
                                           Content="Start minimized to tray"
-                                          Margin="0,0,0,8" />
+                                          Margin="0,0,0,8"
+                                          ToolTip="Start the dashboard minimized to the system tray" />
 
                                 <CheckBox x:Name="StartWithWindowsCheckBox"
                                           Content="Start program on Windows startup"
-                                          Margin="0,0,0,8" />
+                                          Margin="0,0,0,8"
+                                          ToolTip="Automatically launch the dashboard when Windows starts" />
 
                                 <CheckBox x:Name="AdvancedDebugLoggingCheckBox"
                                           Content="Advanced debug logging"
-                                          Margin="0,0,0,8" />
+                                          Margin="0,0,0,8"
+                                          ToolTip="Write verbose debug output to the log file. Useful for troubleshooting." />
 
                                 <TextBlock Text="Startup now restores saved channels and friendly names before apps are opened."
                                            Foreground="{DynamicResource SecondaryForeground}"
@@ -1615,6 +1700,7 @@
                                             Maximum="500"
                                             TickFrequency="10"
                                             IsSnapToTickEnabled="False"
+                                            ToolTip="Global encoder sensitivity — how much volume changes per click (50% is default)"
                                             ValueChanged="EncoderSensitivitySlider_ValueChanged"
                                             PreviewMouseLeftButtonDown="Slider_PreviewMouseLeftButtonDown"
                                             PreviewMouseMove="Slider_PreviewMouseMove"
@@ -1655,6 +1741,7 @@
                                 <CheckBox x:Name="AccelerationEnabledCheckBox"
                                           Content="Enable volume acceleration"
                                           Margin="0,0,0,8"
+                                          ToolTip="Scale the volume step size when turning the encoder quickly"
                                           Checked="AccelerationEnabledCheckBox_Changed"
                                           Unchecked="AccelerationEnabledCheckBox_Changed" />
 
@@ -1758,6 +1845,7 @@
                                 <CheckBox x:Name="VolumeSmoothingEnabledCheckBox"
                                           Content="Enable volume smoothing"
                                           Margin="0,0,0,8"
+                                          ToolTip="Ease volume changes smoothly over a short time instead of jumping instantly"
                                           Checked="VolumeSmoothingEnabledCheckBox_Changed"
                                           Unchecked="VolumeSmoothingEnabledCheckBox_Changed" />
 
@@ -1833,10 +1921,10 @@
                         </Border>
 
                         <WrapPanel Margin="0,0,0,12">
-                            <Button x:Name="ExportSetupButton" Content="Export Setup" Width="130" Height="34" Margin="0,0,8,8" Click="ExportSetupButton_Click" />
-                            <Button x:Name="ImportSetupButton" Content="Import Setup" Width="130" Height="34" Margin="0,0,8,8" Click="ImportSetupButton_Click" />
-                            <Button x:Name="ClearRememberedControllerButton" Content="Clear Remembered Controller" Width="210" Height="34" Margin="0,0,8,8" Click="ClearRememberedControllerButton_Click" />
-                            <Button x:Name="FactoryResetSetupButton" Content="Factory Reset Setup" Width="170" Height="34" Margin="0,0,8,8" Click="FactoryResetSetupButton_Click" />
+                            <Button x:Name="ExportSetupButton" Content="Export Setup" Width="130" Height="34" Margin="0,0,8,8" ToolTip="Export all settings to a JSON file for backup or transfer" Click="ExportSetupButton_Click" />
+                            <Button x:Name="ImportSetupButton" Content="Import Setup" Width="130" Height="34" Margin="0,0,8,8" ToolTip="Import settings from a previously exported JSON file" Click="ImportSetupButton_Click" />
+                            <Button x:Name="ClearRememberedControllerButton" Content="Clear Remembered Controller" Width="210" Height="34" Margin="0,0,8,8" ToolTip="Clear the remembered COM port — the next launch will scan all ports" Click="ClearRememberedControllerButton_Click" />
+                            <Button x:Name="FactoryResetSetupButton" Content="Factory Reset Setup" Width="170" Height="34" Margin="0,0,8,8" ToolTip="Reset all settings to factory defaults (cannot be undone)" Click="FactoryResetSetupButton_Click" />
                         </WrapPanel>
 
                         <TextBlock Text="Settings are saved automatically whenever you make a change."
@@ -1857,8 +1945,8 @@
                                 <TextBlock x:Name="FirmwareStatusTextBlock" Text="Compiled binaries: see firmware_bin/build_instructions.txt if binaries are not present" Margin="0,0,0,6" TextWrapping="Wrap" />
                                 <TextBlock x:Name="SelectedFirmwareBinTextBlock" Text="Selected .bin file: none" Margin="0,0,0,10" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryForeground}" />
                                 <WrapPanel Margin="0,0,0,8">
-                                    <Button x:Name="SelectFirmwareBinButton" Content="Select .bin File" Width="130" Height="34" Margin="0,0,8,8" Click="SelectFirmwareBinButton_Click" />
-                                    <Button x:Name="FlashFirmwareButton" Content="Flash ESP32 Firmware" Width="180" Height="34" Margin="0,0,8,8" Style="{StaticResource PrimaryButton}" Click="FlashFirmwareButton_Click" />
+                                    <Button x:Name="SelectFirmwareBinButton" Content="Select .bin File" Width="130" Height="34" Margin="0,0,8,8" ToolTip="Browse for an ESP32 firmware .bin file" Click="SelectFirmwareBinButton_Click" />
+                                    <Button x:Name="FlashFirmwareButton" Content="_Flash ESP32 Firmware" Width="180" Height="34" Margin="0,0,8,8" Style="{StaticResource PrimaryButton}" ToolTip="Flash the selected firmware binary to the connected ESP32" Click="FlashFirmwareButton_Click" />
                                 </WrapPanel>
                                 <TextBox x:Name="FirmwareFlashOutputTextBox" Margin="0,12,0,0" MinHeight="180" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" IsReadOnly="True" />
                             </StackPanel>
@@ -1962,7 +2050,7 @@
 
         </TabControl>
 
-        <Border Grid.Row="2"
+        <Border Grid.Row="3"
                 BorderThickness="1"
                 CornerRadius="8"
                 Padding="8"
