@@ -29,7 +29,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.33";
+    private const string DashboardVersion = "2.34";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -193,6 +193,9 @@ public partial class MainWindow : Window
     // (via ShowPendingSettingsCorruptionDialogIfNeeded) so it has a valid owner.
     private bool _settingsWereCorrupt;
     private string? _settingsCorruptBackupRestored;
+
+    // Volume overlay window (created lazily, reused)
+    private VolumeOverlayWindow? _overlayWindow;
 
 
     public MainWindow()
@@ -1279,6 +1282,30 @@ public partial class MainWindow : Window
 
         _settings.ThemeMode = GetThemeModeFromUi();
         ApplyTheme();
+    }
+
+    private void OverlayEnabledCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        if (OverlayEnabledCheckBox == null) return;
+        _settings.OverlayEnabled = OverlayEnabledCheckBox.IsChecked == true;
+        SaveSettings();
+    }
+
+    private void OverlayPositionComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (OverlayPositionComboBox?.SelectedItem is ComboBoxItem item && item.Tag is string tag)
+        {
+            _settings.OverlayPosition = tag;
+            SaveSettings();
+        }
+    }
+
+    private void OverlayTimeoutSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (OverlayTimeoutValueTextBlock == null) return;
+        _settings.OverlayTimeoutSeconds = OverlayTimeoutSlider.Value;
+        OverlayTimeoutValueTextBlock.Text = $"{OverlayTimeoutSlider.Value:F1} s";
+        SaveSettings();
     }
 
     private void LogicalChannelComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -2501,6 +2528,72 @@ public partial class MainWindow : Window
         WarningBanner.Visibility = Visibility.Collapsed;
     }
 
+    private void ShowVolumeOverlay(int channelIndex, int volumePercent)
+    {
+        if (!_settings.OverlayEnabled) return;
+        if (channelIndex < 0 || channelIndex >= _channels.Count) return;
+
+        string channelName = _channels[channelIndex].DisplayLabel;
+        double timeout = _settings.OverlayTimeoutSeconds;
+        bool isDark = _settings.ThemeMode == ThemeModes.Dark ||
+                      (_settings.ThemeMode == ThemeModes.FollowSystem && !IsWindowsUsingLightTheme());
+
+        Dispatcher.InvokeAsync(() =>
+        {
+            if (_overlayWindow == null || !_overlayWindow.IsLoaded)
+            {
+                _overlayWindow = new VolumeOverlayWindow();
+            }
+
+            PositionOverlayWindow();
+            _overlayWindow.ShowOverlay(channelName, volumePercent, timeout, isDark);
+        });
+    }
+
+    private void PositionOverlayWindow()
+    {
+        if (_overlayWindow == null) return;
+
+        // Use the work area (screen minus taskbar)
+        System.Windows.Rect work = SystemParameters.WorkArea;
+        const double margin = 24;
+        const double overlayW = 280;
+        const double overlayH = 80; // approximate
+
+        double x, y;
+        switch (_settings.OverlayPosition)
+        {
+            case "TopLeft":
+                x = work.Left + margin;
+                y = work.Top + margin;
+                break;
+            case "TopCenter":
+                x = work.Left + (work.Width - overlayW) / 2;
+                y = work.Top + margin;
+                break;
+            case "TopRight":
+                x = work.Right - overlayW - margin;
+                y = work.Top + margin;
+                break;
+            case "BottomLeft":
+                x = work.Left + margin;
+                y = work.Bottom - overlayH - margin;
+                break;
+            case "BottomRight":
+                x = work.Right - overlayW - margin;
+                y = work.Bottom - overlayH - margin;
+                break;
+            case "BottomCenter":
+            default:
+                x = work.Left + (work.Width - overlayW) / 2;
+                y = work.Bottom - overlayH - margin;
+                break;
+        }
+
+        _overlayWindow.Left = x;
+        _overlayWindow.Top = y;
+    }
+
     private void DisconnectSerialDueToError()
     {
         DisconnectSerial(sendDisconnectCommand: false);
@@ -3004,6 +3097,10 @@ public partial class MainWindow : Window
             _smoothingActive[encoderChannel] = true;
             EnsureSmoothingTimerRunning();
 
+            // Show the volume overlay for this encoder turn.
+            int _overlayVol = (int)Math.Round(_smoothingTargetVolumes[encoderChannel] * 100);
+            ShowVolumeOverlay(encoderChannel, _overlayVol);
+
             // Run first tick inline for immediate response — no waiting for the timer.
             SmoothingTick();
             return;
@@ -3014,6 +3111,13 @@ public partial class MainWindow : Window
         RefreshAllChannelStates();
         SendAllChannelStatesToDevice();
         SendStateToDevice(force: true);
+
+        // Show the volume overlay for this encoder turn (direct/non-smoothed path).
+        {
+            float directVol = GetChannelCurrentVolumeNormalized(encoderChannel);
+            if (directVol >= 0f)
+                ShowVolumeOverlay(encoderChannel, (int)Math.Round(directVol * 100));
+        }
     }
 
     // Returns a volume step scaled up when the encoder is turned quickly.
@@ -4764,6 +4868,8 @@ public partial class MainWindow : Window
             return;
         }
 
+        _overlayWindow?.HideImmediate();
+
         base.OnClosing(e);
     }
 
@@ -4848,6 +4954,31 @@ public partial class MainWindow : Window
         ThemeFollowSystemRadioButton.IsChecked = _settings.ThemeMode == ThemeModes.FollowSystem;
         ThemeLightRadioButton.IsChecked = _settings.ThemeMode == ThemeModes.Light;
         ThemeDarkRadioButton.IsChecked = _settings.ThemeMode == ThemeModes.Dark;
+
+        if (OverlayEnabledCheckBox != null)
+            OverlayEnabledCheckBox.IsChecked = _settings.OverlayEnabled;
+
+        if (OverlayTimeoutSlider != null)
+        {
+            OverlayTimeoutSlider.Value = _settings.OverlayTimeoutSeconds;
+            if (OverlayTimeoutValueTextBlock != null)
+                OverlayTimeoutValueTextBlock.Text = $"{_settings.OverlayTimeoutSeconds:F1} s";
+        }
+
+        // Set position combobox — find item by Tag matching OverlayPosition
+        if (OverlayPositionComboBox != null)
+        {
+            foreach (ComboBoxItem item in OverlayPositionComboBox.Items)
+            {
+                if (item.Tag is string tag && tag == _settings.OverlayPosition)
+                {
+                    OverlayPositionComboBox.SelectedItem = item;
+                    break;
+                }
+            }
+            if (OverlayPositionComboBox.SelectedItem == null && OverlayPositionComboBox.Items.Count > 0)
+                OverlayPositionComboBox.SelectedIndex = 4; // default BottomCenter
+        }
 
         UpdateHotkeyLabels();
     }
@@ -7403,6 +7534,11 @@ public sealed class DashboardSettings
 
     // Global system hotkeys (v2.29+).
     public HotkeySettings Hotkeys { get; set; } = new HotkeySettings();
+
+    // On-screen volume overlay (v2.34+).
+    public bool OverlayEnabled { get; set; } = true;
+    public string OverlayPosition { get; set; } = "BottomCenter";
+    public double OverlayTimeoutSeconds { get; set; } = 2.5;
 
     public static DashboardSettings CreateDefault()
     {
