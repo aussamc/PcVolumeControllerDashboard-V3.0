@@ -29,7 +29,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.34";
+    private const string DashboardVersion = "2.35";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -83,6 +83,7 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<AudioTargetItem> _audioTargets = new();
     private readonly Dictionary<string, AudioTargetItem> _audioTargetCache =
         new(StringComparer.OrdinalIgnoreCase);
+    private readonly System.Collections.ObjectModel.ObservableCollection<OutputDeviceItem> _outputDevices = new();
     private int _audioSessionRefreshInProgress; // used as bool via Interlocked
     private readonly ObservableCollection<ChannelMappingItem> _channels = new();
     private readonly ObservableCollection<string> _availableComPorts = new();
@@ -209,6 +210,7 @@ public partial class MainWindow : Window
         AudioSessionsListView.ItemsSource = _audioTargets;
         ChannelTargetComboBox.ItemsSource = _audioTargets;
         ChannelMappingsListView.ItemsSource = _channels;
+        OutputDevicesListView.ItemsSource = _outputDevices;
 
         LoadSettings();
         SetupTrayIcon();
@@ -229,6 +231,7 @@ public partial class MainWindow : Window
         });
         _deviceEnumerator.RegisterEndpointNotificationCallback(_audioDeviceNotificationClient);
         RefreshDefaultAudioDevice();
+        RefreshOutputDevices();
 
         BuildChannels();
         BuildLogicalChannelComboBox();
@@ -565,6 +568,21 @@ public partial class MainWindow : Window
         RefreshAllChannelStates();
         SendAllChannelStatesToDevice();
         SendStateToDevice(force: true);
+    }
+
+    private void RefreshOutputDevicesButton_Click(object sender, RoutedEventArgs e)
+    {
+        RefreshOutputDevices();
+    }
+
+    private void OutputDeviceInclude_Changed(object sender, RoutedEventArgs e)
+    {
+        // Rebuild the cycle list from checked items, preserving order
+        _settings.OutputDeviceCycleList = _outputDevices
+            .Where(d => d.IncludeInCycle)
+            .Select(d => d.DeviceId)
+            .ToList();
+        SaveSettings();
     }
 
     private void SaveOledSetupButton_Click(object sender, RoutedEventArgs e)
@@ -3417,6 +3435,142 @@ public partial class MainWindow : Window
         }
     }
 
+    private void RefreshOutputDevices()
+    {
+        Task.Run(() =>
+        {
+            try
+            {
+                using var enumerator = new NAudio.CoreAudioApi.MMDeviceEnumerator();
+                NAudio.CoreAudioApi.MMDeviceCollection devices = enumerator.EnumerateAudioEndPoints(
+                    NAudio.CoreAudioApi.DataFlow.Render,
+                    NAudio.CoreAudioApi.DeviceState.Active);
+
+                string? defaultId = null;
+                try
+                {
+                    using var defaultDevice = enumerator.GetDefaultAudioEndpoint(
+                        NAudio.CoreAudioApi.DataFlow.Render,
+                        NAudio.CoreAudioApi.Role.Multimedia);
+                    defaultId = defaultDevice.ID;
+                }
+                catch { /* no default device */ }
+
+                Dispatcher.InvokeAsync(() =>
+                {
+                    _outputDevices.Clear();
+                    for (int i = 0; i < devices.Count; i++)
+                    {
+                        var dev = devices[i];
+                        bool inCycle = _settings.OutputDeviceCycleList.Contains(dev.ID, StringComparer.OrdinalIgnoreCase);
+                        _outputDevices.Add(new OutputDeviceItem
+                        {
+                            DeviceId = dev.ID,
+                            FriendlyName = dev.FriendlyName,
+                            IsDefault = string.Equals(dev.ID, defaultId, StringComparison.OrdinalIgnoreCase),
+                            IncludeInCycle = inCycle
+                        });
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Log($"RefreshOutputDevices error: {ex.Message}");
+            }
+        });
+    }
+
+    private void CycleOutputDevice()
+    {
+        Task.Run(() =>
+        {
+            try
+            {
+                var cycleOrder = _settings.OutputDeviceCycleList;
+                if (cycleOrder.Count < 2)
+                {
+                    Log("CycleOutputDevice: fewer than 2 devices in cycle list — nothing to do.");
+                    return;
+                }
+
+                using var enumerator = new NAudio.CoreAudioApi.MMDeviceEnumerator();
+                string? currentDefaultId = null;
+                try
+                {
+                    using var def = enumerator.GetDefaultAudioEndpoint(
+                        NAudio.CoreAudioApi.DataFlow.Render,
+                        NAudio.CoreAudioApi.Role.Multimedia);
+                    currentDefaultId = def.ID;
+                }
+                catch { }
+
+                int currentIndex = cycleOrder.FindIndex(id => string.Equals(id, currentDefaultId, StringComparison.OrdinalIgnoreCase));
+                int nextIndex = (currentIndex + 1) % cycleOrder.Count;
+                string nextDeviceId = cycleOrder[nextIndex];
+
+                NAudio.CoreAudioApi.MMDevice? nextDevice = null;
+                try
+                {
+                    var activeDevices = enumerator.EnumerateAudioEndPoints(
+                        NAudio.CoreAudioApi.DataFlow.Render,
+                        NAudio.CoreAudioApi.DeviceState.Active);
+                    for (int i = 0; i < activeDevices.Count; i++)
+                    {
+                        if (string.Equals(activeDevices[i].ID, nextDeviceId, StringComparison.OrdinalIgnoreCase))
+                        {
+                            nextDevice = activeDevices[i];
+                            break;
+                        }
+                    }
+                }
+                catch { }
+
+                if (nextDevice == null)
+                {
+                    Log($"CycleOutputDevice: next device '{nextDeviceId}' not found among active devices.");
+                    return;
+                }
+
+                try
+                {
+                    var policy = (IPolicyConfig)new PolicyConfigClient();
+                    policy.SetDefaultEndpoint(nextDevice.ID, NAudio.CoreAudioApi.Role.Console);
+                    policy.SetDefaultEndpoint(nextDevice.ID, NAudio.CoreAudioApi.Role.Multimedia);
+                    policy.SetDefaultEndpoint(nextDevice.ID, NAudio.CoreAudioApi.Role.Communications);
+                    Log($"CycleOutputDevice: switched to '{nextDevice.FriendlyName}'.");
+
+                    string shortName = nextDevice.FriendlyName.Length > 24
+                        ? nextDevice.FriendlyName[..24] + "…"
+                        : nextDevice.FriendlyName;
+
+                    Dispatcher.InvokeAsync(() =>
+                    {
+                        if (_overlayWindow == null || !_overlayWindow.IsLoaded)
+                            _overlayWindow = new VolumeOverlayWindow();
+
+                        PositionOverlayWindow();
+
+                        bool isDark = _settings.ThemeMode == ThemeModes.Dark ||
+                                      (_settings.ThemeMode == ThemeModes.FollowSystem && !IsWindowsUsingLightTheme());
+
+                        _overlayWindow.ShowOverlay($"▶  {shortName}", -1, _settings.OverlayTimeoutSeconds, isDark);
+
+                        RefreshOutputDevices();
+                        RefreshDefaultAudioDevice();
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Log($"CycleOutputDevice: failed to set default endpoint: {ex.Message}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"CycleOutputDevice error: {ex.Message}");
+            }
+        });
+    }
+
     private void RefreshAudioSessions()
     {
         if (System.Threading.Interlocked.Exchange(ref _audioSessionRefreshInProgress, 1) == 1)
@@ -3907,6 +4061,10 @@ public partial class MainWindow : Window
                 CycleToNextProfile();
                 break;
 
+            case ChannelButtonActions.CycleOutputDevice:
+                CycleOutputDevice();
+                break;
+
             case ChannelButtonActions.SelectNextChannel:
             default:
                 SelectNextChannel();
@@ -3941,6 +4099,10 @@ public partial class MainWindow : Window
 
             case ChannelButtonActions.CycleNextProfile:
                 CycleToNextProfile();
+                break;
+
+            case ChannelButtonActions.CycleOutputDevice:
+                CycleOutputDevice();
                 break;
 
             default:
@@ -3979,6 +4141,10 @@ public partial class MainWindow : Window
 
             case ChannelButtonActions.CycleNextProfile:
                 CycleToNextProfile();
+                break;
+
+            case ChannelButtonActions.CycleOutputDevice:
+                CycleOutputDevice();
                 break;
 
             default:
@@ -4455,6 +4621,7 @@ public partial class MainWindow : Window
             1 => ChannelButtonActions.ToggleAssignedMute,
             2 => ChannelButtonActions.NoAction,
             3 => ChannelButtonActions.CycleNextProfile,
+            4 => ChannelButtonActions.CycleOutputDevice,
             _ => ChannelButtonActions.SelectNextChannel
         };
     }
@@ -4466,6 +4633,7 @@ public partial class MainWindow : Window
             0 => ChannelButtonActions.ToggleAssignedMute,
             1 => ChannelButtonActions.NoAction,
             2 => ChannelButtonActions.CycleNextProfile,
+            3 => ChannelButtonActions.CycleOutputDevice,
             _ => ChannelButtonActions.ToggleAssignedMute
         };
     }
@@ -4477,6 +4645,7 @@ public partial class MainWindow : Window
             ChannelButtonActions.ToggleAssignedMute => 1,
             ChannelButtonActions.NoAction => 2,
             ChannelButtonActions.CycleNextProfile => 3,
+            ChannelButtonActions.CycleOutputDevice => 4,
             _ => 0
         };
     }
@@ -4488,6 +4657,7 @@ public partial class MainWindow : Window
             ChannelButtonActions.ToggleAssignedMute => 0,
             ChannelButtonActions.NoAction => 1,
             ChannelButtonActions.CycleNextProfile => 2,
+            ChannelButtonActions.CycleOutputDevice => 3,
             _ => 0
         };
     }
@@ -4499,6 +4669,7 @@ public partial class MainWindow : Window
             0 => ChannelButtonActions.ToggleAssignedMute,
             1 => ChannelButtonActions.NoAction,
             2 => ChannelButtonActions.CycleNextProfile,
+            3 => ChannelButtonActions.CycleOutputDevice,
             _ => ChannelButtonActions.NoAction
         };
     }
@@ -4510,6 +4681,7 @@ public partial class MainWindow : Window
             ChannelButtonActions.ToggleAssignedMute => 0,
             ChannelButtonActions.NoAction => 1,
             ChannelButtonActions.CycleNextProfile => 2,
+            ChannelButtonActions.CycleOutputDevice => 3,
             _ => 1
         };
     }
@@ -4521,6 +4693,7 @@ public partial class MainWindow : Window
             ChannelButtonActions.ToggleAssignedMute => "Toggle assigned mute",
             ChannelButtonActions.NoAction => "No action",
             ChannelButtonActions.CycleNextProfile => "Next profile",
+            ChannelButtonActions.CycleOutputDevice => "Cycle output device",
             _ => "Select next channel"
         };
     }
@@ -7330,21 +7503,22 @@ public static class ChannelButtonActions
     public const string ToggleAssignedMute = "ToggleAssignedMute";
     public const string NoAction = "NoAction";
     public const string CycleNextProfile = "CycleNextProfile";
+    public const string CycleOutputDevice = "CycleOutputDevice";
 
     public static bool IsValid(string? action)
     {
-        return action is SelectNextChannel or ToggleAssignedMute or NoAction or CycleNextProfile;
+        return action is SelectNextChannel or ToggleAssignedMute or NoAction or CycleNextProfile or CycleOutputDevice;
     }
 
-    // Long press and double press only support ToggleAssignedMute, NoAction, and CycleNextProfile.
+    // Long press and double press only support ToggleAssignedMute, NoAction, CycleNextProfile, and CycleOutputDevice.
     public static bool IsValidLongPressAction(string? action)
     {
-        return action is ToggleAssignedMute or NoAction or CycleNextProfile;
+        return action is ToggleAssignedMute or NoAction or CycleNextProfile or CycleOutputDevice;
     }
 
     public static bool IsValidDoublePressAction(string? action)
     {
-        return action is ToggleAssignedMute or NoAction or CycleNextProfile;
+        return action is ToggleAssignedMute or NoAction or CycleNextProfile or CycleOutputDevice;
     }
 }
 
@@ -7540,6 +7714,9 @@ public sealed class DashboardSettings
     public string OverlayPosition { get; set; } = "BottomCenter";
     public double OverlayTimeoutSeconds { get; set; } = 2.5;
 
+    // Output device cycle list (v2.35+). Device IDs included in the cycle, in order.
+    public List<string> OutputDeviceCycleList { get; set; } = new();
+
     public static DashboardSettings CreateDefault()
     {
         return new DashboardSettings
@@ -7702,3 +7879,45 @@ public static class RebindFallbacks
 
     public static bool IsValid(string? v) => v is ShowInactive or DoNothing;
 }
+
+public class OutputDeviceItem : System.ComponentModel.INotifyPropertyChanged
+{
+    public string DeviceId { get; set; } = "";
+    public string FriendlyName { get; set; } = "";
+    public bool IsDefault { get; set; }
+
+    /// <summary>Shows a check mark when this device is the current Windows default output.</summary>
+    public string DefaultIndicator => IsDefault ? "✓" : "";
+
+    private bool _includeInCycle;
+    public bool IncludeInCycle
+    {
+        get => _includeInCycle;
+        set { _includeInCycle = value; PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(IncludeInCycle))); }
+    }
+
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+}
+
+[System.Runtime.InteropServices.ComImport]
+[System.Runtime.InteropServices.Guid("f8679f50-850a-41cf-9c72-430f290290c8")]
+[System.Runtime.InteropServices.InterfaceType(System.Runtime.InteropServices.ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IPolicyConfig
+{
+    [System.Runtime.InteropServices.PreserveSig] int GetMixFormat(string pszDeviceName, IntPtr ppFormat);
+    [System.Runtime.InteropServices.PreserveSig] int GetDeviceFormat(string pszDeviceName, bool bDefault, IntPtr ppFormat);
+    [System.Runtime.InteropServices.PreserveSig] int ResetDeviceFormat(string pszDeviceName);
+    [System.Runtime.InteropServices.PreserveSig] int SetDeviceFormat(string pszDeviceName, IntPtr pEndpointFormat, IntPtr MixFormat);
+    [System.Runtime.InteropServices.PreserveSig] int GetProcessingPeriod(string pszDeviceName, bool bDefault, IntPtr pmftDefaultPeriod, IntPtr pmftMinimumPeriod);
+    [System.Runtime.InteropServices.PreserveSig] int SetProcessingPeriod(string pszDeviceName, IntPtr pmftPeriod);
+    [System.Runtime.InteropServices.PreserveSig] int GetShareMode(string pszDeviceName, IntPtr pMode);
+    [System.Runtime.InteropServices.PreserveSig] int SetShareMode(string pszDeviceName, IntPtr mode);
+    [System.Runtime.InteropServices.PreserveSig] int GetPropertyValue(string pszDeviceName, bool bFxStore, IntPtr pKey, IntPtr pv);
+    [System.Runtime.InteropServices.PreserveSig] int SetPropertyValue(string pszDeviceName, bool bFxStore, IntPtr pKey, IntPtr pv);
+    [System.Runtime.InteropServices.PreserveSig] int SetDefaultEndpoint(string pszDeviceName, NAudio.CoreAudioApi.Role role);
+    [System.Runtime.InteropServices.PreserveSig] int SetEndpointVisibility(string pszDeviceName, bool bVisible);
+}
+
+[System.Runtime.InteropServices.ComImport]
+[System.Runtime.InteropServices.Guid("870af99c-171d-4f9e-af0d-e63df40c2bc9")]
+internal class PolicyConfigClient { }

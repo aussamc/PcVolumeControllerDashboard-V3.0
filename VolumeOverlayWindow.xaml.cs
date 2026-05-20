@@ -17,12 +17,22 @@ public partial class VolumeOverlayWindow : Window
     }
 
     /// <summary>Update content and (re-)show the overlay.</summary>
+    /// <param name="volumePercent">Pass -1 to show only the channel/device name without the progress bar or percentage text.</param>
     public void ShowOverlay(string channelName, int volumePercent, double timeoutSeconds, bool isDark)
     {
         // Update content
         ChannelNameText.Text = channelName;
-        VolumeProgressBar.Value = volumePercent;
-        VolumePercentText.Text = $"{volumePercent}%";
+
+        bool showVolume = volumePercent >= 0;
+        VolumeProgressBar.Visibility = showVolume ? Visibility.Visible : Visibility.Collapsed;
+        VolumePercentText.Visibility = showVolume ? Visibility.Visible : Visibility.Collapsed;
+        ChannelNameText.FontSize = showVolume ? 12 : 16;
+
+        if (showVolume)
+        {
+            VolumeProgressBar.Value = volumePercent;
+            VolumePercentText.Text = $"{volumePercent}%";
+        }
 
         // Theme colours
         if (isDark)
