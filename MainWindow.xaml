@@ -1930,6 +1930,80 @@
                                 Padding="12"
                                 Margin="0,0,0,12">
                             <StackPanel>
+                                <TextBlock Text="Volume Overlay"
+                                           FontSize="18"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,8"/>
+                                <TextBlock Text="Shows the channel name and volume level on-screen when you turn an encoder knob."
+                                           Foreground="{DynamicResource SecondaryForeground}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,0,0,10"/>
+
+                                <CheckBox x:Name="OverlayEnabledCheckBox"
+                                          Content="Show volume overlay when encoder turns"
+                                          Margin="0,0,0,10"
+                                          ToolTip="Display an on-screen volume indicator when an encoder is turned"
+                                          Checked="OverlayEnabledCheckBox_Changed"
+                                          Unchecked="OverlayEnabledCheckBox_Changed"/>
+
+                                <Grid HorizontalAlignment="Left" Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="130"/>
+                                        <ColumnDefinition Width="200"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0"
+                                               Text="Screen position:"
+                                               VerticalAlignment="Center"/>
+                                    <ComboBox Grid.Column="1"
+                                              x:Name="OverlayPositionComboBox"
+                                              Height="30"
+                                              ToolTip="Where on the screen the volume overlay appears"
+                                              SelectionChanged="OverlayPositionComboBox_SelectionChanged">
+                                        <ComboBoxItem Content="Top Left"    Tag="TopLeft"/>
+                                        <ComboBoxItem Content="Top Center"  Tag="TopCenter"/>
+                                        <ComboBoxItem Content="Top Right"   Tag="TopRight"/>
+                                        <ComboBoxItem Content="Bottom Left"  Tag="BottomLeft"/>
+                                        <ComboBoxItem Content="Bottom Center" Tag="BottomCenter"/>
+                                        <ComboBoxItem Content="Bottom Right" Tag="BottomRight"/>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Grid HorizontalAlignment="Left">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="130"/>
+                                        <ColumnDefinition Width="200"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0"
+                                               Text="Dismiss after:"
+                                               VerticalAlignment="Center"/>
+                                    <Slider Grid.Column="1"
+                                            x:Name="OverlayTimeoutSlider"
+                                            Minimum="1" Maximum="8"
+                                            TickFrequency="0.5"
+                                            IsSnapToTickEnabled="True"
+                                            VerticalAlignment="Center"
+                                            ToolTip="How many seconds the overlay stays visible before fading out"
+                                            ValueChanged="OverlayTimeoutSlider_ValueChanged"
+                                            PreviewMouseLeftButtonDown="Slider_PreviewMouseLeftButtonDown"
+                                            PreviewMouseMove="Slider_PreviewMouseMove"
+                                            PreviewMouseLeftButtonUp="Slider_PreviewMouseLeftButtonUp"
+                                            LostMouseCapture="Slider_LostMouseCapture"/>
+                                    <TextBlock Grid.Column="2"
+                                               x:Name="OverlayTimeoutValueTextBlock"
+                                               Text="2.5 s"
+                                               VerticalAlignment="Center"
+                                               Margin="8,0,0,0"
+                                               MinWidth="36"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="12"
+                                Margin="0,0,0,12">
+                            <StackPanel>
                                 <TextBlock Text="Device Diagnostics"
                                            FontSize="18"
                                            FontWeight="SemiBold"

@@ -1,0 +1,53 @@
+<Window x:Class="PcVolumeControllerDashboard.VolumeOverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        IsHitTestVisible="False"
+        Width="280"
+        SizeToContent="Height"
+        ResizeMode="NoResize">
+
+    <Window.RenderTransform>
+        <TranslateTransform x:Name="SlideTransform" Y="0"/>
+    </Window.RenderTransform>
+
+    <Border x:Name="ContentBorder"
+            CornerRadius="12"
+            Padding="16,12"
+            Background="#CC000000">
+        <StackPanel>
+            <TextBlock x:Name="ChannelNameText"
+                       Text="Master"
+                       FontSize="12"
+                       Foreground="#BBFFFFFF"
+                       Margin="0,0,0,4"/>
+            <Grid Margin="0,0,0,6">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="52"/>
+                </Grid.ColumnDefinitions>
+                <ProgressBar x:Name="VolumeProgressBar"
+                             Grid.Column="0"
+                             Minimum="0" Maximum="100"
+                             Value="75"
+                             Height="6"
+                             Background="#44FFFFFF"
+                             Foreground="#FFFFFFFF"
+                             BorderThickness="0"
+                             VerticalAlignment="Center"/>
+                <TextBlock x:Name="VolumePercentText"
+                           Grid.Column="1"
+                           Text="75%"
+                           FontSize="15"
+                           FontWeight="SemiBold"
+                           Foreground="#FFFFFFFF"
+                           HorizontalAlignment="Right"
+                           VerticalAlignment="Center"/>
+            </Grid>
+        </StackPanel>
+    </Border>
+</Window>
