@@ -28,7 +28,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.37";
+    private const string DashboardVersion = "2.38";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -88,7 +88,7 @@ public partial class MainWindow : Window
     private readonly object _logFileLock = new();
 
     private readonly SerialService _serialService = new();
-    private MMDeviceEnumerator? _deviceEnumerator;
+    private readonly AudioService _audioService = new();
     private MMDevice? _defaultRenderDevice;
     private MMDevice? _defaultCaptureDevice;
     private System.Threading.Timer? _statePollTimer;
@@ -183,7 +183,6 @@ public partial class MainWindow : Window
     private DateTime _lastSleepWakeTestCommandAt = DateTime.MinValue;
     private Slider? _activeSliderDrag;
     private bool _profileComboBoxSuppressEvents;
-    private AudioDeviceNotificationClient? _audioDeviceNotificationClient;
 
     // Set by LoadSettings when settings.json exists but cannot be parsed.
     // The corruption dialog is shown after the window is fully initialised
@@ -213,19 +212,17 @@ public partial class MainWindow : Window
         SystemEvents.SessionSwitch += OnSessionSwitch;
         SystemEvents.PowerModeChanged += OnPowerModeChanged;
 
-        _deviceEnumerator = new MMDeviceEnumerator();
-        _audioDeviceNotificationClient = new AudioDeviceNotificationClient(() =>
+        _audioService.DefaultDeviceChanged += () => Dispatcher.InvokeAsync(() =>
         {
-            Dispatcher.InvokeAsync(() =>
-            {
-                Log("Default audio device changed — refreshing audio sessions.");
-                RefreshDefaultAudioDevice();
-                RefreshAudioSessions();
-                RefreshAllChannelStates();
-                SendAllChannelStatesToDevice();
-            });
+            Log("Default audio device changed — refreshing audio sessions.");
+            RefreshDefaultAudioDevice();
+            RefreshAudioSessions();
+            RefreshAllChannelStates();
+            SendAllChannelStatesToDevice();
         });
-        _deviceEnumerator.RegisterEndpointNotificationCallback(_audioDeviceNotificationClient);
+        _audioService.AudioDeviceError += msg =>
+            ShowWarning("No audio output device found. Audio control is unavailable. Check your Windows sound settings.");
+        _audioService.Initialise();
         RefreshDefaultAudioDevice();
         RefreshOutputDevices();
 
@@ -3358,29 +3355,15 @@ public partial class MainWindow : Window
 
     private void RefreshDefaultAudioDevice()
     {
-        try
-        {
-            _defaultRenderDevice?.Dispose();
-            _defaultRenderDevice = _deviceEnumerator!.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+        _audioService.RefreshDefaultDevice();
+        _defaultRenderDevice  = _audioService.RenderDevice;
+        _defaultCaptureDevice = _audioService.CaptureDevice;
 
+        if (_defaultRenderDevice != null)
+        {
             Log($"Default output device: {_defaultRenderDevice.FriendlyName}");
             // Clear any prior audio warning if we now have a device
             Dispatcher.InvokeAsync(() => { if (WarningBanner.Visibility == Visibility.Visible && WarningBannerText.Text.StartsWith("No audio")) WarningBanner.Visibility = Visibility.Collapsed; });
-        }
-        catch (Exception ex)
-        {
-            Log($"Audio device error: {ex.Message}");
-            ShowWarning("No audio output device found. Audio control is unavailable. Check your Windows sound settings.");
-        }
-
-        try
-        {
-            _defaultCaptureDevice?.Dispose();
-            _defaultCaptureDevice = _deviceEnumerator!.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Communications);
-        }
-        catch
-        {
-            _defaultCaptureDevice = null;
         }
     }
 
@@ -3536,30 +3519,23 @@ public partial class MainWindow : Window
             if (_defaultCaptureDevice != null)
                 _audioTargets.Add(AudioTargetItem.CreateMic());
 
-            AudioSessionManager manager = _defaultRenderDevice!.AudioSessionManager;
+            List<AudioSessionControl> sessions = _audioService.GetActiveSessions();
 
-            manager.RefreshSessions();
-
-            SessionCollection sessions = manager.Sessions;
-
-            if (sessions != null)
+            foreach (AudioSessionControl session in sessions)
             {
-                for (int i = 0; i < sessions.Count; i++)
+                AudioTargetItem? target = TryCreateAudioTargetFromSession(session);
+
+                if (target == null)
                 {
-                    AudioTargetItem? target = TryCreateAudioTargetFromSession(sessions, i);
-
-                    if (target == null)
-                    {
-                        continue;
-                    }
-
-                    if (_audioTargets.Any(t => t.Key.Equals(target.Key, StringComparison.OrdinalIgnoreCase)))
-                    {
-                        continue;
-                    }
-
-                    _audioTargets.Add(target);
+                    continue;
                 }
+
+                if (_audioTargets.Any(t => t.Key.Equals(target.Key, StringComparison.OrdinalIgnoreCase)))
+                {
+                    continue;
+                }
+
+                _audioTargets.Add(target);
             }
 
             EnsureSavedTargetsAppearInTargetList();
@@ -3656,24 +3632,17 @@ public partial class MainWindow : Window
     {
         EnsureAudioDevice();
 
-        AudioSessionManager manager = _defaultRenderDevice!.AudioSessionManager;
-
-        manager.RefreshSessions();
-
-        SessionCollection sessions = manager.Sessions;
+        List<AudioSessionControl> sessions = _audioService.GetActiveSessions();
 
         HashSet<string> keys = new(StringComparer.OrdinalIgnoreCase) { "MASTER" };
 
-        if (sessions != null)
+        foreach (AudioSessionControl session in sessions)
         {
-            for (int i = 0; i < sessions.Count; i++)
-            {
-                AudioTargetItem? target = TryCreateAudioTargetFromSession(sessions, i);
+            AudioTargetItem? target = TryCreateAudioTargetFromSession(session);
 
-                if (target != null)
-                {
-                    keys.Add(target.Key);
-                }
+            if (target != null)
+            {
+                keys.Add(target.Key);
             }
         }
 
@@ -4799,17 +4768,11 @@ public partial class MainWindow : Window
 
         EnsureAudioDevice();
 
-        AudioSessionManager manager = _defaultRenderDevice!.AudioSessionManager;
-        SessionCollection sessions = manager.Sessions;
+        List<AudioSessionControl> sessions = _audioService.GetActiveSessions();
 
-        if (sessions == null)
+        foreach (AudioSessionControl session in sessions)
         {
-            yield break;
-        }
-
-        for (int i = 0; i < sessions.Count; i++)
-        {
-            AudioTargetItem? item = TryCreateAudioTargetFromSession(sessions, i, processName);
+            AudioTargetItem? item = TryCreateAudioTargetFromSession(session, processName);
 
             if (item != null)
             {
@@ -4819,13 +4782,11 @@ public partial class MainWindow : Window
     }
 
     private static AudioTargetItem? TryCreateAudioTargetFromSession(
-        SessionCollection sessions,
-        int index,
+        AudioSessionControl session,
         string? requiredProcessName = null)
     {
         try
         {
-            AudioSessionControl session = sessions[index];
             uint pidRaw = session.GetProcessID;
 
             if (pidRaw == 0 || session.SimpleAudioVolume == null)
@@ -7494,15 +7455,9 @@ public partial class MainWindow : Window
 
         DisconnectSerial();
 
-        if (_audioDeviceNotificationClient != null && _deviceEnumerator != null)
-        {
-            try { _deviceEnumerator.UnregisterEndpointNotificationCallback(_audioDeviceNotificationClient); }
-            catch (Exception ex) { Log($"Audio notification unregister error: {ex.Message}"); }
-        }
-
-        _defaultRenderDevice?.Dispose();
-        _defaultCaptureDevice?.Dispose();
-        _deviceEnumerator?.Dispose();
+        _audioService.Dispose();
+        _defaultRenderDevice  = null;
+        _defaultCaptureDevice = null;
 
         if (_trayIcon != null)
         {
@@ -7520,24 +7475,6 @@ public partial class MainWindow : Window
         base.OnClosed(e);
     }
 
-    private sealed class AudioDeviceNotificationClient : NAudio.CoreAudioApi.Interfaces.IMMNotificationClient
-    {
-        private readonly Action _onDefaultDeviceChanged;
-        public AudioDeviceNotificationClient(Action onDefaultDeviceChanged)
-            => _onDefaultDeviceChanged = onDefaultDeviceChanged;
-
-        public void OnDefaultDeviceChanged(DataFlow flow, Role role, string defaultDeviceId)
-        {
-            if ((flow == DataFlow.Render   && role == Role.Multimedia)   ||
-                (flow == DataFlow.Capture  && role == Role.Communications))
-                _onDefaultDeviceChanged();
-        }
-
-        public void OnDeviceAdded(string pwstrDeviceId) { }
-        public void OnDeviceRemoved(string pwstrDeviceId) { }
-        public void OnDeviceStateChanged(string deviceId, DeviceState newState) { }
-        public void OnPropertyValueChanged(string pwstrDeviceId, PropertyKey key) { }
-    }
 }
 
 public static class ThemeModes
