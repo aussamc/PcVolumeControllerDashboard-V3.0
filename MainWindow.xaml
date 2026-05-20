@@ -966,6 +966,9 @@
                                                     <ComboBoxItem Content="No action" />
                                                     <ComboBoxItem Content="Next profile" />
                                                     <ComboBoxItem Content="Cycle output device" />
+                                                    <ComboBoxItem Content="Apply preset 1" />
+                                                    <ComboBoxItem Content="Apply preset 2" />
+                                                    <ComboBoxItem Content="Apply preset 3" />
                                                 </ComboBox>
                                             </Grid>
 
@@ -987,6 +990,9 @@
                                                     <ComboBoxItem Content="No action" />
                                                     <ComboBoxItem Content="Next profile" />
                                                     <ComboBoxItem Content="Cycle output device" />
+                                                    <ComboBoxItem Content="Apply preset 1" />
+                                                    <ComboBoxItem Content="Apply preset 2" />
+                                                    <ComboBoxItem Content="Apply preset 3" />
                                                 </ComboBox>
                                             </Grid>
 
@@ -1008,6 +1014,9 @@
                                                     <ComboBoxItem Content="No action" />
                                                     <ComboBoxItem Content="Next profile" />
                                                     <ComboBoxItem Content="Cycle output device" />
+                                                    <ComboBoxItem Content="Apply preset 1" />
+                                                    <ComboBoxItem Content="Apply preset 2" />
+                                                    <ComboBoxItem Content="Apply preset 3" />
                                                 </ComboBox>
                                             </Grid>
 
@@ -1088,6 +1097,131 @@
                                                                    Margin="4,0,0,0" />
                                                     </Grid>
                                                 </StackPanel>
+                                            </Grid>
+
+                                            <!-- Volume Presets -->
+                                            <Separator Margin="0,12,0,8"/>
+                                            <TextBlock Text="Volume Presets"
+                                                       FontWeight="SemiBold"
+                                                       Margin="0,0,0,6"/>
+                                            <TextBlock Text="Assign these as button actions: Apply preset 1 / 2 / 3."
+                                                       Foreground="{DynamicResource SecondaryForeground}"
+                                                       FontSize="11"
+                                                       TextWrapping="Wrap"
+                                                       Margin="0,0,0,8"/>
+
+                                            <!-- Preset 1 -->
+                                            <Grid Width="360" HorizontalAlignment="Left" Margin="0,0,0,6">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="62"/>
+                                                    <ColumnDefinition Width="90"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="42"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="Preset 1:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                                <TextBox Grid.Column="1"
+                                                         x:Name="Preset1NameTextBox"
+                                                         Height="28"
+                                                         MaxLength="16"
+                                                         Margin="0,0,8,0"
+                                                         ToolTip="Preset 1 name (optional)"
+                                                         LostFocus="PresetName_LostFocus"
+                                                         Tag="0"/>
+                                                <Slider Grid.Column="2"
+                                                        x:Name="Preset1VolumeSlider"
+                                                        Minimum="0" Maximum="100"
+                                                        TickFrequency="5"
+                                                        IsSnapToTickEnabled="False"
+                                                        VerticalAlignment="Center"
+                                                        ToolTip="Preset 1 volume (0–100%)"
+                                                        ValueChanged="PresetVolume_ValueChanged"
+                                                        PreviewMouseLeftButtonDown="Slider_PreviewMouseLeftButtonDown"
+                                                        PreviewMouseMove="Slider_PreviewMouseMove"
+                                                        PreviewMouseLeftButtonUp="Slider_PreviewMouseLeftButtonUp"
+                                                        LostMouseCapture="Slider_LostMouseCapture"
+                                                        Tag="0"/>
+                                                <TextBlock Grid.Column="3"
+                                                           x:Name="Preset1VolumeValueTextBlock"
+                                                           Text="25%"
+                                                           VerticalAlignment="Center"
+                                                           HorizontalAlignment="Right"
+                                                           Margin="4,0,0,0"/>
+                                            </Grid>
+
+                                            <!-- Preset 2 -->
+                                            <Grid Width="360" HorizontalAlignment="Left" Margin="0,0,0,6">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="62"/>
+                                                    <ColumnDefinition Width="90"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="42"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="Preset 2:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                                <TextBox Grid.Column="1"
+                                                         x:Name="Preset2NameTextBox"
+                                                         Height="28"
+                                                         MaxLength="16"
+                                                         Margin="0,0,8,0"
+                                                         ToolTip="Preset 2 name (optional)"
+                                                         LostFocus="PresetName_LostFocus"
+                                                         Tag="1"/>
+                                                <Slider Grid.Column="2"
+                                                        x:Name="Preset2VolumeSlider"
+                                                        Minimum="0" Maximum="100"
+                                                        TickFrequency="5"
+                                                        IsSnapToTickEnabled="False"
+                                                        VerticalAlignment="Center"
+                                                        ToolTip="Preset 2 volume (0–100%)"
+                                                        ValueChanged="PresetVolume_ValueChanged"
+                                                        PreviewMouseLeftButtonDown="Slider_PreviewMouseLeftButtonDown"
+                                                        PreviewMouseMove="Slider_PreviewMouseMove"
+                                                        PreviewMouseLeftButtonUp="Slider_PreviewMouseLeftButtonUp"
+                                                        LostMouseCapture="Slider_LostMouseCapture"
+                                                        Tag="1"/>
+                                                <TextBlock Grid.Column="3"
+                                                           x:Name="Preset2VolumeValueTextBlock"
+                                                           Text="50%"
+                                                           VerticalAlignment="Center"
+                                                           HorizontalAlignment="Right"
+                                                           Margin="4,0,0,0"/>
+                                            </Grid>
+
+                                            <!-- Preset 3 -->
+                                            <Grid Width="360" HorizontalAlignment="Left" Margin="0,0,0,4">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="62"/>
+                                                    <ColumnDefinition Width="90"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="42"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="Preset 3:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                                <TextBox Grid.Column="1"
+                                                         x:Name="Preset3NameTextBox"
+                                                         Height="28"
+                                                         MaxLength="16"
+                                                         Margin="0,0,8,0"
+                                                         ToolTip="Preset 3 name (optional)"
+                                                         LostFocus="PresetName_LostFocus"
+                                                         Tag="2"/>
+                                                <Slider Grid.Column="2"
+                                                        x:Name="Preset3VolumeSlider"
+                                                        Minimum="0" Maximum="100"
+                                                        TickFrequency="5"
+                                                        IsSnapToTickEnabled="False"
+                                                        VerticalAlignment="Center"
+                                                        ToolTip="Preset 3 volume (0–100%)"
+                                                        ValueChanged="PresetVolume_ValueChanged"
+                                                        PreviewMouseLeftButtonDown="Slider_PreviewMouseLeftButtonDown"
+                                                        PreviewMouseMove="Slider_PreviewMouseMove"
+                                                        PreviewMouseLeftButtonUp="Slider_PreviewMouseLeftButtonUp"
+                                                        LostMouseCapture="Slider_LostMouseCapture"
+                                                        Tag="2"/>
+                                                <TextBlock Grid.Column="3"
+                                                           x:Name="Preset3VolumeValueTextBlock"
+                                                           Text="75%"
+                                                           VerticalAlignment="Center"
+                                                           HorizontalAlignment="Right"
+                                                           Margin="4,0,0,0"/>
                                             </Grid>
                                         </StackPanel>
                                     </Border>
