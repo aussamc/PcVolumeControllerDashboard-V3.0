@@ -562,6 +562,7 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
@@ -689,7 +690,50 @@
                         </DockPanel>
                     </Border>
 
-                    <Grid Grid.Row="2">
+                    <!-- Output Devices cycle panel (v2.35) -->
+                    <Border Grid.Row="2"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="10,8"
+                            Margin="0,0,0,12">
+                        <DockPanel>
+                            <TextBlock Text="Output Devices:"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,10,0"
+                                       DockPanel.Dock="Left"/>
+                            <Button x:Name="RefreshOutputDevicesButton"
+                                    Content="Refresh"
+                                    Width="70" Height="26"
+                                    DockPanel.Dock="Right"
+                                    Margin="6,0,0,0"
+                                    ToolTip="Re-scan available audio output devices"
+                                    Click="RefreshOutputDevicesButton_Click"/>
+                            <ListView x:Name="OutputDevicesListView"
+                                      MaxHeight="80"
+                                      ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                      BorderThickness="0"
+                                      Background="Transparent">
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Header="Cycle" Width="48">
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <CheckBox IsChecked="{Binding IncludeInCycle, Mode=TwoWay}"
+                                                              HorizontalAlignment="Center"
+                                                              Checked="OutputDeviceInclude_Changed"
+                                                              Unchecked="OutputDeviceInclude_Changed"/>
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+                                        <GridViewColumn Header="Device" Width="280" DisplayMemberBinding="{Binding FriendlyName}"/>
+                                        <GridViewColumn Header="Active" Width="50" DisplayMemberBinding="{Binding DefaultIndicator}"/>
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
+                        </DockPanel>
+                    </Border>
+
+                    <Grid Grid.Row="3">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="1.22*" />
                             <ColumnDefinition Width="16" />
@@ -921,6 +965,7 @@
                                                     <ComboBoxItem Content="Toggle assigned mute" />
                                                     <ComboBoxItem Content="No action" />
                                                     <ComboBoxItem Content="Next profile" />
+                                                    <ComboBoxItem Content="Cycle output device" />
                                                 </ComboBox>
                                             </Grid>
 
@@ -941,6 +986,7 @@
                                                     <ComboBoxItem Content="Toggle assigned mute" />
                                                     <ComboBoxItem Content="No action" />
                                                     <ComboBoxItem Content="Next profile" />
+                                                    <ComboBoxItem Content="Cycle output device" />
                                                 </ComboBox>
                                             </Grid>
 
@@ -961,6 +1007,7 @@
                                                     <ComboBoxItem Content="Toggle assigned mute" />
                                                     <ComboBoxItem Content="No action" />
                                                     <ComboBoxItem Content="Next profile" />
+                                                    <ComboBoxItem Content="Cycle output device" />
                                                 </ComboBox>
                                             </Grid>
 
