@@ -29,7 +29,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.32";
+    private const string DashboardVersion = "2.33";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -2222,6 +2222,9 @@ public partial class MainWindow : Window
                 }
             }
         }
+
+        if (AudioEmptyStatePanel != null)
+            AudioEmptyStatePanel.Visibility = connected ? Visibility.Collapsed : Visibility.Visible;
 
         UpdateStatusBar();
     }
@@ -6510,6 +6513,15 @@ public partial class MainWindow : Window
         SaveSettings();
         ForceRefreshComPorts("clear remembered controller", preserveSelection: false);
         Log("Cleared remembered controller COM port and temporary COM-port cooldowns.");
+    }
+
+    private void AboutButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new AboutDialog(DashboardVersion, _espFirmwareName, _espProtocolVersion)
+        {
+            Owner = this
+        };
+        dlg.ShowDialog();
     }
 
     private void FactoryResetSetupButton_Click(object sender, RoutedEventArgs e)

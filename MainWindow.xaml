@@ -1123,6 +1123,32 @@
                                 </ListView>
                             </DockPanel>
                         </Border>
+
+                        <!-- Empty state — shown when controller is not connected -->
+                        <Border x:Name="AudioEmptyStatePanel"
+                                Grid.Column="0" Grid.ColumnSpan="3"
+                                Background="{DynamicResource AppBackground}"
+                                Panel.ZIndex="10"
+                                Visibility="Visible">
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock Text="🔌"
+                                           FontSize="48"
+                                           HorizontalAlignment="Center"
+                                           Margin="0,0,0,12" />
+                                <TextBlock Text="Controller not connected"
+                                           FontSize="22"
+                                           FontWeight="SemiBold"
+                                           HorizontalAlignment="Center"
+                                           Margin="0,0,0,8"/>
+                                <TextBlock Text="Connect your PC Volume Controller via USB, then use the Connect button above."
+                                           FontSize="13"
+                                           Foreground="{DynamicResource SecondaryForeground}"
+                                           TextWrapping="Wrap"
+                                           MaxWidth="380"
+                                           HorizontalAlignment="Center"
+                                           TextAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
                     </Grid>
                 </Grid>
 
@@ -1931,6 +1957,15 @@
                                    Foreground="{DynamicResource SecondaryForeground}"
                                    FontStyle="Italic"
                                    TextWrapping="Wrap" />
+
+                        <Button x:Name="AboutButton"
+                                Content="About"
+                                Width="80"
+                                Height="30"
+                                HorizontalAlignment="Left"
+                                Margin="0,12,0,0"
+                                ToolTip="About this application"
+                                Click="AboutButton_Click" />
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
