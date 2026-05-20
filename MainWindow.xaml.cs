@@ -4,7 +4,6 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
-using System.IO.Ports;
 using System.IO.Compression;
 using System.Text;
 using System.Threading.Tasks;
@@ -29,7 +28,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.36";
+    private const string DashboardVersion = "2.37";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -69,7 +68,6 @@ public partial class MainWindow : Window
     private const int RememberedPortMissingBeforeScanAllMs = 30000;
     private const int UserIdleSleepMs = 10 * 60 * 1000;
     private const int DebugConsoleMaxLines = 500;
-    private const int SerialReceiveBufferMaxBytes = 4096;
     private const int ChannelCount = 6;
     private const string StartupRegistryName = "PcVolumeControllerDashboard";
     private const string MicTargetKey = "MIC_INPUT";
@@ -87,11 +85,9 @@ public partial class MainWindow : Window
     private int _audioSessionRefreshInProgress; // used as bool via Interlocked
     private readonly ObservableCollection<ChannelMappingItem> _channels = new();
     private readonly ObservableCollection<string> _availableComPorts = new();
-    private readonly object _serialLock = new();
-    private readonly object _serialBufferLock = new();
     private readonly object _logFileLock = new();
 
-    private SerialPort? _serial;
+    private readonly SerialService _serialService = new();
     private MMDeviceEnumerator? _deviceEnumerator;
     private MMDevice? _defaultRenderDevice;
     private MMDevice? _defaultCaptureDevice;
@@ -166,7 +162,6 @@ public partial class MainWindow : Window
     private int _audioRefreshBusy;
     private int _comRefreshBusy;
     private int _deviceChangeRefreshQueued;
-    private string _serialReceiveBuffer = string.Empty;
     private bool _manualDisconnectRequested;
     private DateTime _lastManualDisconnectAt = DateTime.MinValue;
     private bool _manualAutoReconnectSuppressionLogged;
@@ -293,7 +288,7 @@ public partial class MainWindow : Window
         {
             Dispatcher.InvokeAsync(() =>
             {
-                if (_serial?.IsOpen != true)
+                if (!_serialService.IsConnected)
                 {
                     TryAutoReconnect(GetAvailableComPorts());
                 }
@@ -500,7 +495,7 @@ public partial class MainWindow : Window
         {
             try
             {
-                string[] ports = SerialPort.GetPortNames()
+                string[] ports = SerialService.GetPortNames()
                     .Where(p => !string.IsNullOrWhiteSpace(p))
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .OrderBy(NormalizeComPortForSort)
@@ -551,7 +546,7 @@ public partial class MainWindow : Window
 
     private void ConnectButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_serial?.IsOpen == true)
+        if (_serialService.IsConnected)
         {
             RequestManualDisconnect("Manual disconnect requested");
         }
@@ -607,7 +602,7 @@ public partial class MainWindow : Window
         _manualDisconnectRequested = false;
         ForceRefreshComPorts("first-run wizard detect", preserveSelection: false);
 
-        if (_serial?.IsOpen == true && _esp32HelloReceived)
+        if (_serialService.IsConnected && _esp32HelloReceived)
         {
             Log("First-run wizard detect requested; controller is already connected.");
             UpdateFirstRunWizardStatus();
@@ -1604,8 +1599,8 @@ public partial class MainWindow : Window
         string[] ports = portsHint != null
             ? portsHint.Where(p => !IsPortTemporarilyPhantom(p)).ToArray()
             : GetAvailableComPorts();
-        string? connectedPort = _serial?.PortName;
-        bool serialOpen = _serial?.IsOpen == true;
+        string? connectedPort = _serialService.PortName;
+        bool serialOpen = _serialService.IsConnected;
         bool connectedPortStillExists = serialOpen && !string.IsNullOrWhiteSpace(connectedPort) &&
             ports.Any(port => port.Equals(connectedPort, StringComparison.OrdinalIgnoreCase));
 
@@ -1644,7 +1639,7 @@ public partial class MainWindow : Window
         {
             ForceRefreshComPorts(reason, preserveSelection: serialOpen, portsOverride: ports);
         }
-        else if (_serial?.IsOpen != true)
+        else if (!_serialService.IsConnected)
         {
             SetDisconnectedStatusForAvailablePorts(ports);
         }
@@ -1703,7 +1698,7 @@ public partial class MainWindow : Window
             ComPortComboBox.Text = string.Empty;
         }
 
-        if (_serial?.IsOpen != true)
+        if (!_serialService.IsConnected)
         {
             SetDisconnectedStatusForAvailablePorts(ports);
         }
@@ -1747,12 +1742,12 @@ public partial class MainWindow : Window
 
     private string? GetPreferredVisibleComPort(string[] ports, string? previousSelection, bool preserveSelection)
     {
-        if (_serial?.IsOpen == true &&
+        if (_serialService.IsConnected &&
             _esp32HelloReceived &&
-            !string.IsNullOrWhiteSpace(_serial.PortName) &&
-            ports.Contains(_serial.PortName, StringComparer.OrdinalIgnoreCase))
+            !string.IsNullOrWhiteSpace(_serialService.PortName) &&
+            ports.Contains(_serialService.PortName, StringComparer.OrdinalIgnoreCase))
         {
-            return _serial.PortName;
+            return _serialService.PortName;
         }
 
         if (preserveSelection &&
@@ -1803,7 +1798,7 @@ public partial class MainWindow : Window
 
     private static string[] GetRawComPorts()
     {
-        return SerialPort.GetPortNames()
+        return SerialService.GetPortNames()
             .Where(port => !string.IsNullOrWhiteSpace(port))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(NormalizeComPortForSort)
@@ -1916,7 +1911,7 @@ public partial class MainWindow : Window
 
     private bool IsConnectedDeviceTimedOut()
     {
-        if (_serial?.IsOpen != true)
+        if (!_serialService.IsConnected)
         {
             return false;
         }
@@ -1959,7 +1954,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (_serial?.IsOpen == true)
+        if (_serialService.IsConnected)
         {
             return;
         }
@@ -2143,45 +2138,23 @@ public partial class MainWindow : Window
 
         try
         {
-            if (_serial != null)
+            if (_serialService.IsConnected)
             {
                 DisconnectSerial(sendDisconnectCommand: false, preserveLastControllerPort: true, refreshPortsAfterDisconnect: false);
             }
 
-            lock (_serialBufferLock)
-            {
-                _serialReceiveBuffer = string.Empty;
-            }
+            // Wire events before opening so we never miss the first line.
+            _serialService.LineReceived  -= DispatchHandleDeviceMessage;
+            _serialService.ErrorOccurred -= BeginDisconnectAfterSerialError;
+            _serialService.LineReceived  += DispatchHandleDeviceMessage;
+            _serialService.ErrorOccurred += BeginDisconnectAfterSerialError;
 
-            _serial = new SerialPort(portName, BaudRate)
+            _serialService.Open(portName, BaudRate); // throws on failure
+            if (!_serialControlLinesDisabledLogged)
             {
-                NewLine = ((char)10).ToString(),
-                // Keep USB CDC control lines low. Some ESP32-S3 boards reset when
-                // DTR/RTS are asserted during repeated dashboard connect/disconnect
-                // cycles, which makes COM9 disappear briefly and causes reconnect loops.
-                DtrEnable = false,
-                RtsEnable = false,
-                ReadTimeout = 100,
-                WriteTimeout = 250
-            };
-
-            _serial.DataReceived += OnSerialDataReceived;
-            _serial.Open();
-            try
-            {
-                _serial.DtrEnable = false;
-                _serial.RtsEnable = false;
-                if (!_serialControlLinesDisabledLogged)
-                {
-                    Log("Serial DTR/RTS kept disabled to avoid ESP32-S3 USB reset loops during connect/disconnect.");
-                    _serialControlLinesDisabledLogged = true;
-                }
+                Log("Serial DTR/RTS kept disabled to avoid ESP32-S3 USB reset loops during connect/disconnect.");
+                _serialControlLinesDisabledLogged = true;
             }
-            catch
-            {
-            }
-            _serial.DiscardInBuffer();
-            _serial.DiscardOutBuffer();
 
             _serialConnectedAt = DateTime.Now;
             _activeConnectionState = isAutoReconnect ? "Auto-identifying" : "Identifying";
@@ -2228,7 +2201,7 @@ public partial class MainWindow : Window
 
     private void DisconnectSerial(bool sendDisconnectCommand = true, bool preserveLastControllerPort = true, bool refreshPortsAfterDisconnect = true)
     {
-        bool wasAlreadyDisconnected = _serial == null &&
+        bool wasAlreadyDisconnected = !_serialService.IsConnected &&
             !_esp32Seen &&
             !_esp32HelloReceived &&
             _activeConnectionState.Equals("Disconnected", StringComparison.OrdinalIgnoreCase);
@@ -2240,18 +2213,9 @@ public partial class MainWindow : Window
                 SendDisconnectToDevice();
             }
 
-            if (_serial != null)
-            {
-                _serial.DataReceived -= OnSerialDataReceived;
-
-                if (_serial.IsOpen)
-                {
-                    _serial.Close();
-                }
-
-                _serial.Dispose();
-                _serial = null;
-            }
+            _serialService.LineReceived  -= DispatchHandleDeviceMessage;
+            _serialService.ErrorOccurred -= BeginDisconnectAfterSerialError;
+            _serialService.Close();
         }
         catch
         {
@@ -2327,7 +2291,7 @@ public partial class MainWindow : Window
     {
         if (StatusBarConnectionText == null) return;
 
-        bool connected = _serial?.IsOpen == true && _esp32HelloReceived;
+        bool connected = _serialService.IsConnected && _esp32HelloReceived;
         StatusBarConnectionText.Text = connected ? "Connected" : "Disconnected";
         StatusBarDot.Fill = connected
             ? (WpfBrush)FindResource("ConnectionGoodForeground")
@@ -2389,7 +2353,7 @@ public partial class MainWindow : Window
 
     private void UpdateControllerPowerStateFromPcActivity(bool forceEvaluate = false)
     {
-        if (_serial?.IsOpen != true || !_esp32HelloReceived)
+        if (!_serialService.IsConnected || !_esp32HelloReceived)
         {
             return;
         }
@@ -2421,7 +2385,7 @@ public partial class MainWindow : Window
 
     private void SendControllerSleep(string reason)
     {
-        if (_serial?.IsOpen != true || !_esp32HelloReceived)
+        if (!_serialService.IsConnected || !_esp32HelloReceived)
         {
             return;
         }
@@ -2441,7 +2405,7 @@ public partial class MainWindow : Window
 
     private void SendControllerWake(string reason)
     {
-        if (_serial?.IsOpen != true || !_esp32HelloReceived)
+        if (!_serialService.IsConnected || !_esp32HelloReceived)
         {
             _controllerSleepRequested = false;
             _controllerSleepReason = string.Empty;
@@ -2480,7 +2444,7 @@ public partial class MainWindow : Window
 
     private void SendPingToDevice()
     {
-        if (_serial?.IsOpen == true && _esp32HelloReceived)
+        if (_serialService.IsConnected && _esp32HelloReceived)
         {
             WriteSerialLine(ProtocolCommands.Ping, logOutgoing: false);
         }
@@ -2494,77 +2458,6 @@ public partial class MainWindow : Window
     private void SendDisconnectToDevice()
     {
         WriteSerialLine(ProtocolCommands.Disconnect, logOutgoing: false);
-    }
-
-    private void OnSerialDataReceived(object sender, SerialDataReceivedEventArgs e)
-    {
-        try
-        {
-            if (sender is not SerialPort port || !port.IsOpen)
-            {
-                return;
-            }
-
-            string received = port.ReadExisting();
-
-            if (string.IsNullOrEmpty(received))
-            {
-                return;
-            }
-
-            List<string> completeLines = new();
-
-            lock (_serialBufferLock)
-            {
-                _serialReceiveBuffer += received.Replace("\r", "\n");
-
-                if (_serialReceiveBuffer.Length > SerialReceiveBufferMaxBytes)
-                {
-                    int newlineIndex = _serialReceiveBuffer.IndexOf('\n', _serialReceiveBuffer.Length - (SerialReceiveBufferMaxBytes / 2));
-                    _serialReceiveBuffer = newlineIndex >= 0
-                        ? _serialReceiveBuffer[(newlineIndex + 1)..]
-                        : string.Empty;
-                }
-
-                while (true)
-                {
-                    int newlineIndex = _serialReceiveBuffer.IndexOf('\n');
-
-                    if (newlineIndex < 0)
-                    {
-                        break;
-                    }
-
-                    string line = _serialReceiveBuffer[..newlineIndex].Trim();
-                    _serialReceiveBuffer = _serialReceiveBuffer[(newlineIndex + 1)..];
-
-                    if (!string.IsNullOrWhiteSpace(line))
-                    {
-                        completeLines.Add(line);
-                    }
-                }
-            }
-
-            foreach (string line in completeLines)
-            {
-                Dispatcher.InvokeAsync(() => HandleDeviceMessage(line));
-            }
-        }
-        catch (InvalidOperationException)
-        {
-        }
-        catch (IOException ex)
-        {
-            BeginDisconnectAfterSerialError($"Serial read error: {ex.Message}");
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            BeginDisconnectAfterSerialError($"Serial access error: {ex.Message}");
-        }
-        catch (Exception ex)
-        {
-            BeginDisconnectAfterSerialError($"Serial read error: {ex.Message}");
-        }
     }
 
     private void BeginDisconnectAfterSerialError(string message)
@@ -2667,10 +2560,17 @@ public partial class MainWindow : Window
         ForceRefreshComPorts("disconnect/error", preserveSelection: true);
     }
 
+    /// <summary>
+    /// Marshals a LineReceived callback (ThreadPool) onto the UI thread before
+    /// calling HandleDeviceMessage, which touches WPF controls.
+    /// </summary>
+    private void DispatchHandleDeviceMessage(string line)
+        => Dispatcher.InvokeAsync(() => HandleDeviceMessage(line));
+
     private void HandleDeviceMessage(string line)
     {
         // Guard: discard callbacks that fire after the port has been closed.
-        if (_serial?.IsOpen != true) return;
+        if (!_serialService.IsConnected) return;
 
         AppendDebugConsole("IN", line);
         string[] parts = line.Split(',', StringSplitOptions.TrimEntries);
@@ -2692,7 +2592,7 @@ public partial class MainWindow : Window
         {
             if (!string.Equals(line, ProtocolCommands.Pong, StringComparison.OrdinalIgnoreCase))
             {
-                Log($"Ignoring pre-identity serial data from {_serial?.PortName ?? "unknown port"}: {line}");
+                Log($"Ignoring pre-identity serial data from {_serialService.PortName ?? "unknown port"}: {line}");
             }
             return;
         }
@@ -2824,7 +2724,7 @@ public partial class MainWindow : Window
         _esp32Seen = true;
         _lastEspMessageTime = DateTime.Now;
 
-        if (!_esp32HelloReceived && _serial?.IsOpen == true)
+        if (!_esp32HelloReceived && _serialService.IsConnected)
         {
             EspStatusTextBlock.Text = $"Connected - active, controller hello not received ({source})";
         }
@@ -2838,14 +2738,14 @@ public partial class MainWindow : Window
 
         if (!deviceIdentity.StartsWith(ExpectedDeviceIdentity, StringComparison.OrdinalIgnoreCase))
         {
-            string? badPort = _serial?.PortName;
+            string? badPort = _serialService.PortName;
             Log($"Rejected {badPort}: HELLO identity was '{deviceIdentity}', expected '{ExpectedDeviceIdentity}'.");
             MarkPortRejected(badPort, "wrong device identity");
             DisconnectSerial(sendDisconnectCommand: false, preserveLastControllerPort: true, refreshPortsAfterDisconnect: true);
             return;
         }
 
-        string connectedPort = _serial?.PortName ?? "unknown port";
+        string connectedPort = _serialService.PortName ?? "unknown port";
         bool alreadyConfirmed = _esp32HelloReceived &&
             _activeConnectionState.Equals("Connected", StringComparison.OrdinalIgnoreCase);
 
@@ -4379,7 +4279,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            if (_serial?.IsOpen != true || !_esp32HelloReceived || _controllerSleepRequested)
+            if (!_serialService.IsConnected || !_esp32HelloReceived || _controllerSleepRequested)
             {
                 return;
             }
@@ -4415,7 +4315,7 @@ public partial class MainWindow : Window
 
     private void SendAllChannelStatesToDevice()
     {
-        if (_serial?.IsOpen != true || !_esp32HelloReceived || _controllerSleepRequested)
+        if (!_serialService.IsConnected || !_esp32HelloReceived || _controllerSleepRequested)
         {
             return;
         }
@@ -4499,7 +4399,7 @@ public partial class MainWindow : Window
 
     private void SendChannelOledModeToDevice(int channelIndex)
     {
-        if (_serial?.IsOpen != true || !_esp32HelloReceived) return;
+        if (!_serialService.IsConnected || !_esp32HelloReceived) return;
         if (channelIndex < 0 || channelIndex >= ChannelCount) return;
 
         string mode = GetChannelOledModeProtocolValue(_channels[channelIndex].OledDisplayMode);
@@ -4509,7 +4409,7 @@ public partial class MainWindow : Window
 
     private void SendAllChannelOledModesToDevice()
     {
-        if (_serial?.IsOpen != true || !_esp32HelloReceived) return;
+        if (!_serialService.IsConnected || !_esp32HelloReceived) return;
 
         for (int i = 0; i < ChannelCount; i++)
         {
@@ -4519,7 +4419,7 @@ public partial class MainWindow : Window
 
     private void SendOledSettingsToDevice(bool logIfNotConnected)
     {
-        if (_serial?.IsOpen != true || !_esp32HelloReceived)
+        if (!_serialService.IsConnected || !_esp32HelloReceived)
         {
             if (logIfNotConnected)
             {
@@ -4543,25 +4443,9 @@ public partial class MainWindow : Window
     private void WriteSerialLine(string message, bool logOutgoing = false)
     {
         AppendDebugConsole("OUT", message);
-        try
-        {
-            lock (_serialLock)
-            {
-                if (_serial != null && _serial.IsOpen)
-                {
-                    _serial.WriteLine(message);
-
-                    if (logOutgoing)
-                    {
-                        Log($"PC -> ESP32: {message}");
-                    }
-                }
-            }
-        }
-        catch (Exception ex) when (ex is IOException or InvalidOperationException or UnauthorizedAccessException or TimeoutException)
-        {
-            BeginDisconnectAfterSerialError($"Serial write error: {ex.Message}");
-        }
+        _serialService.SendLine(message);
+        if (logOutgoing && _serialService.IsConnected)
+            Log($"PC -> ESP32: {message}");
     }
 
     private int GetVolumeStepPercent()
@@ -5073,7 +4957,7 @@ public partial class MainWindow : Window
         {
             _manualDisconnectRequested = false;
             _manualAutoReconnectSuppressionLogged = false;
-            if (_serial?.IsOpen != true)
+            if (!_serialService.IsConnected)
             {
                 ConnectSerial();
             }
@@ -5372,8 +5256,8 @@ public partial class MainWindow : Window
                 return;
             }
 
-            bool connected = _serial?.IsOpen == true && _esp32HelloReceived;
-            string controllerPort = connected ? (_serial?.PortName ?? "unknown") : string.IsNullOrWhiteSpace(_settings.LastComPort) ? "not remembered yet" : _settings.LastComPort;
+            bool connected = _serialService.IsConnected && _esp32HelloReceived;
+            string controllerPort = connected ? (_serialService.PortName ?? "unknown") : string.IsNullOrWhiteSpace(_settings.LastComPort) ? "not remembered yet" : _settings.LastComPort;
             string actualPorts = _lastKnownComPorts.Length == 0 ? "none" : string.Join(", ", _lastKnownComPorts);
 
             WizardStatusTextBlock.Text = _settings.FirstRunWizardCompleted
@@ -5741,7 +5625,7 @@ public partial class MainWindow : Window
 
     private void QueueFullStateSend(string reason)
     {
-        if (_serial?.IsOpen != true || !_esp32HelloReceived)
+        if (!_serialService.IsConnected || !_esp32HelloReceived)
         {
             return;
         }
@@ -6116,9 +6000,9 @@ public partial class MainWindow : Window
 
     private void UpdateDiagnostics()
     {
-        bool portOpen = _serial?.IsOpen == true;
+        bool portOpen = _serialService.IsConnected;
         bool connected = portOpen && _esp32HelloReceived;
-        string comPort = portOpen ? (_serial?.PortName ?? "--") : "--";
+        string comPort = portOpen ? (_serialService.PortName ?? "--") : "--";
 
         DiagConnectionTextBlock.Text = connected ? "ESP32 connection: Connected" : portOpen ? "ESP32 connection: Identifying" : "ESP32 connection: Disconnected";
         DiagComPortTextBlock.Text = $"COM port: {comPort}";
@@ -6645,7 +6529,7 @@ public partial class MainWindow : Window
         sb.AppendLine($"Connected ESP32 firmware: {_espFirmwareName}");
         sb.AppendLine($"Connected ESP32 protocol: {_espProtocolVersion}");
         sb.AppendLine($"Connected ESP32 channels: {_espChannelCount}");
-        sb.AppendLine($"Active COM port: {(_serial?.IsOpen == true ? _serial.PortName : "none")}");
+        sb.AppendLine($"Active COM port: {(_serialService.IsConnected ? _serialService.PortName : "none")}");
         sb.AppendLine($"Remembered controller port: {(string.IsNullOrWhiteSpace(_settings.LastComPort) ? "none" : _settings.LastComPort)}");
         string[] ports = GetAvailableComPorts();
         sb.AppendLine($"Actual COM ports: {(ports.Length == 0 ? "none" : string.Join(", ", ports))}");
@@ -7196,9 +7080,9 @@ public partial class MainWindow : Window
         }
 
         string port = _settings.LastComPort;
-        if (_serial?.IsOpen == true)
+        if (_serialService.IsConnected)
         {
-            port = _serial.PortName;
+            port = _serialService.PortName ?? port;
             Log("Firmware flash requested. Disconnecting dashboard serial first.");
             DisconnectSerial(sendDisconnectCommand: false, preserveLastControllerPort: true, refreshPortsAfterDisconnect: true);
         }
@@ -7364,7 +7248,7 @@ public partial class MainWindow : Window
             {
                 string firmwareText;
 
-                if (_serial?.IsOpen != true)
+                if (!_serialService.IsConnected)
                 {
                     firmwareText = "Connected ESP32 firmware: Not connected";
                 }
