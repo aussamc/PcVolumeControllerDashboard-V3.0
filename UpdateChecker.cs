@@ -32,7 +32,7 @@ internal static class UpdateChecker
     static UpdateChecker()
     {
         _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(12) };
-        _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("PcVolumeControllerDashboard/2.41");
+        _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("PcVolumeControllerDashboard/2.44");
         // GitHub API requires Accept header
         _httpClient.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
     }
@@ -90,14 +90,14 @@ internal static class UpdateChecker
     /// <paramref name="current"/>.  Parses dotted numeric strings (e.g. "2.39");
     /// falls back to ordinal string comparison when parsing fails.
     /// </summary>
-    private static bool IsVersionNewer(string latest, string current)
+    internal static bool IsVersionNewer(string latest, string current)
     {
         if (TryParseVersion(latest, out Version? lv) && TryParseVersion(current, out Version? cv))
             return lv! > cv!;
         return string.Compare(latest, current, StringComparison.OrdinalIgnoreCase) > 0;
     }
 
-    private static bool TryParseVersion(string s, out Version? version)
+    internal static bool TryParseVersion(string s, out Version? version)
     {
         // Version.TryParse requires at least two numeric parts ("2.39" is fine; "2" needs padding)
         if (!s.Contains('.'))
