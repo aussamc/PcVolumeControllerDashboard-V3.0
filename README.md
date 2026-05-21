@@ -41,7 +41,6 @@ Settings are saved to `%APPDATA%\PcVolumeController\settings.json` and restored 
 - **Named profiles** — save and switch between named sets of channel assignments instantly from the Audio tab.
 - **Auto sleep/wake** — sends a sleep command to the controller when the PC is idle (10 min), locked, or suspended; wakes it on activity.
 - **Auto-reconnect** — detects controller disconnects and reconnects automatically.
-- **Firmware flasher** — built-in UI to flash new ESP32 firmware via `tools/esptool.exe`.
 - **Diagnostics export** — one-click zip of logs and settings for bug reports.
 - **Debug console** — live serial traffic view for development.
 
@@ -67,9 +66,7 @@ Output is in `bin\Release\net10.0-windows\win-x64\publish\`.
 
 The ESP32 Arduino source is in `Computer_Volume_Controller_v2.24/`.
 
-Flash the firmware using the dashboard's built-in flasher, or manually via Arduino IDE / Arduino CLI with the ESP32-S3 Arduino core installed.
-
-The dashboard's built-in flasher requires `tools/esptool.exe`. See `tools/esptool_setup_instructions.txt` for how to obtain it.
+Flash the firmware via Arduino IDE / Arduino CLI with the ESP32-S3 Arduino core installed, or using esptool directly.
 
 ---
 
@@ -84,8 +81,7 @@ AssemblyInfo.cs                         — assembly attributes
 Assets/                                 — application assets (app-icon.ico)
 tests/                                  — xUnit + FluentAssertions test project
 Computer_Volume_Controller_v2.24/       — ESP32 Arduino firmware source (v2.24, 6-channel)
-firmware_bin/                           — firmware build output + instructions
-tools/                                  — esptool.exe for firmware flashing
+firmware_bin/                           — firmware build output
 ```
 
 ---
@@ -94,6 +90,7 @@ tools/                                  — esptool.exe for firmware flashing
 
 | Dashboard | Required firmware protocol | Hardware       |
 |-----------|---------------------------|----------------|
+| v2.46     | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v2.45     | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v2.44     | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v2.43     | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |

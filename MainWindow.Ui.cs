@@ -155,144 +155,144 @@ public partial class MainWindow
         bool dark = mode == ThemeModes.Dark;
 
         WpfBrush appBackground = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(30, 30, 30))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(13, 15, 17))       // #0D0F11
             : new WpfSolidColorBrush(WpfColor.FromRgb(255, 255, 255));
 
         WpfBrush cardBackground = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(43, 43, 43))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(26, 29, 32))       // #1A1D20
             : new WpfSolidColorBrush(WpfColor.FromRgb(255, 255, 255));
 
         WpfBrush appForeground = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(245, 245, 245))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(242, 242, 242))    // #F2F2F2
             : new WpfSolidColorBrush(WpfColor.FromRgb(17, 17, 17));
 
         WpfBrush secondaryForeground = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(190, 190, 190))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(122, 127, 136))    // #7A7F88
             : new WpfSolidColorBrush(WpfColor.FromRgb(100, 100, 100));
 
         WpfBrush cardBorder = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(85, 85, 85))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(37, 40, 48))       // #252830
             : new WpfSolidColorBrush(WpfColor.FromRgb(221, 221, 221));
 
         WpfBrush buttonBackground = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(48, 48, 52))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(26, 29, 32))       // #1A1D20
             : new WpfSolidColorBrush(WpfColor.FromRgb(238, 238, 238));
 
         WpfBrush buttonHoverBackground = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(56, 56, 60))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(37, 40, 48))       // #252830
             : new WpfSolidColorBrush(WpfColor.FromRgb(226, 226, 226));
 
         WpfBrush buttonPressedBackground = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(42, 42, 46))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(17, 18, 20))       // #111214
             : new WpfSolidColorBrush(WpfColor.FromRgb(214, 214, 214));
 
         WpfBrush buttonForeground = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(245, 245, 245))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(242, 242, 242))    // #F2F2F2
             : new WpfSolidColorBrush(WpfColor.FromRgb(17, 17, 17));
 
         WpfBrush buttonBorder = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(95, 95, 100))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(48, 53, 64))       // #303540
             : new WpfSolidColorBrush(WpfColor.FromRgb(136, 136, 136));
 
         WpfBrush listBackground = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(35, 35, 35))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(17, 18, 20))       // #111214
             : new WpfSolidColorBrush(WpfColor.FromRgb(255, 255, 255));
 
         WpfBrush headerBackground = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(52, 52, 52))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(17, 18, 20))       // #111214
             : new WpfSolidColorBrush(WpfColor.FromRgb(242, 242, 242));
 
         WpfBrush selectedBackground = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(58, 78, 96))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(13, 46, 34))       // #0D2E22
             : new WpfSolidColorBrush(WpfColor.FromRgb(221, 238, 255));
 
         WpfBrush selectedForeground = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(255, 255, 255))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(93, 202, 165))     // #5DCAA5
             : new WpfSolidColorBrush(WpfColor.FromRgb(17, 17, 17));
 
         WpfBrush inputBackground = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(50, 50, 54))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(17, 18, 20))       // #111214
             : new WpfSolidColorBrush(WpfColor.FromRgb(255, 255, 255));
 
         WpfBrush popupBackground = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(45, 45, 48))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(26, 29, 32))       // #1A1D20
             : new WpfSolidColorBrush(WpfColor.FromRgb(255, 255, 255));
 
         WpfBrush tabSelectedBackground = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(58, 58, 62))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(26, 29, 32))       // #1A1D20
             : new WpfSolidColorBrush(WpfColor.FromRgb(255, 255, 255));
 
         WpfBrush tabSelectedForeground = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(245, 245, 245))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(242, 242, 242))    // #F2F2F2
             : new WpfSolidColorBrush(WpfColor.FromRgb(17, 17, 17));
 
         WpfBrush tabUnselectedBackground = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(43, 43, 43))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(17, 18, 20))       // #111214
             : new WpfSolidColorBrush(WpfColor.FromRgb(233, 233, 233));
 
         WpfBrush tabUnselectedForeground = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(230, 230, 230))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(122, 127, 136))    // #7A7F88
             : new WpfSolidColorBrush(WpfColor.FromRgb(17, 17, 17));
 
         WpfBrush connectionGood = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(95, 220, 120))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(29, 158, 117))     // #1D9E75
             : new WpfSolidColorBrush(WpfColor.FromRgb(0, 120, 20));
 
         WpfBrush previewSurfaceBackground = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(37, 37, 40))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(17, 18, 20))       // #111214
             : new WpfSolidColorBrush(WpfColor.FromRgb(247, 247, 247));
 
         WpfBrush previewSurfaceBorder = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(78, 78, 82))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(37, 40, 48))       // #252830
             : new WpfSolidColorBrush(WpfColor.FromRgb(200, 200, 200));
 
         WpfBrush previewEncoderOuterFill = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(70, 70, 74))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(37, 40, 48))       // #252830
             : new WpfSolidColorBrush(WpfColor.FromRgb(239, 239, 239));
 
         WpfBrush previewEncoderInnerFill = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(92, 92, 96))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(26, 29, 32))       // #1A1D20
             : new WpfSolidColorBrush(WpfColor.FromRgb(250, 250, 250));
 
         WpfBrush previewEncoderStroke = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(205, 205, 205))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(93, 202, 165))     // #5DCAA5
             : new WpfSolidColorBrush(WpfColor.FromRgb(68, 68, 68));
 
         WpfBrush previewEncoderActiveBackground = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(58, 78, 96))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(13, 46, 34))       // #0D2E22
             : new WpfSolidColorBrush(WpfColor.FromRgb(221, 238, 255));
 
         WpfBrush connectionBad = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(255, 120, 120))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(224, 90, 90))      // #E05A5A
             : new WpfSolidColorBrush(WpfColor.FromRgb(170, 31, 31));
 
         WpfBrush warning = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(255, 190, 100))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(239, 159, 39))     // #EF9F27
             : new WpfSolidColorBrush(WpfColor.FromRgb(176, 96, 0));
 
         WpfBrush warningBannerBackground = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(0x3D, 0x2E, 0x00))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(34, 24, 0))        // #221800
             : new WpfSolidColorBrush(WpfColor.FromRgb(0xFF, 0xF3, 0xCD));
 
         WpfBrush warningBannerBorder = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(0x6B, 0x4F, 0x00))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(61, 46, 0))        // #3D2E00
             : new WpfSolidColorBrush(WpfColor.FromRgb(0xFF, 0xEE, 0xBA));
 
         WpfBrush warningBannerForeground = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(0xFF, 0xD9, 0x66))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(250, 199, 117))    // #FAC775
             : new WpfSolidColorBrush(WpfColor.FromRgb(0x85, 0x64, 0x04));
 
-        // Update banner — blue info style
+        // Update banner — teal info style
         WpfBrush updateBannerBackground = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(0x1A, 0x2E, 0x3D))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(13, 30, 26))       // #0D1E1A
             : new WpfSolidColorBrush(WpfColor.FromRgb(0xE8, 0xF4, 0xFD));
 
         WpfBrush updateBannerBorder = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(0x2A, 0x4A, 0x6D))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(20, 61, 46))       // #143D2E
             : new WpfSolidColorBrush(WpfColor.FromRgb(0xBE, 0xE3, 0xF8));
 
         WpfBrush updateBannerForeground = dark
-            ? new WpfSolidColorBrush(WpfColor.FromRgb(0x90, 0xCA, 0xF9))
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(93, 202, 165))     // #5DCAA5
             : new WpfSolidColorBrush(WpfColor.FromRgb(0x1A, 0x3B, 0x5D));
 
         Resources["AppBackground"] = appBackground;

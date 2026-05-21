@@ -13,46 +13,46 @@
         Foreground="{DynamicResource AppForeground}">
 
     <Window.Resources>
-        <SolidColorBrush x:Key="AppBackground" Color="#FFFFFF" />
-        <SolidColorBrush x:Key="CardBackground" Color="#FFFFFF" />
-        <SolidColorBrush x:Key="AppForeground" Color="#111111" />
-        <SolidColorBrush x:Key="SecondaryForeground" Color="#666666" />
-        <SolidColorBrush x:Key="CardBorder" Color="#DDDDDD" />
-        <SolidColorBrush x:Key="PreviewSurfaceBackground" Color="#F7F7F7" />
-        <SolidColorBrush x:Key="PreviewSurfaceBorder" Color="#C8C8C8" />
-        <SolidColorBrush x:Key="PreviewEncoderOuterFill" Color="#EFEFEF" />
-        <SolidColorBrush x:Key="PreviewEncoderInnerFill" Color="#FAFAFA" />
-        <SolidColorBrush x:Key="PreviewEncoderStroke" Color="#444444" />
-        <SolidColorBrush x:Key="PreviewEncoderActiveBackground" Color="#DDEEFF" />
+        <SolidColorBrush x:Key="AppBackground"                  Color="#0D0F11" />
+        <SolidColorBrush x:Key="CardBackground"                 Color="#1A1D20" />
+        <SolidColorBrush x:Key="AppForeground"                  Color="#F2F2F2" />
+        <SolidColorBrush x:Key="SecondaryForeground"            Color="#7A7F88" />
+        <SolidColorBrush x:Key="CardBorder"                     Color="#252830" />
+        <SolidColorBrush x:Key="PreviewSurfaceBackground"       Color="#111214" />
+        <SolidColorBrush x:Key="PreviewSurfaceBorder"           Color="#252830" />
+        <SolidColorBrush x:Key="PreviewEncoderOuterFill"        Color="#252830" />
+        <SolidColorBrush x:Key="PreviewEncoderInnerFill"        Color="#1A1D20" />
+        <SolidColorBrush x:Key="PreviewEncoderStroke"           Color="#5DCAA5" />
+        <SolidColorBrush x:Key="PreviewEncoderActiveBackground" Color="#0D2E22" />
 
-        <SolidColorBrush x:Key="ButtonBackground" Color="#EEEEEE" />
-        <SolidColorBrush x:Key="ButtonHoverBackground" Color="#E2E2E2" />
-        <SolidColorBrush x:Key="ButtonPressedBackground" Color="#D6D6D6" />
-        <SolidColorBrush x:Key="ButtonForeground" Color="#111111" />
-        <SolidColorBrush x:Key="ButtonBorder" Color="#888888" />
+        <SolidColorBrush x:Key="ButtonBackground"               Color="#1A1D20" />
+        <SolidColorBrush x:Key="ButtonHoverBackground"          Color="#252830" />
+        <SolidColorBrush x:Key="ButtonPressedBackground"        Color="#111214" />
+        <SolidColorBrush x:Key="ButtonForeground"               Color="#F2F2F2" />
+        <SolidColorBrush x:Key="ButtonBorder"                   Color="#303540" />
 
-        <SolidColorBrush x:Key="ListBackground" Color="#FFFFFF" />
-        <SolidColorBrush x:Key="HeaderBackground" Color="#F2F2F2" />
-        <SolidColorBrush x:Key="HeaderForeground" Color="#111111" />
-        <SolidColorBrush x:Key="SelectedBackground" Color="#DDEEFF" />
-        <SolidColorBrush x:Key="SelectedForeground" Color="#111111" />
-        <SolidColorBrush x:Key="InputBackground" Color="#FFFFFF" />
-        <SolidColorBrush x:Key="InputForeground" Color="#111111" />
-        <SolidColorBrush x:Key="PopupBackground" Color="#FFFFFF" />
-        <SolidColorBrush x:Key="TabSelectedBackground" Color="#FFFFFF" />
-        <SolidColorBrush x:Key="TabSelectedForeground" Color="#111111" />
-        <SolidColorBrush x:Key="TabUnselectedBackground" Color="#E9E9E9" />
-        <SolidColorBrush x:Key="TabUnselectedForeground" Color="#111111" />
-        <SolidColorBrush x:Key="TabBorderBrush" Color="#999999" />
-        <SolidColorBrush x:Key="ConnectionGoodForeground" Color="#0B7A18" />
-        <SolidColorBrush x:Key="ConnectionBadForeground" Color="#AA1F1F" />
-        <SolidColorBrush x:Key="WarningForeground" Color="#B06000" />
-        <SolidColorBrush x:Key="WarningBannerBackground" Color="#FFF3CD" />
-        <SolidColorBrush x:Key="WarningBannerBorder" Color="#FFEEBA" />
-        <SolidColorBrush x:Key="WarningBannerForeground" Color="#856404" />
-        <SolidColorBrush x:Key="UpdateBannerBackground" Color="#E8F4FD" />
-        <SolidColorBrush x:Key="UpdateBannerBorder" Color="#BEE3F8" />
-        <SolidColorBrush x:Key="UpdateBannerForeground" Color="#1A3B5D" />
+        <SolidColorBrush x:Key="ListBackground"                 Color="#111214" />
+        <SolidColorBrush x:Key="HeaderBackground"               Color="#111214" />
+        <SolidColorBrush x:Key="HeaderForeground"               Color="#F2F2F2" />
+        <SolidColorBrush x:Key="SelectedBackground"             Color="#0D2E22" />
+        <SolidColorBrush x:Key="SelectedForeground"             Color="#5DCAA5" />
+        <SolidColorBrush x:Key="InputBackground"                Color="#111214" />
+        <SolidColorBrush x:Key="InputForeground"                Color="#F2F2F2" />
+        <SolidColorBrush x:Key="PopupBackground"                Color="#1A1D20" />
+        <SolidColorBrush x:Key="TabSelectedBackground"          Color="#1A1D20" />
+        <SolidColorBrush x:Key="TabSelectedForeground"          Color="#F2F2F2" />
+        <SolidColorBrush x:Key="TabUnselectedBackground"        Color="#111214" />
+        <SolidColorBrush x:Key="TabUnselectedForeground"        Color="#7A7F88" />
+        <SolidColorBrush x:Key="TabBorderBrush"                 Color="#252830" />
+        <SolidColorBrush x:Key="ConnectionGoodForeground"       Color="#1D9E75" />
+        <SolidColorBrush x:Key="ConnectionBadForeground"        Color="#E05A5A" />
+        <SolidColorBrush x:Key="WarningForeground"              Color="#EF9F27" />
+        <SolidColorBrush x:Key="WarningBannerBackground"        Color="#221800" />
+        <SolidColorBrush x:Key="WarningBannerBorder"            Color="#3D2E00" />
+        <SolidColorBrush x:Key="WarningBannerForeground"        Color="#FAC775" />
+        <SolidColorBrush x:Key="UpdateBannerBackground"         Color="#0D1E1A" />
+        <SolidColorBrush x:Key="UpdateBannerBorder"             Color="#143D2E" />
+        <SolidColorBrush x:Key="UpdateBannerForeground"         Color="#5DCAA5" />
 
         <Style TargetType="{x:Type TextBlock}">
             <Setter Property="Foreground" Value="{DynamicResource AppForeground}" />
@@ -115,9 +115,9 @@
         </Style>
 
         <Style x:Key="PrimaryButton" TargetType="{x:Type Button}" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="Background" Value="#0066CC" />
-            <Setter Property="Foreground" Value="#FFFFFF" />
-            <Setter Property="BorderBrush" Value="#0055AA" />
+            <Setter Property="Background" Value="#1D9E75" />
+            <Setter Property="Foreground" Value="#F2F2F2" />
+            <Setter Property="BorderBrush" Value="#0F6E56" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="{x:Type Button}">
@@ -132,10 +132,10 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="PrimaryBorder" Property="Background" Value="#0055AA" />
+                                <Setter TargetName="PrimaryBorder" Property="Background" Value="#0F6E56" />
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="PrimaryBorder" Property="Background" Value="#004488" />
+                                <Setter TargetName="PrimaryBorder" Property="Background" Value="#085041" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="PrimaryBorder" Property="Opacity" Value="0.45" />
