@@ -247,54 +247,55 @@ public partial class MainWindow
             Log($"Encoder {encoderChannel + 1}: delta {smoothedDelta}, step {step}%, total {deltaPercent}% (interval {intervalStr}).");
         }
 
+        // Determine whether to use the smoothing path.
+        // If smoothing is enabled but the channel is currently unavailable (volume read
+        // returns -1), fall back to the direct-write path so the encoder is never a no-op.
+        bool useSmoothingPath = false;
+
         if (_settings.VolumeSmoothingEnabled)
         {
             float deltaNorm = deltaPercent / 100f;
 
-            float baseTarget;
-
             if (_smoothingActive[encoderChannel])
             {
-                // Extend the current in-flight target — do NOT re-read from the audio API.
-                // Re-reading gives the un-interpolated actual value, which causes the target
-                // to snap backward and then surge forward on every rapid encoder event.
-                baseTarget = _smoothingTargetVolumes[encoderChannel];
+                // Extend the in-flight target without re-reading from WASAPI.
+                _smoothingTargetVolumes[encoderChannel] = Math.Clamp(
+                    _smoothingTargetVolumes[encoderChannel] + deltaNorm, 0f, 1f);
+                useSmoothingPath = true;
             }
             else
             {
-                // First event on this channel: read actual volume as starting point.
                 float current = GetChannelCurrentVolumeNormalized(encoderChannel);
-
-                if (current < 0f)
+                if (current >= 0f)
                 {
-                    // Channel unassigned — fall through to direct change.
-                    goto directChange;
+                    // Channel is available — start smooth interpolation from actual volume.
+                    _smoothingCurrentVolumes[encoderChannel] = current;
+                    _smoothingTargetVolumes[encoderChannel] = Math.Clamp(current + deltaNorm, 0f, 1f);
+                    useSmoothingPath = true;
                 }
-
-                _smoothingCurrentVolumes[encoderChannel] = current;
-                baseTarget = current;
+                // current < 0 → channel unassigned or unavailable; fall through to direct path.
             }
 
-            _smoothingTargetVolumes[encoderChannel] = Math.Clamp(baseTarget + deltaNorm, 0f, 1f);
-            _smoothingActive[encoderChannel] = true;
-            EnsureSmoothingTimerRunning();
+            if (useSmoothingPath)
+            {
+                _smoothingActive[encoderChannel] = true;
+                EnsureSmoothingTimerRunning();
 
-            // Show the volume overlay for this encoder turn.
-            int overlayVol = (int)Math.Round(_smoothingTargetVolumes[encoderChannel] * 100);
-            ShowVolumeOverlay(encoderChannel, overlayVol);
+                int overlayVol = (int)Math.Round(_smoothingTargetVolumes[encoderChannel] * 100);
+                ShowVolumeOverlay(encoderChannel, overlayVol);
 
-            // Run first tick inline for immediate response — no waiting for the timer.
-            SmoothingTick();
-            return;
+                // Run the first tick inline for immediate audio response.
+                SmoothingTick();
+                return;
+            }
         }
 
-        directChange:
+        // Direct (non-smoothed) path — also used as fallback when the channel is unavailable.
         ChangeChannelVolumeWithComHandling(encoderChannel, deltaPercent);
         RefreshAllChannelStates();
         SendAllChannelStatesToDevice();
         SendStateToDevice(force: true);
 
-        // Show the volume overlay for this encoder turn (direct/non-smoothed path).
         {
             float directVol = GetChannelCurrentVolumeNormalized(encoderChannel);
             if (directVol >= 0f)

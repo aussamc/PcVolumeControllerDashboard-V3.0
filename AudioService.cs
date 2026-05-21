@@ -15,6 +15,10 @@ internal sealed class AudioService : IDisposable
     private MMDevice? _captureDevice;
     private AudioDeviceListener? _listener;
 
+    private List<AudioSessionControl> _sessionCache = new();
+    private DateTime _sessionCacheExpiry = DateTime.MinValue;
+    private const int SessionCacheTtlMs = 100;
+
     // ─────────────────────────────────────────── state ──
 
     public MMDevice? RenderDevice  => _renderDevice;
@@ -60,6 +64,9 @@ internal sealed class AudioService : IDisposable
             AudioDeviceError?.Invoke(ex.Message);
         }
 
+        // New device means old cached sessions are stale.
+        InvalidateSessionCache();
+
         try
         {
             _captureDevice?.Dispose();
@@ -76,9 +83,15 @@ internal sealed class AudioService : IDisposable
     /// <summary>
     /// Enumerates all active audio sessions on the default render device.
     /// Returns an empty list if no device is available.
+    /// Results are cached for <see cref="SessionCacheTtlMs"/> ms to avoid calling
+    /// <c>mgr.RefreshSessions()</c> hundreds of times per second during volume smoothing.
     /// </summary>
     public List<AudioSessionControl> GetActiveSessions()
     {
+        // Return cached sessions if the cache is still fresh.
+        if (DateTime.Now < _sessionCacheExpiry && _sessionCache.Count > 0)
+            return _sessionCache;
+
         var result = new List<AudioSessionControl>();
         if (_renderDevice == null) return result;
 
@@ -95,7 +108,20 @@ internal sealed class AudioService : IDisposable
         }
         catch { /* returns partial list */ }
 
+        _sessionCache = result;
+        _sessionCacheExpiry = DateTime.Now.AddMilliseconds(SessionCacheTtlMs);
         return result;
+    }
+
+    /// <summary>
+    /// Forces the next <see cref="GetActiveSessions"/> call to re-enumerate sessions
+    /// from WASAPI rather than returning a cached result.
+    /// Call this after a session add/remove event or an explicit user refresh.
+    /// </summary>
+    public void InvalidateSessionCache()
+    {
+        _sessionCache = new List<AudioSessionControl>();
+        _sessionCacheExpiry = DateTime.MinValue;
     }
 
     // ─────────────────────────────────────────── volume / mute ──

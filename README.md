@@ -94,6 +94,7 @@ tools/                                  — esptool.exe for firmware flashing
 
 | Dashboard | Required firmware protocol | Hardware       |
 |-----------|---------------------------|----------------|
+| v2.45     | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v2.44     | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v2.43     | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v2.42     | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
