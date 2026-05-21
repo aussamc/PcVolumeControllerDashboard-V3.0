@@ -24,7 +24,7 @@ Old Versions/
 extract_methods.py
 build_*.py
 
-# Local diagnostics exports and downloaded tool archives
+# Local diagnostics exports and downloaded archives
 *.zip
 esptool-*/
 

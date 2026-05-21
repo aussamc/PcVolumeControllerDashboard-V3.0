@@ -28,7 +28,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.44";
+    private const string DashboardVersion = "2.45";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -177,7 +177,7 @@ public partial class MainWindow : Window
     private DateTime _rememberedPortReadyAfter = DateTime.MinValue;
     private DateTime _lastRememberedPortScanDelayLog = DateTime.MinValue;
     private readonly string _logPath = GetLogPath();
-    private string _selectedFirmwareBinPath = string.Empty;
+
     private System.Threading.Timer? _fullStateSendCoalesceTimer;
     private int _fullStateSendQueued;
     private DateTime _lastSleepWakeTestCommandAt = DateTime.MinValue;
@@ -239,7 +239,6 @@ public partial class MainWindow : Window
         CleanupOldLogs();
         LogStartupHeader();
         UpdateVersionHeader();
-        UpdateSelectedFirmwareBinDisplay();
         ApplyFirstRunWizardSettingsToUi();
         UpdateFirstRunWizardStatus();
 
@@ -1288,7 +1287,6 @@ public partial class MainWindow : Window
         {
         _selectedChannelIndex = index;
         _settings.SelectedChannelIndex = index;
-        SaveSettings();
 
         if (LogicalChannelComboBox.SelectedIndex != index)
         {
@@ -1974,7 +1972,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        bool nextMute = !sessions[0].Muted;
+        bool? currentMute = _audioService.GetMute(sessions[0]);
+        bool nextMute = !(currentMute ?? sessions[0].Muted);
 
         foreach (AudioTargetItem sessionTarget in sessions)
         {
@@ -3864,179 +3863,6 @@ public partial class MainWindow : Window
         if (CanSendSleepWakeTestCommand("WAKE"))
         {
             WriteSerialLine($"{ProtocolCommands.Wake},TEST", logOutgoing: true);
-        }
-    }
-
-    private void SelectFirmwareBinButton_Click(object sender, RoutedEventArgs e)
-    {
-        Microsoft.Win32.OpenFileDialog dialog = new()
-        {
-            Title = "Select ESP32 firmware .bin file",
-            Filter = "ESP32 firmware binary (*.bin)|*.bin|All files (*.*)|*.*"
-        };
-
-        if (dialog.ShowDialog(this) != true)
-        {
-            return;
-        }
-
-        _selectedFirmwareBinPath = dialog.FileName;
-        UpdateSelectedFirmwareBinDisplay();
-        Log($"Selected firmware .bin file: {_selectedFirmwareBinPath}");
-    }
-
-    private async void FlashFirmwareButton_Click(object sender, RoutedEventArgs e)
-    {
-        await RunFirmwareFlashAsync();
-    }
-
-    private async Task RunFirmwareFlashAsync()
-    {
-        FirmwareFlashOutputTextBox.Text = string.Empty;
-        if (FlashFirmwareButton != null) FlashFirmwareButton.IsEnabled = false;
-
-        string? firmwareBin = ResolveFirmwareBinPath();
-        if (string.IsNullOrWhiteSpace(firmwareBin) || !File.Exists(firmwareBin))
-        {
-            AppendFirmwareFlashOutput("No firmware .bin file selected or bundled.");
-            AppendFirmwareFlashOutput("Use Select .bin File, or add a compiled firmware binary to firmware_bin/.");
-            Log("Firmware flash cancelled: no firmware .bin file available.");
-            return;
-        }
-
-        string esptoolPath = ResolveEsptoolPath();
-        if (string.IsNullOrWhiteSpace(esptoolPath) || !File.Exists(esptoolPath))
-        {
-            AppendFirmwareFlashOutput("esptool was not found.");
-            AppendFirmwareFlashOutput("Expected location: tools/esptool.exe");
-            AppendFirmwareFlashOutput("See tools/esptool_setup_instructions.txt for setup instructions.");
-            Log("Firmware flash cancelled: tools/esptool.exe was not found.");
-            return;
-        }
-
-        string port = _settings.LastComPort;
-        if (_serialService.IsConnected)
-        {
-            port = _serialService.PortName ?? port;
-            Log("Firmware flash requested. Disconnecting dashboard serial first.");
-            DisconnectSerial(sendDisconnectCommand: false, preserveLastControllerPort: true, refreshPortsAfterDisconnect: true);
-        }
-
-        if (string.IsNullOrWhiteSpace(port))
-        {
-            port = ComPortComboBox.SelectedItem as string ?? string.Empty;
-        }
-
-        if (string.IsNullOrWhiteSpace(port))
-        {
-            AppendFirmwareFlashOutput("No COM port is selected or remembered for flashing.");
-            Log("Firmware flash cancelled: no COM port available.");
-            return;
-        }
-
-        _manualDisconnectRequested = true;
-        AppendFirmwareFlashOutput($"Flashing {Path.GetFileName(firmwareBin)} to {port}.");
-        AppendFirmwareFlashOutput("Auto-reconnect is paused while flashing.");
-        Log($"Starting firmware flash. Port={port}, Bin={firmwareBin}, Tool={esptoolPath}");
-
-        try
-        {
-            ProcessStartInfo psi = new()
-            {
-                FileName = esptoolPath,
-                Arguments = $"--chip esp32s3 --port {port} --baud 921600 write_flash 0x10000 \"{firmwareBin}\"",
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true
-            };
-
-            using Process process = new() { StartInfo = psi, EnableRaisingEvents = true };
-            process.OutputDataReceived += (_, args) => { if (args.Data != null) Dispatcher.InvokeAsync(() => AppendFirmwareFlashOutput(args.Data)); };
-            process.ErrorDataReceived += (_, args) => { if (args.Data != null) Dispatcher.InvokeAsync(() => AppendFirmwareFlashOutput(args.Data)); };
-
-            process.Start();
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-            await process.WaitForExitAsync();
-
-            AppendFirmwareFlashOutput(process.ExitCode == 0 ? "Firmware flash completed." : $"Firmware flash failed with exit code {process.ExitCode}.");
-            Log($"Firmware flash process exited with code {process.ExitCode}.");
-            ShowTrayNotification(
-                process.ExitCode == 0 ? "Firmware update complete" : "Firmware update failed",
-                process.ExitCode == 0 ? "ESP32 flashing completed successfully." : $"ESP32 flashing failed with exit code {process.ExitCode}.");
-
-            if (process.ExitCode == 0)
-            {
-                AppendFirmwareFlashOutput("Waiting for controller to reboot, then reconnecting...");
-                _manualDisconnectRequested = false;
-                _ = Dispatcher.InvokeAsync(() => TryAutoReconnect(GetAvailableComPorts()));
-            }
-        }
-        catch (Exception ex)
-        {
-            AppendFirmwareFlashOutput($"Firmware flash error: {ex.Message}");
-            Log($"Firmware flash error: {ex.Message}");
-            ShowTrayNotification("Firmware update failed", ex.Message);
-        }
-        finally
-        {
-            if (FlashFirmwareButton != null) FlashFirmwareButton.IsEnabled = true;
-        }
-    }
-
-    private string? ResolveFirmwareBinPath()
-    {
-        if (!string.IsNullOrWhiteSpace(_selectedFirmwareBinPath) && File.Exists(_selectedFirmwareBinPath))
-        {
-            return _selectedFirmwareBinPath;
-        }
-
-        string firmwareDirectory = Path.Combine(AppContext.BaseDirectory, "firmware_bin");
-        if (!Directory.Exists(firmwareDirectory))
-        {
-            firmwareDirectory = Path.Combine(Environment.CurrentDirectory, "firmware_bin");
-        }
-
-        if (!Directory.Exists(firmwareDirectory))
-        {
-            return null;
-        }
-
-        return Directory.GetFiles(firmwareDirectory, "*.bin", SearchOption.TopDirectoryOnly)
-            .OrderByDescending(File.GetLastWriteTimeUtc)
-            .FirstOrDefault();
-    }
-
-    private string ResolveEsptoolPath()
-    {
-        string path = Path.Combine(AppContext.BaseDirectory, "tools", "esptool.exe");
-        if (File.Exists(path))
-        {
-            return path;
-        }
-
-        return Path.Combine(Environment.CurrentDirectory, "tools", "esptool.exe");
-    }
-
-    private void UpdateSelectedFirmwareBinDisplay()
-    {
-        if (SelectedFirmwareBinTextBlock == null)
-        {
-            return;
-        }
-
-        SelectedFirmwareBinTextBlock.Text = string.IsNullOrWhiteSpace(_selectedFirmwareBinPath)
-            ? "Selected .bin file: none"
-            : $"Selected .bin file: {_selectedFirmwareBinPath}";
-    }
-
-    private void AppendFirmwareFlashOutput(string line)
-    {
-        if (FirmwareFlashOutputTextBox != null)
-        {
-            FirmwareFlashOutputTextBox.AppendText($"{DateTime.Now:HH:mm:ss}  {line}{Environment.NewLine}");
-            FirmwareFlashOutputTextBox.ScrollToEnd();
         }
     }
 

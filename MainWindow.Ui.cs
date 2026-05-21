@@ -520,15 +520,6 @@ public partial class MainWindow
                 SettingsLogFolderButton.ToolTip = "Open log folder";
             }
 
-            if (FirmwareSourceTextBlock != null)
-            {
-                string firmwareDir = System.IO.Path.Combine(
-                    System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? string.Empty,
-                    $"Computer_Volume_Controller_v{RequiredProtocolVersion}");
-                bool exists = System.IO.Directory.Exists(firmwareDir);
-                FirmwareSourceTextBlock.Text = $"Bundled firmware source: Computer_Volume_Controller_v{RequiredProtocolVersion}" +
-                                               (exists ? string.Empty : " (not found in build directory)");
-            }
         }
         catch
         {

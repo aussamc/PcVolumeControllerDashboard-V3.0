@@ -2291,27 +2291,6 @@
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
-            <TabItem Header="Firmware">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Background="{DynamicResource AppBackground}">
-                    <StackPanel Margin="0,12,0,0">
-                        <Border BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12">
-                            <StackPanel>
-                                <TextBlock Text="ESP32 Firmware Update" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,8" />
-                                <TextBlock Text="Use bundled firmware binaries when available, or select a manually built ESP32 .bin file. The dashboard looks for esptool in the tools folder." TextWrapping="Wrap" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,10" />
-                                <TextBlock x:Name="FirmwareSourceTextBlock" Text="Bundled firmware source: —" Margin="0,0,0,4" />
-                                <TextBlock x:Name="FirmwareStatusTextBlock" Text="Compiled binaries: see firmware_bin/build_instructions.txt if binaries are not present" Margin="0,0,0,6" TextWrapping="Wrap" />
-                                <TextBlock x:Name="SelectedFirmwareBinTextBlock" Text="Selected .bin file: none" Margin="0,0,0,10" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryForeground}" />
-                                <WrapPanel Margin="0,0,0,8">
-                                    <Button x:Name="SelectFirmwareBinButton" Content="Select .bin File" Width="130" Height="34" Margin="0,0,8,8" ToolTip="Browse for an ESP32 firmware .bin file" Click="SelectFirmwareBinButton_Click" />
-                                    <Button x:Name="FlashFirmwareButton" Content="_Flash ESP32 Firmware" Width="180" Height="34" Margin="0,0,8,8" Style="{StaticResource PrimaryButton}" ToolTip="Flash the selected firmware binary to the connected ESP32" Click="FlashFirmwareButton_Click" />
-                                </WrapPanel>
-                                <TextBox x:Name="FirmwareFlashOutputTextBox" Margin="0,12,0,0" MinHeight="180" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" IsReadOnly="True" />
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                </ScrollViewer>
-            </TabItem>
-
             <TabItem Header="Hardware Test">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Background="{DynamicResource AppBackground}">
                     <StackPanel Margin="0,12,0,0">
