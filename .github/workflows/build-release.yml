@@ -1,0 +1,46 @@
+name: Build release .exe
+
+# Produces a standalone self-contained win-x64 .exe on every push to main.
+# The artifact is available for download from the Actions run page.
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+
+      - name: Read version
+        id: version
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path PcVolumeControllerDashboard.csproj -Pattern '<Version>(.*?)</Version>').Matches[0].Groups[1].Value
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Publish standalone exe
+        run: >
+          dotnet publish PcVolumeControllerDashboard.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:DebugType=embedded
+          -o publish/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PcVolumeControllerDashboard-v${{ steps.version.outputs.VERSION }}
+          path: publish/PcVolumeControllerDashboard.exe
+          if-no-files-found: error
