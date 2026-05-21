@@ -50,6 +50,9 @@
         <SolidColorBrush x:Key="WarningBannerBackground" Color="#FFF3CD" />
         <SolidColorBrush x:Key="WarningBannerBorder" Color="#FFEEBA" />
         <SolidColorBrush x:Key="WarningBannerForeground" Color="#856404" />
+        <SolidColorBrush x:Key="UpdateBannerBackground" Color="#E8F4FD" />
+        <SolidColorBrush x:Key="UpdateBannerBorder" Color="#BEE3F8" />
+        <SolidColorBrush x:Key="UpdateBannerForeground" Color="#1A3B5D" />
 
         <Style TargetType="{x:Type TextBlock}">
             <Setter Property="Foreground" Value="{DynamicResource AppForeground}" />
@@ -495,6 +498,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
@@ -556,7 +560,41 @@
             </DockPanel>
         </Border>
 
-        <TabControl x:Name="MainTabs" Grid.Row="2">
+        <!-- Update available banner — shown when a newer release is detected on GitHub -->
+        <Border x:Name="UpdateBanner"
+                Grid.Row="2"
+                Background="{DynamicResource UpdateBannerBackground}"
+                BorderBrush="{DynamicResource UpdateBannerBorder}"
+                BorderThickness="1"
+                CornerRadius="6"
+                Padding="10,8"
+                Margin="0,0,0,8"
+                Visibility="Collapsed">
+            <DockPanel LastChildFill="True">
+                <Button x:Name="DismissUpdateBannerButton"
+                        Content="✕"
+                        Width="24" Height="24"
+                        Padding="0"
+                        DockPanel.Dock="Right"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Foreground="{DynamicResource UpdateBannerForeground}"
+                        Cursor="Hand"
+                        ToolTip="Dismiss this notification"
+                        Click="DismissUpdateBanner_Click" />
+                <TextBlock VerticalAlignment="Center"
+                           Foreground="{DynamicResource UpdateBannerForeground}">
+                    <Run Text="🔔 A new version is available: " />
+                    <Run x:Name="UpdateBannerVersionRun" Text="v?.?" FontWeight="SemiBold" />
+                    <Run Text=" — " />
+                    <Hyperlink x:Name="UpdateBannerLink"
+                               Foreground="{DynamicResource UpdateBannerForeground}"
+                               RequestNavigate="UpdateBannerLink_RequestNavigate">View release notes</Hyperlink>
+                </TextBlock>
+            </DockPanel>
+        </Border>
+
+        <TabControl x:Name="MainTabs" Grid.Row="3">
             <TabItem Header="Audio">
                 <Grid Margin="0,12,0,0" Background="{DynamicResource AppBackground}">
                     <Grid.RowDefinitions>
@@ -2213,6 +2251,35 @@
                                    FontStyle="Italic"
                                    TextWrapping="Wrap" />
 
+                        <!-- Software Updates -->
+                        <Border BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Software Updates"
+                                           FontSize="16"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,8" />
+                                <TextBlock Text="Automatically checks GitHub for a newer release on startup."
+                                           Foreground="{DynamicResource SecondaryForeground}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,0,0,8" />
+                                <TextBlock x:Name="UpdateCheckerStatusTextBlock"
+                                           Text="Never checked"
+                                           TextWrapping="Wrap"
+                                           Margin="0,0,0,4" />
+                                <TextBlock x:Name="UpdateCheckerLastCheckedTextBlock"
+                                           Text="Last checked: —"
+                                           Foreground="{DynamicResource SecondaryForeground}"
+                                           Margin="0,0,0,8" />
+                                <Button x:Name="CheckForUpdatesButton"
+                                        Content="Check now"
+                                        Width="110"
+                                        Height="30"
+                                        HorizontalAlignment="Left"
+                                        ToolTip="Manually check GitHub for a newer version of the dashboard"
+                                        Click="CheckForUpdatesButton_Click" />
+                            </StackPanel>
+                        </Border>
+
                         <Button x:Name="AboutButton"
                                 Content="About"
                                 Width="80"
@@ -2340,7 +2407,7 @@
 
         </TabControl>
 
-        <Border Grid.Row="3"
+        <Border Grid.Row="4"
                 BorderThickness="1"
                 CornerRadius="8"
                 Padding="8"
