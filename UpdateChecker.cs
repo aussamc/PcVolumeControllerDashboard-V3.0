@@ -32,7 +32,7 @@ internal static class UpdateChecker
     static UpdateChecker()
     {
         _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(12) };
-        _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("PcVolumeControllerDashboard/2.39");
+        _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("PcVolumeControllerDashboard/2.41");
         // GitHub API requires Accept header
         _httpClient.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
     }
