@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/tests/">
+    <Project Path="tests/PcVolumeControllerDashboard.Tests.csproj">
+      <Platform Project="x64" />
+    </Project>
+  </Folder>
+  <Project Path="PcVolumeControllerDashboard.csproj" />
+</Solution>

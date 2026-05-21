@@ -9,9 +9,9 @@
     <UseWindowsForms>true</UseWindowsForms>
 
     <!-- Assembly identity — visible in Windows Explorer → Properties -->
-    <Version>2.43.0</Version>
-    <AssemblyVersion>2.43.0.0</AssemblyVersion>
-    <FileVersion>2.43.0.0</FileVersion>
+    <Version>2.44.0</Version>
+    <AssemblyVersion>2.44.0.0</AssemblyVersion>
+    <FileVersion>2.44.0.0</FileVersion>
     <ApplicationIcon>Assets\app-icon.ico</ApplicationIcon>
     <Product>PC Volume Controller Dashboard</Product>
     <Description>Dashboard for the PC Volume Controller hardware device</Description>
@@ -37,13 +37,16 @@
     </Content>
   </ItemGroup>
 
-  <!-- Exclude any old-version project directories that may exist on disk.
-       The SDK default glob (** /*.cs) would otherwise pick up generated
-       AssemblyInfo files in their obj/ trees and cause duplicate-attribute errors. -->
+  <!-- Exclude any old-version project directories and the tests subdirectory.
+       The SDK default glob (**/*.cs) would otherwise pick up generated
+       AssemblyInfo files and test source files. -->
   <ItemGroup>
     <Compile Remove="Old Versions\**" />
     <EmbeddedResource Remove="Old Versions\**" />
     <None Remove="Old Versions\**" />
+    <Compile Remove="tests\**" />
+    <EmbeddedResource Remove="tests\**" />
+    <None Remove="tests\**" />
   </ItemGroup>
 
 </Project>
