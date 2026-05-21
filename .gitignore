@@ -18,3 +18,18 @@ diagnostics_extracted/
 
 # Old version archives (kept locally, not tracked in git)
 Old Versions/
+
+# Local dev/helper scripts — not part of the project source
+*.py
+extract_methods.py
+build_*.py
+
+# Local diagnostics exports and downloaded tool archives
+*.zip
+esptool-*/
+
+# Claude Code session data
+.claude/
+
+# Conversation notes (local only)
+conversation summeries and md files/

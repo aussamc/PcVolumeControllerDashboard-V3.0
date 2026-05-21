@@ -1,0 +1,67 @@
+name: Cleanup old release notes
+
+# Runs after every push to main. If more than one RELEASE_NOTES_v*.md file
+# exists, deletes all but the highest-versioned one and commits the removal.
+#
+# Version comparison is purely numeric on the dotted segments, so v2.10 > v2.9.
+# The commit uses [skip ci] so it does not re-trigger this workflow.
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Use the default GITHUB_TOKEN — no PAT needed for same-repo pushes.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Remove old release notes
+        id: cleanup
+        run: |
+          # Collect all RELEASE_NOTES_v*.md files.
+          mapfile -t files < <(find . -maxdepth 1 -name 'RELEASE_NOTES_v*.md' | sort)
+
+          echo "Found ${#files[@]} release note file(s):"
+          printf '  %s\n' "${files[@]}"
+
+          if [ ${#files[@]} -le 1 ]; then
+            echo "Nothing to clean up."
+            echo "deleted=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Sort by version number (numeric per segment) and keep only the last entry.
+          latest=$(printf '%s\n' "${files[@]}" | \
+            sed 's|.*RELEASE_NOTES_v\(.*\)\.md|\1 &|' | \
+            sort -t. -k1,1n -k2,2n -k3,3n | \
+            tail -1 | \
+            awk '{print $2}')
+
+          echo "Keeping: $latest"
+          deleted=false
+          for f in "${files[@]}"; do
+            if [ "$f" != "$latest" ]; then
+              echo "Deleting: $f"
+              git rm "$f"
+              deleted=true
+            fi
+          done
+
+          echo "deleted=$deleted" >> "$GITHUB_OUTPUT"
+
+      - name: Commit removal
+        if: steps.cleanup.outputs.deleted == 'true'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: remove old release notes [skip ci]"
+          git push
