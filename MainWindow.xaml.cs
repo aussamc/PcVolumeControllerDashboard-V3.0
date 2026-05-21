@@ -28,7 +28,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.39";
+    private const string DashboardVersion = "2.40";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -4395,17 +4395,7 @@ public partial class MainWindow : Window
         };
     }
 
-    // Returns true if the string is a valid per-channel OLED mode value.
-    // Empty string is valid (means "use global default").
-    private static bool IsValidChannelOledMode(string? mode)
-    {
-        if (string.IsNullOrEmpty(mode)) return true;   // empty = use global — always valid
-        return mode is DisplayModes.AppNameAndVolume
-                    or DisplayModes.LargeVolume
-                    or DisplayModes.MuteStatus
-                    or DisplayModes.AppOrDeviceName
-                    or DisplayModes.BarPercent;
-    }
+
 
     // Converts a dashboard display-mode constant to the firmware protocol string.
     // Empty input → empty output (firmware interprets empty as "use global").
@@ -5756,63 +5746,23 @@ public partial class MainWindow : Window
 
     private void LoadSettings()
     {
-        string path = GetSettingsPath();
+        SettingsRepository.LoadResult result =
+            SettingsRepository.Load(ChannelCount, MaxEncoderSensitivityPercent);
+        _settings = result.Settings;
 
-        if (!File.Exists(path))
+        if (result.WasCorrupt)
         {
-            _settings = DashboardSettings.CreateDefault();
-            return;
-        }
-
-        // Attempt to parse the settings file.
-        bool parseSucceeded = false;
-        try
-        {
-            string json = File.ReadAllText(path);
-            DashboardSettings? parsed = JsonSerializer.Deserialize<DashboardSettings>(json);
-            if (parsed != null)
-            {
-                _settings = parsed;
-                parseSucceeded = true;
-            }
-        }
-        catch
-        {
-            // parseSucceeded stays false
-        }
-
-        if (!parseSucceeded)
-        {
-            // File exists but is corrupt. Let the user decide what to do after startup.
             _settingsWereCorrupt = true;
-            _settingsCorruptBackupRestored = null;
-
-            // Try to auto-locate the most recent backup to offer to the user.
-            string backupDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "PcVolumeController", "setup_backups");
-            string? latestBackup = null;
-            if (Directory.Exists(backupDir))
-            {
-                latestBackup = Directory.GetFiles(backupDir, "settings-*.json")
-                    .OrderByDescending(File.GetLastWriteTime)
-                    .FirstOrDefault();
-            }
-
-            _settingsCorruptBackupRestored = latestBackup;
-
-            // Use factory defaults for this session; the dialog will let the user choose.
-            _settings = DashboardSettings.CreateDefault();
+            _settingsCorruptBackupRestored = result.LatestBackupPath;
             return;
         }
 
-        bool migrated = NormalizeSettings(_settings);
         Log($"Settings loaded (version {_settings.SettingsVersion}, {_settings.Profiles?.Count ?? 0} profile(s)).");
 
+        // Migrate legacy flat ChannelTargetKeys array → per-channel TargetKey fields.
         if (_settings.ChannelTargetKeys != null && _settings.ChannelTargetKeys.Length == ChannelCount)
         {
-            bool channelsLookEmpty = _settings.Channels.All(channel => string.IsNullOrWhiteSpace(channel.TargetKey));
-
+            bool channelsLookEmpty = _settings.Channels.All(ch => string.IsNullOrWhiteSpace(ch.TargetKey));
             if (channelsLookEmpty)
             {
                 for (int i = 0; i < ChannelCount; i++)
@@ -5823,10 +5773,8 @@ public partial class MainWindow : Window
             }
         }
 
-        if (migrated)
-        {
+        if (result.MigrationApplied)
             SaveSettings();
-        }
     }
 
     /// <summary>
@@ -5878,9 +5826,9 @@ public partial class MainWindow : Window
                 DashboardSettings? restored = JsonSerializer.Deserialize<DashboardSettings>(json);
                 if (restored != null)
                 {
-                    NormalizeSettings(restored);
+                    SettingsRepository.Normalize(restored, ChannelCount, MaxEncoderSensitivityPercent);
                     _settings = restored;
-                    File.Copy(backupPath, GetSettingsPath(), overwrite: true);
+                    File.Copy(backupPath, SettingsRepository.GetPath(), overwrite: true);
                     ApplySettingsToUi();
                     ApplySettingsToChannels();
                     ApplyTheme();
@@ -5925,7 +5873,7 @@ public partial class MainWindow : Window
             _channels[i].LongPressButtonAction = ChannelButtonActions.IsValidLongPressAction(_settings.Channels[i].LongPressButtonAction) ? _settings.Channels[i].LongPressButtonAction : ChannelButtonActions.NoAction;
             _channels[i].DoublePressButtonAction = ChannelButtonActions.IsValidDoublePressAction(_settings.Channels[i].DoublePressButtonAction) ? _settings.Channels[i].DoublePressButtonAction : ChannelButtonActions.NoAction;
             _channels[i].RebindFallback = RebindFallbacks.IsValid(_settings.Channels[i].RebindFallback) ? _settings.Channels[i].RebindFallback : RebindFallbacks.ShowInactive;
-            _channels[i].OledDisplayMode = IsValidChannelOledMode(_settings.Channels[i].OledDisplayMode) ? _settings.Channels[i].OledDisplayMode : string.Empty;
+            _channels[i].OledDisplayMode = DisplayModes.IsValidChannelMode(_settings.Channels[i].OledDisplayMode) ? _settings.Channels[i].OledDisplayMode : string.Empty;
         }
 
         RefreshChannelAssignmentLabels();
@@ -5952,7 +5900,7 @@ public partial class MainWindow : Window
             LongPressButtonAction = ChannelButtonActions.IsValidLongPressAction(channel.LongPressButtonAction)  ? channel.LongPressButtonAction  : ChannelButtonActions.NoAction,
             DoublePressButtonAction = ChannelButtonActions.IsValidDoublePressAction(channel.DoublePressButtonAction) ? channel.DoublePressButtonAction : ChannelButtonActions.NoAction,
             RebindFallback  = RebindFallbacks.IsValid(channel.RebindFallback) ? channel.RebindFallback : RebindFallbacks.ShowInactive,
-            OledDisplayMode = IsValidChannelOledMode(channel.OledDisplayMode) ? channel.OledDisplayMode : string.Empty,
+            OledDisplayMode = DisplayModes.IsValidChannelMode(channel.OledDisplayMode) ? channel.OledDisplayMode : string.Empty,
             // Preserve fields that live only in ChannelSettings, not in ChannelMappingItem.
             SensitivityPercent = (i < previous.Length) ? previous[i].SensitivityPercent : -1,
             Presets = (i < previous.Length && previous[i].Presets != null)
@@ -5996,32 +5944,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void SaveSettings()
-    {
-        try
-        {
-            string path = GetSettingsPath();
-            string? directory = Path.GetDirectoryName(path);
-
-            if (!string.IsNullOrWhiteSpace(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
-
-            string json = JsonSerializer.Serialize(_settings, JsonWriteOptions);
-            File.WriteAllText(path, json);
-        }
-        catch (Exception ex)
-        {
-            Log($"Settings save error: {ex.Message}");
-        }
-    }
-
-    private static string GetSettingsPath()
-    {
-        string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        return Path.Combine(appData, "PcVolumeController", "settings.json");
-    }
+    private void SaveSettings() => SettingsRepository.Save(_settings, Log);
 
     private string GetThemeModeFromUi()
     {
@@ -6531,7 +6454,7 @@ public partial class MainWindow : Window
             AddTextToZip(archive, "diagnostics-summary.txt", BuildDiagnosticsSummary());
             addedEntries.Add("diagnostics-summary.txt");
 
-            string settingsPath = GetSettingsPath();
+            string settingsPath = SettingsRepository.GetPath();
             if (File.Exists(settingsPath))
             {
                 string entryName = "settings.json";
@@ -6594,7 +6517,7 @@ public partial class MainWindow : Window
         sb.AppendLine($"Manual disconnect requested: {_manualDisconnectRequested}");
         sb.AppendLine($"Safe mode: {_safeMode}");
         sb.AppendLine($"Active log: {_logPath}");
-        sb.AppendLine($"Settings path: {GetSettingsPath()}");
+        sb.AppendLine($"Settings path: {SettingsRepository.GetPath()}");
         return sb.ToString();
     }
 
@@ -6645,7 +6568,7 @@ public partial class MainWindow : Window
 
             string json = File.ReadAllText(dialog.FileName);
             DashboardSettings imported = JsonSerializer.Deserialize<DashboardSettings>(json) ?? throw new InvalidDataException("The selected file did not contain valid setup data.");
-            NormalizeSettings(imported);
+            SettingsRepository.Normalize(imported, ChannelCount, MaxEncoderSensitivityPercent);
 
             MessageBoxResult result = System.Windows.MessageBox.Show(this,
                 "Import this setup? A backup of the current setup will be created first.",
@@ -6681,239 +6604,8 @@ public partial class MainWindow : Window
         }
     }
 
-    private void BackupCurrentSettingsFile(string reason)
-    {
-        try
-        {
-            string settingsPath = GetSettingsPath();
-            if (!File.Exists(settingsPath))
-            {
-                return;
-            }
-
-            string backupDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PcVolumeController", "setup_backups");
-            Directory.CreateDirectory(backupDirectory);
-            string backupPath = Path.Combine(backupDirectory, $"settings-{reason}-{DateTime.Now:yyyyMMdd-HHmmss}.json");
-            File.Copy(settingsPath, backupPath, overwrite: false);
-            Log($"Backed up current setup to: {backupPath}");
-
-            // Keep only the 10 most recent backup files; prune anything older.
-            try
-            {
-                string[] existing = Directory.GetFiles(backupDirectory, "settings-*.json")
-                    .OrderByDescending(File.GetLastWriteTime)
-                    .Skip(10)
-                    .ToArray();
-                foreach (string old in existing)
-                {
-                    File.Delete(old);
-                }
-            }
-            catch
-            {
-                // Pruning failure is non-critical; do not disrupt normal operation.
-            }
-        }
-        catch (Exception ex)
-        {
-            Log($"Setup backup failed: {ex.Message}");
-        }
-    }
-
-    // Returns true if a version migration was applied (caller should persist the updated settings).
-    private static bool NormalizeSettings(DashboardSettings settings)
-    {
-        bool migrated = false;
-
-        // v0 → v1: auto-connect, first-run wizard, and scan-all were accidentally
-        // defaulted to false. Correct them on first run of any build that includes
-        // this migration so existing users get the right out-of-box behaviour.
-        if (settings.SettingsVersion < 1)
-        {
-            settings.AutoConnectOnLaunch = true;
-            settings.FirstRunWizardCompleted = true;
-            settings.ScanAllComPortsIfRememberedMissing = true;
-            settings.SettingsVersion = 1;
-            migrated = true;
-        }
-
-        if (settings.Channels == null || settings.Channels.Length != ChannelCount)
-        {
-            settings.Channels = DashboardSettings.CreateDefaultChannels();
-        }
-
-        settings.ChannelTargetKeys ??= settings.Channels.Select(channel => channel.TargetKey).ToArray();
-
-        if (string.IsNullOrWhiteSpace(settings.ThemeMode))
-        {
-            settings.ThemeMode = ThemeModes.FollowSystem;
-        }
-
-        // v1 → v2: 6-encoder hardware is now installed. The old SelectNextChannel action
-        // was a prototype workaround (1 encoder cycling through channels). Migrate every
-        // channel that still has that action to NoAction so each encoder controls its own
-        // dedicated channel's volume independently.
-        if (settings.SettingsVersion < 2)
-        {
-            foreach (ChannelSettings channel in settings.Channels)
-            {
-                if (channel.ButtonAction == ChannelButtonActions.SelectNextChannel)
-                    channel.ButtonAction = ChannelButtonActions.NoAction;
-            }
-            settings.SettingsVersion = 2;
-            migrated = true;
-        }
-
-        // v2 → v3: Short press default changed from ToggleAssignedMute to NoAction.
-        // A dedicated long-press already handles mute; accidental short clicks while
-        // turning the encoder should not trigger mute.
-        if (settings.SettingsVersion < 3)
-        {
-            foreach (ChannelSettings channel in settings.Channels)
-            {
-                if (channel.ButtonAction == ChannelButtonActions.ToggleAssignedMute)
-                    channel.ButtonAction = ChannelButtonActions.NoAction;
-            }
-            settings.SettingsVersion = 3;
-            migrated = true;
-        }
-
-        settings.EncoderSensitivityPercent = Math.Clamp(settings.EncoderSensitivityPercent, 0, MaxEncoderSensitivityPercent);
-        foreach (ChannelSettings channel in settings.Channels)
-        {
-            if (!ChannelButtonActions.IsValid(channel.ButtonAction))
-            {
-                channel.ButtonAction = ChannelButtonActions.NoAction;
-            }
-
-            if (!ChannelButtonActions.IsValidLongPressAction(channel.LongPressButtonAction))
-            {
-                channel.LongPressButtonAction = ChannelButtonActions.NoAction;
-            }
-
-            if (!ChannelButtonActions.IsValidDoublePressAction(channel.DoublePressButtonAction))
-            {
-                channel.DoublePressButtonAction = ChannelButtonActions.NoAction;
-            }
-
-            if (!RebindFallbacks.IsValid(channel.RebindFallback))
-            {
-                channel.RebindFallback = RebindFallbacks.ShowInactive;
-            }
-
-            if (!IsValidChannelOledMode(channel.OledDisplayMode))
-            {
-                channel.OledDisplayMode = string.Empty;
-            }
-        }
-
-        // v3 → v4: Short press default restored to ToggleAssignedMute.  The v2→v3 migration
-        // moved everyone to NoAction when a dedicated long-press mute was introduced; that
-        // was overly conservative.  Channels still on NoAction are migrated back so new and
-        // existing users both get mute-on-short-press out of the box.
-        if (settings.SettingsVersion < 4)
-        {
-            foreach (ChannelSettings channel in settings.Channels)
-            {
-                if (channel.ButtonAction == ChannelButtonActions.NoAction)
-                {
-                    channel.ButtonAction = ChannelButtonActions.ToggleAssignedMute;
-                }
-            }
-            settings.SettingsVersion = 4;
-            migrated = true;
-        }
-
-        if (!AccelerationPresets.IsValid(settings.AccelerationPreset))
-        {
-            settings.AccelerationPreset = AccelerationPresets.Medium;
-        }
-        settings.AccelThresholdMs   = Math.Clamp(settings.AccelThresholdMs,   20,  250);
-        settings.AccelMaxMultiplier = Math.Clamp(settings.AccelMaxMultiplier, 1.5f, 8.0f);
-        settings.AccelCurveExponent = Math.Clamp(settings.AccelCurveExponent, 0.3f, 2.5f);
-        if (!SmoothingSpeed.IsValid(settings.VolumeSmoothingSpeed))
-        {
-            settings.VolumeSmoothingSpeed = SmoothingSpeed.Normal;
-        }
-
-        settings.OledBrightnessPercent = Math.Clamp(settings.OledBrightnessPercent <= 0 ? 100 : settings.OledBrightnessPercent, 0, 100);
-        settings.OledSleepTimeoutMinutes = Math.Clamp(settings.OledSleepTimeoutMinutes <= 0 ? 2 : settings.OledSleepTimeoutMinutes, 1, 60);
-        settings.OledConnectedIdleTimeoutMinutes = Math.Clamp(settings.OledConnectedIdleTimeoutMinutes <= 0 ? 10 : settings.OledConnectedIdleTimeoutMinutes, 1, 60);
-        if (string.IsNullOrWhiteSpace(settings.OledConnectedIdleAction))
-        {
-            settings.OledConnectedIdleAction = OledIdleActions.DimTo30;
-        }
-        if (!OledIdleActions.IsValid(settings.OledConnectedIdleAction))
-        {
-            settings.OledConnectedIdleAction = OledIdleActions.DimTo30;
-        }
-        if (string.IsNullOrWhiteSpace(settings.OledDisplayMode))
-        {
-            settings.OledDisplayMode = DisplayModes.AppNameAndVolume;
-        }
-        settings.SelectedChannelIndex = Math.Clamp(settings.SelectedChannelIndex, 0, ChannelCount - 1);
-
-        // v4 → v5: Named profiles introduced. Create a single "Default" profile from
-        // the current channel settings so existing setups are migrated automatically.
-        if (settings.SettingsVersion < 5)
-        {
-            settings.Profiles ??= new List<ProfileEntry>();
-            if (settings.Profiles.Count == 0)
-            {
-                settings.Profiles.Add(new ProfileEntry
-                {
-                    Name = "Default",
-                    Channels = settings.Channels.Select(ch => new ChannelSettings
-                    {
-                        TargetKey = ch.TargetKey,
-                        FriendlyName = ch.FriendlyName,
-                        ButtonAction = ch.ButtonAction,
-                        LongPressButtonAction = ch.LongPressButtonAction,
-                        DoublePressButtonAction = ch.DoublePressButtonAction,
-                        RebindFallback = ch.RebindFallback,
-                        OledDisplayMode = ch.OledDisplayMode,
-                        SensitivityPercent = ch.SensitivityPercent
-                    }).ToArray()
-                });
-                settings.ActiveProfileName = "Default";
-            }
-            settings.SettingsVersion = 5;
-            migrated = true;
-        }
-
-        // Validate profiles: null-guard, fix bad channel arrays, ensure at least one profile,
-        // ensure the active name points to an existing profile.
-        settings.Profiles ??= new List<ProfileEntry>();
-        foreach (ProfileEntry profile in settings.Profiles)
-        {
-            if (profile.Channels == null || profile.Channels.Length != ChannelCount)
-            {
-                profile.Channels = DashboardSettings.CreateDefaultChannels();
-            }
-        }
-        if (settings.Profiles.Count == 0)
-        {
-            settings.Profiles.Add(new ProfileEntry
-            {
-                Name = "Default",
-                Channels = DashboardSettings.CreateDefaultChannels()
-            });
-        }
-        if (settings.Profiles.All(p => p.Name != settings.ActiveProfileName))
-        {
-            settings.ActiveProfileName = settings.Profiles[0].Name;
-        }
-
-        // Sync Channels from the active profile so ApplySettingsToChannels reads
-        // the profile data, not a stale copy from an older settings field.
-        ProfileEntry? activeProfile = settings.Profiles.FirstOrDefault(p => p.Name == settings.ActiveProfileName);
-        if (activeProfile != null)
-        {
-            settings.Channels = activeProfile.Channels;
-        }
-
-        return migrated;
-    }
+    private void BackupCurrentSettingsFile(string reason) =>
+        SettingsRepository.Backup(reason, Log);
 
     private void ClearRememberedControllerButton_Click(object sender, RoutedEventArgs e)
     {
@@ -7708,6 +7400,16 @@ public static class DisplayModes
     public const string MuteStatus = "MuteStatus";
     public const string AppOrDeviceName = "AppOrDeviceName";
     public const string BarPercent = "BarPercent";
+
+    /// <summary>
+    /// Returns true if <paramref name="mode"/> is a valid per-channel OLED display mode.
+    /// Empty string is valid — it means "inherit the global default".
+    /// </summary>
+    public static bool IsValidChannelMode(string? mode)
+    {
+        if (string.IsNullOrEmpty(mode)) return true;
+        return mode is AppNameAndVolume or LargeVolume or MuteStatus or AppOrDeviceName or BarPercent;
+    }
 }
 
 public static class AccelerationPresets
