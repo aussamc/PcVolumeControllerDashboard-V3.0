@@ -28,7 +28,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.38";
+    private const string DashboardVersion = "2.39";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -193,6 +193,11 @@ public partial class MainWindow : Window
     // Volume overlay window (created lazily, reused)
     private VolumeOverlayWindow? _overlayWindow;
 
+    // Update checker state
+    private string _updateCheckerStatus = "Never checked";
+    private string _updateCheckerLastChecked = "—";
+    private bool _updateBannerDismissed;
+
 
     public MainWindow()
     {
@@ -303,6 +308,12 @@ public partial class MainWindow : Window
 
         // Show the corruption dialog after the window is fully rendered, so it has a valid owner.
         Dispatcher.InvokeAsync(ShowPendingSettingsCorruptionDialogIfNeeded);
+
+        // Kick off a background update check ~5 seconds after startup.
+        // Delayed so it does not compete with serial connect / audio init.
+        _ = Task.Delay(5000).ContinueWith(
+            _ => Dispatcher.InvokeAsync(() => _ = RunUpdateCheckAsync(userInitiated: false)),
+            TaskScheduler.Default);
 
         UpdateStatusBar();
     }
@@ -2484,6 +2495,74 @@ public partial class MainWindow : Window
     {
         WarningBanner.Visibility = Visibility.Collapsed;
     }
+
+    // ── Update checker ───────────────────────────────────────────────────────────
+
+    private async Task RunUpdateCheckAsync(bool userInitiated)
+    {
+        if (userInitiated)
+        {
+            UpdateCheckerStatusTextBlock.Text = "Checking…";
+            CheckForUpdatesButton.IsEnabled = false;
+        }
+
+        Log("Checking for updates…");
+        UpdateChecker.UpdateResult result = await UpdateChecker.CheckAsync(DashboardVersion);
+
+        _updateCheckerLastChecked = DateTime.Now.ToString("yyyy-MM-dd HH:mm");
+
+        if (result.ErrorMessage != null)
+        {
+            Log($"Update check failed: {result.ErrorMessage}");
+            _updateCheckerStatus = $"Check failed: {result.ErrorMessage}";
+        }
+        else if (result.UpdateAvailable)
+        {
+            Log($"Update available: v{result.LatestVersion}");
+            _updateCheckerStatus = $"Update available: v{result.LatestVersion}";
+            if (!_updateBannerDismissed)
+                ShowUpdateBanner(result.LatestVersion, result.ReleaseUrl);
+        }
+        else
+        {
+            Log($"Dashboard is up to date (latest: v{result.LatestVersion}).");
+            _updateCheckerStatus = $"Up to date (v{result.LatestVersion})";
+        }
+
+        UpdateCheckerStatusTextBlock.Text = _updateCheckerStatus;
+        UpdateCheckerLastCheckedTextBlock.Text = $"Last checked: {_updateCheckerLastChecked}";
+
+        if (userInitiated)
+            CheckForUpdatesButton.IsEnabled = true;
+    }
+
+    private void ShowUpdateBanner(string version, string releaseUrl)
+    {
+        UpdateBannerVersionRun.Text = $"v{version}";
+        UpdateBannerLink.NavigateUri = new Uri(releaseUrl);
+        UpdateBanner.Visibility = Visibility.Visible;
+    }
+
+    private void DismissUpdateBanner_Click(object sender, RoutedEventArgs e)
+    {
+        _updateBannerDismissed = true;
+        UpdateBanner.Visibility = Visibility.Collapsed;
+    }
+
+    private async void CheckForUpdatesButton_Click(object sender, RoutedEventArgs e)
+    {
+        _updateBannerDismissed = false; // allow the banner to re-appear on a manual check
+        await RunUpdateCheckAsync(userInitiated: true);
+    }
+
+    private void UpdateBannerLink_RequestNavigate(object sender, System.Windows.Navigation.RequestNavigateEventArgs e)
+    {
+        try { Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true }); }
+        catch { /* ignore — browser unavailable */ }
+        e.Handled = true;
+    }
+
+    // ── End update checker ───────────────────────────────────────────────────────
 
     private void ShowVolumeOverlay(int channelIndex, int volumePercent)
     {
@@ -6196,6 +6275,19 @@ public partial class MainWindow : Window
             ? new WpfSolidColorBrush(WpfColor.FromRgb(0xFF, 0xD9, 0x66))
             : new WpfSolidColorBrush(WpfColor.FromRgb(0x85, 0x64, 0x04));
 
+        // Update banner — blue info style
+        WpfBrush updateBannerBackground = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(0x1A, 0x2E, 0x3D))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(0xE8, 0xF4, 0xFD));
+
+        WpfBrush updateBannerBorder = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(0x2A, 0x4A, 0x6D))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(0xBE, 0xE3, 0xF8));
+
+        WpfBrush updateBannerForeground = dark
+            ? new WpfSolidColorBrush(WpfColor.FromRgb(0x90, 0xCA, 0xF9))
+            : new WpfSolidColorBrush(WpfColor.FromRgb(0x1A, 0x3B, 0x5D));
+
         Resources["AppBackground"] = appBackground;
         Resources["CardBackground"] = cardBackground;
         Resources["AppForeground"] = appForeground;
@@ -6233,6 +6325,9 @@ public partial class MainWindow : Window
         Resources["WarningBannerBackground"] = warningBannerBackground;
         Resources["WarningBannerBorder"] = warningBannerBorder;
         Resources["WarningBannerForeground"] = warningBannerForeground;
+        Resources["UpdateBannerBackground"] = updateBannerBackground;
+        Resources["UpdateBannerBorder"] = updateBannerBorder;
+        Resources["UpdateBannerForeground"] = updateBannerForeground;
 
         Background = appBackground;
         Foreground = appForeground;
