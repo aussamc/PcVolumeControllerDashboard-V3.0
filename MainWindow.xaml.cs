@@ -28,7 +28,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.50";
+    private const string DashboardVersion = "2.51";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -340,6 +340,26 @@ public partial class MainWindow : Window
 
     [DllImport("user32.dll")] private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
     [DllImport("user32.dll")] private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+
+    [DllImport("user32.dll")]
+    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
+    private const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
+    private const uint KEYEVENTF_KEYUP       = 0x0002;
+    private const byte VK_MEDIA_NEXT_TRACK  = 0xB0;
+    private const byte VK_MEDIA_PREV_TRACK  = 0xB1;
+    private const byte VK_MEDIA_STOP        = 0xB2;
+    private const byte VK_MEDIA_PLAY_PAUSE  = 0xB3;
+
+    /// <summary>
+    /// Sends a media key press + release via <c>keybd_event</c>.
+    /// Media virtual keys require the EXTENDEDKEY flag.
+    /// </summary>
+    private static void SendMediaKey(byte vk)
+    {
+        keybd_event(vk, 0, KEYEVENTF_EXTENDEDKEY,               UIntPtr.Zero);
+        keybd_event(vk, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, UIntPtr.Zero);
+    }
 
     private const int WmHotKey      = 0x0312;
     private const int HotkeyIdBase  = 0x9000;
@@ -2085,6 +2105,19 @@ public partial class MainWindow : Window
                 ApplyVolumePreset(channelIndex, 2);
                 break;
 
+            case ChannelButtonActions.MediaPlayPause:
+                SendMediaKey(VK_MEDIA_PLAY_PAUSE);
+                break;
+            case ChannelButtonActions.MediaNextTrack:
+                SendMediaKey(VK_MEDIA_NEXT_TRACK);
+                break;
+            case ChannelButtonActions.MediaPrevTrack:
+                SendMediaKey(VK_MEDIA_PREV_TRACK);
+                break;
+            case ChannelButtonActions.MediaStop:
+                SendMediaKey(VK_MEDIA_STOP);
+                break;
+
             case ChannelButtonActions.SelectNextChannel:
             default:
                 SelectNextChannel();
@@ -2133,6 +2166,19 @@ public partial class MainWindow : Window
                 break;
             case ChannelButtonActions.ApplyPreset3:
                 ApplyVolumePreset(channelIndex, 2);
+                break;
+
+            case ChannelButtonActions.MediaPlayPause:
+                SendMediaKey(VK_MEDIA_PLAY_PAUSE);
+                break;
+            case ChannelButtonActions.MediaNextTrack:
+                SendMediaKey(VK_MEDIA_NEXT_TRACK);
+                break;
+            case ChannelButtonActions.MediaPrevTrack:
+                SendMediaKey(VK_MEDIA_PREV_TRACK);
+                break;
+            case ChannelButtonActions.MediaStop:
+                SendMediaKey(VK_MEDIA_STOP);
                 break;
 
             default:
@@ -2185,6 +2231,19 @@ public partial class MainWindow : Window
                 break;
             case ChannelButtonActions.ApplyPreset3:
                 ApplyVolumePreset(channelIndex, 2);
+                break;
+
+            case ChannelButtonActions.MediaPlayPause:
+                SendMediaKey(VK_MEDIA_PLAY_PAUSE);
+                break;
+            case ChannelButtonActions.MediaNextTrack:
+                SendMediaKey(VK_MEDIA_NEXT_TRACK);
+                break;
+            case ChannelButtonActions.MediaPrevTrack:
+                SendMediaKey(VK_MEDIA_PREV_TRACK);
+                break;
+            case ChannelButtonActions.MediaStop:
+                SendMediaKey(VK_MEDIA_STOP);
                 break;
 
             default:
@@ -2493,6 +2552,10 @@ public partial class MainWindow : Window
             5 => ChannelButtonActions.ApplyPreset1,
             6 => ChannelButtonActions.ApplyPreset2,
             7 => ChannelButtonActions.ApplyPreset3,
+            8 => ChannelButtonActions.MediaPlayPause,
+            9 => ChannelButtonActions.MediaNextTrack,
+            10 => ChannelButtonActions.MediaPrevTrack,
+            11 => ChannelButtonActions.MediaStop,
             _ => ChannelButtonActions.SelectNextChannel
         };
     }
@@ -2508,6 +2571,10 @@ public partial class MainWindow : Window
             4 => ChannelButtonActions.ApplyPreset1,
             5 => ChannelButtonActions.ApplyPreset2,
             6 => ChannelButtonActions.ApplyPreset3,
+            7 => ChannelButtonActions.MediaPlayPause,
+            8 => ChannelButtonActions.MediaNextTrack,
+            9 => ChannelButtonActions.MediaPrevTrack,
+            10 => ChannelButtonActions.MediaStop,
             _ => ChannelButtonActions.ToggleAssignedMute
         };
     }
@@ -2523,6 +2590,10 @@ public partial class MainWindow : Window
             ChannelButtonActions.ApplyPreset1 => 5,
             ChannelButtonActions.ApplyPreset2 => 6,
             ChannelButtonActions.ApplyPreset3 => 7,
+            ChannelButtonActions.MediaPlayPause => 8,
+            ChannelButtonActions.MediaNextTrack => 9,
+            ChannelButtonActions.MediaPrevTrack => 10,
+            ChannelButtonActions.MediaStop => 11,
             _ => 0
         };
     }
@@ -2538,6 +2609,10 @@ public partial class MainWindow : Window
             ChannelButtonActions.ApplyPreset1 => 4,
             ChannelButtonActions.ApplyPreset2 => 5,
             ChannelButtonActions.ApplyPreset3 => 6,
+            ChannelButtonActions.MediaPlayPause => 7,
+            ChannelButtonActions.MediaNextTrack => 8,
+            ChannelButtonActions.MediaPrevTrack => 9,
+            ChannelButtonActions.MediaStop => 10,
             _ => 0
         };
     }
@@ -2553,6 +2628,10 @@ public partial class MainWindow : Window
             4 => ChannelButtonActions.ApplyPreset1,
             5 => ChannelButtonActions.ApplyPreset2,
             6 => ChannelButtonActions.ApplyPreset3,
+            7 => ChannelButtonActions.MediaPlayPause,
+            8 => ChannelButtonActions.MediaNextTrack,
+            9 => ChannelButtonActions.MediaPrevTrack,
+            10 => ChannelButtonActions.MediaStop,
             _ => ChannelButtonActions.NoAction
         };
     }
@@ -2568,6 +2647,10 @@ public partial class MainWindow : Window
             ChannelButtonActions.ApplyPreset1 => 4,
             ChannelButtonActions.ApplyPreset2 => 5,
             ChannelButtonActions.ApplyPreset3 => 6,
+            ChannelButtonActions.MediaPlayPause => 7,
+            ChannelButtonActions.MediaNextTrack => 8,
+            ChannelButtonActions.MediaPrevTrack => 9,
+            ChannelButtonActions.MediaStop => 10,
             _ => 1
         };
     }
@@ -2583,6 +2666,10 @@ public partial class MainWindow : Window
             ChannelButtonActions.ApplyPreset1 => "Apply preset 1",
             ChannelButtonActions.ApplyPreset2 => "Apply preset 2",
             ChannelButtonActions.ApplyPreset3 => "Apply preset 3",
+            ChannelButtonActions.MediaPlayPause => "Play / Pause",
+            ChannelButtonActions.MediaNextTrack => "Next track",
+            ChannelButtonActions.MediaPrevTrack => "Previous track",
+            ChannelButtonActions.MediaStop => "Stop",
             _ => "Select next channel"
         };
     }
@@ -4186,24 +4273,32 @@ public static class ChannelButtonActions
     public const string ApplyPreset1 = "ApplyPreset1";
     public const string ApplyPreset2 = "ApplyPreset2";
     public const string ApplyPreset3 = "ApplyPreset3";
+    public const string MediaPlayPause = "MediaPlayPause";
+    public const string MediaNextTrack = "MediaNextTrack";
+    public const string MediaPrevTrack = "MediaPrevTrack";
+    public const string MediaStop      = "MediaStop";
 
     public static bool IsValid(string? action)
     {
         return action is SelectNextChannel or ToggleAssignedMute or NoAction or CycleNextProfile or CycleOutputDevice
-            or ApplyPreset1 or ApplyPreset2 or ApplyPreset3;
+            or ApplyPreset1 or ApplyPreset2 or ApplyPreset3
+            or MediaPlayPause or MediaNextTrack or MediaPrevTrack or MediaStop;
     }
 
-    // Long press and double press only support ToggleAssignedMute, NoAction, CycleNextProfile, CycleOutputDevice, and ApplyPreset*.
+    // Long press and double press support ToggleAssignedMute, NoAction, CycleNextProfile,
+    // CycleOutputDevice, ApplyPreset*, and media key actions.
     public static bool IsValidLongPressAction(string? action)
     {
         return action is ToggleAssignedMute or NoAction or CycleNextProfile or CycleOutputDevice
-            or ApplyPreset1 or ApplyPreset2 or ApplyPreset3;
+            or ApplyPreset1 or ApplyPreset2 or ApplyPreset3
+            or MediaPlayPause or MediaNextTrack or MediaPrevTrack or MediaStop;
     }
 
     public static bool IsValidDoublePressAction(string? action)
     {
         return action is ToggleAssignedMute or NoAction or CycleNextProfile or CycleOutputDevice
-            or ApplyPreset1 or ApplyPreset2 or ApplyPreset3;
+            or ApplyPreset1 or ApplyPreset2 or ApplyPreset3
+            or MediaPlayPause or MediaNextTrack or MediaPrevTrack or MediaStop;
     }
 }
 

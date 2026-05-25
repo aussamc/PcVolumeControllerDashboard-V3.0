@@ -1066,6 +1066,10 @@
                                                     <ComboBoxItem Content="Apply preset 1" />
                                                     <ComboBoxItem Content="Apply preset 2" />
                                                     <ComboBoxItem Content="Apply preset 3" />
+                                                    <ComboBoxItem Content="Play / Pause" />
+                                                    <ComboBoxItem Content="Next track" />
+                                                    <ComboBoxItem Content="Previous track" />
+                                                    <ComboBoxItem Content="Stop" />
                                                 </ComboBox>
                                             </Grid>
 
@@ -1090,6 +1094,10 @@
                                                     <ComboBoxItem Content="Apply preset 1" />
                                                     <ComboBoxItem Content="Apply preset 2" />
                                                     <ComboBoxItem Content="Apply preset 3" />
+                                                    <ComboBoxItem Content="Play / Pause" />
+                                                    <ComboBoxItem Content="Next track" />
+                                                    <ComboBoxItem Content="Previous track" />
+                                                    <ComboBoxItem Content="Stop" />
                                                 </ComboBox>
                                             </Grid>
 
@@ -1114,6 +1122,10 @@
                                                     <ComboBoxItem Content="Apply preset 1" />
                                                     <ComboBoxItem Content="Apply preset 2" />
                                                     <ComboBoxItem Content="Apply preset 3" />
+                                                    <ComboBoxItem Content="Play / Pause" />
+                                                    <ComboBoxItem Content="Next track" />
+                                                    <ComboBoxItem Content="Previous track" />
+                                                    <ComboBoxItem Content="Stop" />
                                                 </ComboBox>
                                             </Grid>
 
