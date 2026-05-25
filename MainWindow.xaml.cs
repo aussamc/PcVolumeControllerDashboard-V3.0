@@ -28,7 +28,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.51";
+    private const string DashboardVersion = "2.52";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -1039,6 +1039,58 @@ public partial class MainWindow : Window
         }
     }
 
+    private bool _volumeLimitsSuppressEvents;
+
+    private void ChannelMinVolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_volumeLimitsSuppressEvents) return;
+        if (ChannelMinVolumeValueTextBlock == null) return;
+
+        int min = Math.Clamp((int)Math.Round(ChannelMinVolumeSlider.Value), 0, 100);
+
+        // Enforce min ≤ max: pull max up if needed.
+        if (ChannelMaxVolumeSlider != null && min > (int)Math.Round(ChannelMaxVolumeSlider.Value))
+        {
+            _volumeLimitsSuppressEvents = true;
+            ChannelMaxVolumeSlider.Value = min;
+            if (ChannelMaxVolumeValueTextBlock != null)
+                ChannelMaxVolumeValueTextBlock.Text = $"{min}%";
+            _volumeLimitsSuppressEvents = false;
+        }
+
+        ChannelMinVolumeValueTextBlock.Text = $"{min}%";
+        SaveChannelVolumeLimits();
+    }
+
+    private void ChannelMaxVolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_volumeLimitsSuppressEvents) return;
+        if (ChannelMaxVolumeValueTextBlock == null) return;
+
+        int max = Math.Clamp((int)Math.Round(ChannelMaxVolumeSlider.Value), 0, 100);
+
+        // Enforce min ≤ max: pull min down if needed.
+        if (ChannelMinVolumeSlider != null && max < (int)Math.Round(ChannelMinVolumeSlider.Value))
+        {
+            _volumeLimitsSuppressEvents = true;
+            ChannelMinVolumeSlider.Value = max;
+            if (ChannelMinVolumeValueTextBlock != null)
+                ChannelMinVolumeValueTextBlock.Text = $"{max}%";
+            _volumeLimitsSuppressEvents = false;
+        }
+
+        ChannelMaxVolumeValueTextBlock.Text = $"{max}%";
+        SaveChannelVolumeLimits();
+    }
+
+    private void SaveChannelVolumeLimits()
+    {
+        if (_selectedChannelIndex < 0 || _selectedChannelIndex >= _settings.Channels.Length) return;
+        _settings.Channels[_selectedChannelIndex].MinVolumePercent = Math.Clamp((int)Math.Round(ChannelMinVolumeSlider.Value), 0, 100);
+        _settings.Channels[_selectedChannelIndex].MaxVolumePercent = Math.Clamp((int)Math.Round(ChannelMaxVolumeSlider.Value), 0, 100);
+        FlushUiToSettings();
+    }
+
     private void Slider_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (sender is not Slider slider)
@@ -1880,11 +1932,16 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Per-channel volume limits.
+        (float limMinNorm, float limMaxNorm) = GetChannelVolumeLimitsNormalized(channelIndex);
+        int limMin = (int)Math.Round(limMinNorm * 100);
+        int limMax = (int)Math.Round(limMaxNorm * 100);
+
         if (target.IsMaster)
         {
             EnsureAudioDevice();
             int current = GetMasterVolumePercent();
-            int next = Math.Clamp(current + deltaPercent, 0, 100);
+            int next = Math.Clamp(current + deltaPercent, limMin, limMax);
 
             _defaultRenderDevice!.AudioEndpointVolume.MasterVolumeLevelScalar = next / 100.0f;
 
@@ -1904,7 +1961,7 @@ public partial class MainWindow : Window
         {
             if (_defaultCaptureDevice == null) return;
             int current = Math.Clamp((int)Math.Round(_defaultCaptureDevice.AudioEndpointVolume.MasterVolumeLevelScalar * 100), 0, 100);
-            int next = Math.Clamp(current + deltaPercent, 0, 100);
+            int next = Math.Clamp(current + deltaPercent, limMin, limMax);
             _defaultCaptureDevice.AudioEndpointVolume.MasterVolumeLevelScalar = next / 100.0f;
             if (_defaultCaptureDevice.AudioEndpointVolume.Mute && next > 0)
                 _defaultCaptureDevice.AudioEndpointVolume.Mute = false;
@@ -1931,7 +1988,7 @@ public partial class MainWindow : Window
             SimpleAudioVolume volume = sessionTarget.Session.SimpleAudioVolume;
 
             int current = Math.Clamp((int)Math.Round(volume.Volume * 100), 0, 100);
-            int next = Math.Clamp(current + deltaPercent, 0, 100);
+            int next = Math.Clamp(current + deltaPercent, limMin, limMax);
 
             volume.Volume = next / 100.0f;
 
@@ -2348,6 +2405,34 @@ public partial class MainWindow : Window
         finally
         {
             _perChannelSensitivitySuppressEvents = false;
+        }
+
+        // Populate volume limits
+        _volumeLimitsSuppressEvents = true;
+        try
+        {
+            int index = _selectedChannelIndex;
+            if (_settings.Channels != null && index >= 0 && index < _settings.Channels.Length)
+            {
+                int minVol = Math.Clamp(_settings.Channels[index].MinVolumePercent, 0, 100);
+                int maxVol = Math.Clamp(_settings.Channels[index].MaxVolumePercent, 0, 100);
+                if (ChannelMinVolumeSlider != null)
+                {
+                    ChannelMinVolumeSlider.Value = minVol;
+                    if (ChannelMinVolumeValueTextBlock != null)
+                        ChannelMinVolumeValueTextBlock.Text = $"{minVol}%";
+                }
+                if (ChannelMaxVolumeSlider != null)
+                {
+                    ChannelMaxVolumeSlider.Value = maxVol;
+                    if (ChannelMaxVolumeValueTextBlock != null)
+                        ChannelMaxVolumeValueTextBlock.Text = $"{maxVol}%";
+                }
+            }
+        }
+        finally
+        {
+            _volumeLimitsSuppressEvents = false;
         }
 
         // Populate volume presets
@@ -3769,6 +3854,8 @@ public partial class MainWindow : Window
             OledDisplayMode = DisplayModes.IsValidChannelMode(channel.OledDisplayMode) ? channel.OledDisplayMode : string.Empty,
             // Preserve fields that live only in ChannelSettings, not in ChannelMappingItem.
             SensitivityPercent = (i < previous.Length) ? previous[i].SensitivityPercent : -1,
+            MinVolumePercent   = (i < previous.Length) ? previous[i].MinVolumePercent   : 0,
+            MaxVolumePercent   = (i < previous.Length) ? previous[i].MaxVolumePercent   : 100,
             Presets = (i < previous.Length && previous[i].Presets != null)
                 ? previous[i].Presets
                 : new[] { new VolumePreset { Name = "", VolumePercent = 25 }, new VolumePreset { Name = "", VolumePercent = 50 }, new VolumePreset { Name = "", VolumePercent = 75 } },
@@ -4568,6 +4655,12 @@ public sealed class ChannelSettings
     // -1 = inherit the global EncoderSensitivityPercent.
     // 0–500 = use this value for this channel only.
     public int SensitivityPercent { get; set; } = -1;
+
+    // Per-channel volume limits (percent, inclusive).
+    // The encoder and smoothing paths clamp every write to this range.
+    // Defaults give full 0–100 % range (i.e. unconstrained).
+    public int MinVolumePercent { get; set; } = 0;
+    public int MaxVolumePercent { get; set; } = 100;
 
     // Per-channel volume presets. Index 0 = Preset 1, 1 = Preset 2, 2 = Preset 3.
     public VolumePreset[] Presets { get; set; } = new[]

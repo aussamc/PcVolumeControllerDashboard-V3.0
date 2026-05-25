@@ -353,6 +353,30 @@ internal static class SettingsRepository
         if (!AudioBackendModes.IsValid(settings.AudioBackendMode))
             settings.AudioBackendMode = AudioBackendModes.Wasapi;
 
+        // v6 → v7: Per-channel volume limits (MinVolumePercent / MaxVolumePercent) introduced.
+        // Clamp existing values into valid range; fix inverted pairs.
+        if (settings.SettingsVersion < 7)
+        {
+            foreach (ChannelSettings ch in settings.Channels)
+            {
+                ch.MinVolumePercent = Math.Clamp(ch.MinVolumePercent, 0, 100);
+                ch.MaxVolumePercent = Math.Clamp(ch.MaxVolumePercent, 0, 100);
+                if (ch.MinVolumePercent > ch.MaxVolumePercent)
+                    (ch.MinVolumePercent, ch.MaxVolumePercent) = (ch.MaxVolumePercent, ch.MinVolumePercent);
+            }
+            settings.SettingsVersion = 7;
+            migrated = true;
+        }
+
+        // Ongoing: always validate volume limits in case of manual edits.
+        foreach (ChannelSettings ch in settings.Channels)
+        {
+            ch.MinVolumePercent = Math.Clamp(ch.MinVolumePercent, 0, 100);
+            ch.MaxVolumePercent = Math.Clamp(ch.MaxVolumePercent, 0, 100);
+            if (ch.MinVolumePercent > ch.MaxVolumePercent)
+                ch.MaxVolumePercent = ch.MinVolumePercent;
+        }
+
         return migrated;
     }
 }
