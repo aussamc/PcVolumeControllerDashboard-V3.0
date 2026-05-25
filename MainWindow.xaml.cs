@@ -28,7 +28,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.48";
+    private const string DashboardVersion = "2.49";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -1980,6 +1980,7 @@ public partial class MainWindow : Window
             bool next = !(current ?? false);
             _voiceMeeterService.SetMuteByKey(target.Key, next);
             Log(next ? $"{target.Label} muted (VoiceMeeter)" : $"{target.Label} unmuted (VoiceMeeter)");
+            ShowMuteOverlay(channelIndex, next);
             return;
         }
 
@@ -1989,6 +1990,7 @@ public partial class MainWindow : Window
             AudioEndpointVolume endpointVolume = _defaultRenderDevice!.AudioEndpointVolume;
             endpointVolume.Mute = !endpointVolume.Mute;
             Log(endpointVolume.Mute ? "Master muted" : "Master unmuted");
+            ShowMuteOverlay(channelIndex, endpointVolume.Mute);
             return;
         }
 
@@ -1998,6 +2000,7 @@ public partial class MainWindow : Window
             AudioEndpointVolume epv = _defaultCaptureDevice.AudioEndpointVolume;
             epv.Mute = !epv.Mute;
             Log(epv.Mute ? "Mic input muted" : "Mic input unmuted");
+            ShowMuteOverlay(channelIndex, epv.Mute);
             return;
         }
 
@@ -2021,6 +2024,7 @@ public partial class MainWindow : Window
         }
 
         Log(nextMute ? $"{target.Label} muted" : $"{target.Label} unmuted");
+        ShowMuteOverlay(channelIndex, nextMute);
         }
         catch (System.Runtime.InteropServices.COMException comEx)
         {

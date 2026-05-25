@@ -45,6 +45,32 @@ public partial class MainWindow
     }
 
 
+    /// <summary>
+    /// Shows (or refreshes) the overlay in mute mode — speaker icon + Muted / Unmuted text.
+    /// No-op when the overlay is disabled in settings.
+    /// </summary>
+    private void ShowMuteOverlay(int channelIndex, bool isMuted)
+    {
+        if (!_settings.OverlayEnabled) return;
+        if (channelIndex < 0 || channelIndex >= _channels.Count) return;
+
+        string channelName = _channels[channelIndex].DisplayLabel;
+        double timeout = _settings.OverlayTimeoutSeconds;
+        bool isDark = _settings.ThemeMode == ThemeModes.Dark ||
+                      (_settings.ThemeMode == ThemeModes.FollowSystem && !IsWindowsUsingLightTheme());
+
+        Dispatcher.InvokeAsync(() =>
+        {
+            if (_overlayWindow == null || !_overlayWindow.IsLoaded)
+            {
+                _overlayWindow = new VolumeOverlayWindow();
+            }
+
+            PositionOverlayWindow();
+            _overlayWindow.ShowMuteOverlay(channelName, isMuted, timeout, isDark);
+        });
+    }
+
     private void PositionOverlayWindow()
     {
         if (_overlayWindow == null) return;
