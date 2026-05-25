@@ -541,6 +541,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
@@ -636,7 +637,23 @@
             </DockPanel>
         </Border>
 
-        <TabControl x:Name="MainTabs" Grid.Row="3">
+        <!-- VoiceMeeter offline banner — shown when in VM mode but VM is not running -->
+        <Border x:Name="VoiceMeeterOfflineBanner"
+                Grid.Row="3"
+                Background="{DynamicResource WarningBannerBackground}"
+                BorderBrush="{DynamicResource WarningBannerBorder}"
+                BorderThickness="1"
+                CornerRadius="6"
+                Padding="10,8"
+                Margin="0,0,0,8"
+                Visibility="Collapsed">
+            <TextBlock Text="⚠ VoiceMeeter is not running. Start VoiceMeeter to restore encoder control. The dashboard will reconnect automatically."
+                       VerticalAlignment="Center"
+                       TextWrapping="Wrap"
+                       Foreground="{DynamicResource WarningBannerForeground}" />
+        </Border>
+
+        <TabControl x:Name="MainTabs" Grid.Row="4">
             <TabItem Header="Audio">
                 <Grid Margin="0,12,0,0" Background="{DynamicResource AppBackground}">
                     <Grid.RowDefinitions>
@@ -1883,6 +1900,52 @@
                                 Padding="12"
                                 Margin="0,0,0,12">
                             <StackPanel>
+                                <TextBlock Text="Audio Backend"
+                                           FontSize="18"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,8" />
+
+                                <TextBlock Text="Choose how the dashboard reads and writes audio volume. Switching mode clears all channel assignments in every profile."
+                                           Foreground="{DynamicResource SecondaryForeground}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,0,0,12" />
+
+                                <RadioButton x:Name="WasapiRadioButton"
+                                             Content="WASAPI (Windows audio sessions — default)"
+                                             GroupName="AudioBackendGroup"
+                                             Margin="0,0,0,6"
+                                             IsChecked="True" />
+
+                                <RadioButton x:Name="VoiceMeeterRadioButton"
+                                             Content="VoiceMeeter (route through VoiceMeeter strips and buses)"
+                                             GroupName="AudioBackendGroup"
+                                             Margin="0,0,0,12" />
+
+                                <WrapPanel Margin="0,0,0,8" VerticalAlignment="Center">
+                                    <TextBlock Text="VoiceMeeter status: "
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource SecondaryForeground}" />
+                                    <TextBlock x:Name="VoiceMeeterStatusTextBlock"
+                                               Text="Not active"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource SecondaryForeground}" />
+                                </WrapPanel>
+
+                                <Button x:Name="AudioBackendApplyButton"
+                                        Content="Apply Backend Change"
+                                        Width="180"
+                                        Height="30"
+                                        HorizontalAlignment="Left"
+                                        ToolTip="Switch the audio backend. This will clear all channel assignments."
+                                        Click="AudioBackendApplyButton_Click" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="12"
+                                Margin="0,0,0,12">
+                            <StackPanel>
                                 <TextBlock Text="Global Hotkeys"
                                            FontSize="18"
                                            FontWeight="SemiBold"
@@ -2414,7 +2477,28 @@
 
                         <Border BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12">
                             <StackPanel>
-                                <TextBlock Text="3. Assign channels" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,8" />
+                                <TextBlock Text="3. Choose audio backend" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,8" />
+                                <TextBlock Text="WASAPI is the standard Windows audio engine and works with all apps. Choose VoiceMeeter only if you already use VoiceMeeter for audio routing."
+                                           TextWrapping="Wrap" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,10" />
+
+                                <RadioButton x:Name="WizardWasapiRadioButton"
+                                             Content="WASAPI — Windows audio sessions (recommended)"
+                                             GroupName="WizardAudioBackendGroup"
+                                             Margin="0,0,0,6"
+                                             IsChecked="True" />
+                                <RadioButton x:Name="WizardVoiceMeeterRadioButton"
+                                             Content="VoiceMeeter — route through VoiceMeeter strips and buses"
+                                             GroupName="WizardAudioBackendGroup"
+                                             Margin="0,0,0,10" />
+
+                                <Button Content="Save Backend Choice" Width="170" Height="34" HorizontalAlignment="Left"
+                                        Click="WizardSaveSetupButton_Click" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="4. Assign channels" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,8" />
                                 <TextBlock Text="Open the Audio page to assign each encoder to Master volume, an app, or leave it unassigned." TextWrapping="Wrap" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,10" />
                                 <WrapPanel>
                                     <Button Content="Open Audio Page" Width="140" Height="34" Margin="0,0,8,8" Click="WizardOpenAudioPageButton_Click" />
@@ -2428,7 +2512,7 @@
 
         </TabControl>
 
-        <Border Grid.Row="4"
+        <Border Grid.Row="5"
                 BorderThickness="1"
                 CornerRadius="8"
                 Padding="8"

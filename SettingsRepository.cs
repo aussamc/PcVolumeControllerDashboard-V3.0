@@ -339,6 +339,20 @@ internal static class SettingsRepository
         if (activeProfile != null)
             settings.Channels = activeProfile.Channels;
 
+        // v5 → v6: AudioBackendMode introduced (default "WASAPI").
+        // Validate the stored value and default to WASAPI if unknown.
+        if (settings.SettingsVersion < 6)
+        {
+            if (!AudioBackendModes.IsValid(settings.AudioBackendMode))
+                settings.AudioBackendMode = AudioBackendModes.Wasapi;
+            settings.SettingsVersion = 6;
+            migrated = true;
+        }
+
+        // Ongoing: always validate AudioBackendMode in case of manual edits.
+        if (!AudioBackendModes.IsValid(settings.AudioBackendMode))
+            settings.AudioBackendMode = AudioBackendModes.Wasapi;
+
         return migrated;
     }
 }

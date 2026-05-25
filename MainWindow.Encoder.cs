@@ -357,7 +357,7 @@ public partial class MainWindow
         };
     }
 
-    // Returns the normalized volume (0.0–1.0) read directly from the WASAPI API.
+    // Returns the normalized volume (0.0–1.0) read directly from the active audio backend.
     // Returns -1 if the channel is unassigned or its session is unavailable.
     private float GetChannelCurrentVolumeNormalized(int channelIndex)
     {
@@ -372,6 +372,14 @@ public partial class MainWindow
 
         try
         {
+            // ── VoiceMeeter path ──────────────────────────────────────────
+            if (target.IsVoiceMeeter)
+            {
+                if (_voiceMeeterService == null || !_voiceMeeterService.IsAvailable) return -1f;
+                return _voiceMeeterService.GetVolumeByKey(target.Key);
+            }
+
+            // ── WASAPI path ───────────────────────────────────────────────
             if (target.IsMaster)
             {
                 EnsureAudioDevice();
@@ -398,8 +406,9 @@ public partial class MainWindow
         }
     }
 
-    // Writes a normalized volume directly to WASAPI, bypassing the integer-percent
-    // round-trip used by ChangeChannelVolume.  Used exclusively by the smoothing path.
+    // Writes a normalized volume directly to the active audio backend, bypassing
+    // the integer-percent round-trip used by ChangeChannelVolume.
+    // Used exclusively by the smoothing path.
     private void SetChannelVolumeAbsolute(int channelIndex, float volumeNormalized)
     {
         if (channelIndex < 0 || channelIndex >= _channels.Count)
@@ -415,6 +424,14 @@ public partial class MainWindow
 
         try
         {
+            // ── VoiceMeeter path ──────────────────────────────────────────
+            if (target.IsVoiceMeeter)
+            {
+                _voiceMeeterService?.SetVolumeByKey(target.Key, v);
+                return;
+            }
+
+            // ── WASAPI path ───────────────────────────────────────────────
             if (target.IsMaster)
             {
                 EnsureAudioDevice();

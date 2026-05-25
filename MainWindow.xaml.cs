@@ -28,7 +28,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.47";
+    private const string DashboardVersion = "2.48";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -89,6 +89,8 @@ public partial class MainWindow : Window
 
     private readonly SerialService _serialService = new();
     private readonly AudioService _audioService = new();
+    private VoiceMeeterService? _voiceMeeterService;
+    private bool _voiceMeeterBannerVisible;
     private MMDevice? _defaultRenderDevice;
     private MMDevice? _defaultCaptureDevice;
     private System.Threading.Timer? _statePollTimer;
@@ -228,6 +230,7 @@ public partial class MainWindow : Window
         _audioService.AudioDeviceError += msg =>
             ShowWarning("No audio output device found. Audio control is unavailable. Check your Windows sound settings.");
         _audioService.Initialise();
+        InitVoiceMeeterIfNeeded();
         RefreshDefaultAudioDevice();
         RefreshOutputDevices();
 
@@ -494,6 +497,13 @@ public partial class MainWindow : Window
         _settings.MinimizeToTray = WizardMinimizeToTrayCheckBox?.IsChecked == true;
         _settings.StartMinimizedToTray = WizardStartMinimizedCheckBox?.IsChecked == true;
         _settings.ScanAllComPortsIfRememberedMissing = WizardScanAllCheckBox?.IsChecked == true;
+
+        // Apply wizard audio backend choice (if step 3 radio buttons are present).
+        string newMode = (WizardVoiceMeeterRadioButton?.IsChecked == true)
+            ? AudioBackendModes.VoiceMeeter
+            : AudioBackendModes.Wasapi;
+        if (newMode != _settings.AudioBackendMode)
+            SwitchAudioBackendMode(newMode);
 
         ApplySettingsToUi();
         ApplyStartupSetting();
@@ -1562,33 +1572,50 @@ public partial class MainWindow : Window
         }
         try
         {
-            EnsureAudioDevice();
-
             _audioTargets.Clear();
-            _audioTargets.Add(AudioTargetItem.CreateMaster());
-            if (_defaultCaptureDevice != null)
-                _audioTargets.Add(AudioTargetItem.CreateMic());
 
-            List<AudioSessionControl> sessions = _audioService.GetActiveSessions();
-
-            foreach (AudioSessionControl session in sessions)
+            if (_settings.AudioBackendMode == AudioBackendModes.VoiceMeeter)
             {
-                AudioTargetItem? target = TryCreateAudioTargetFromSession(session);
-
-                if (target == null)
+                // ── VoiceMeeter mode: populate strips/buses from VM service ──
+                if (_voiceMeeterService != null && _voiceMeeterService.IsAvailable)
                 {
-                    continue;
+                    foreach (AudioTargetItem vmTarget in _voiceMeeterService.GetAvailableTargets())
+                        _audioTargets.Add(vmTarget);
+                    Log($"VoiceMeeter: loaded {_audioTargets.Count} target(s).");
+                }
+                else
+                {
+                    Log("VoiceMeeter: not available — target list is empty.");
+                }
+            }
+            else
+            {
+                // ── WASAPI mode: existing enumeration ──────────────────────
+                EnsureAudioDevice();
+
+                _audioTargets.Add(AudioTargetItem.CreateMaster());
+                if (_defaultCaptureDevice != null)
+                    _audioTargets.Add(AudioTargetItem.CreateMic());
+
+                List<AudioSessionControl> sessions = _audioService.GetActiveSessions();
+
+                foreach (AudioSessionControl session in sessions)
+                {
+                    AudioTargetItem? target = TryCreateAudioTargetFromSession(session);
+
+                    if (target == null)
+                        continue;
+
+                    if (_audioTargets.Any(t => t.Key.Equals(target.Key, StringComparison.OrdinalIgnoreCase)))
+                        continue;
+
+                    _audioTargets.Add(target);
                 }
 
-                if (_audioTargets.Any(t => t.Key.Equals(target.Key, StringComparison.OrdinalIgnoreCase)))
-                {
-                    continue;
-                }
-
-                _audioTargets.Add(target);
+                EnsureSavedTargetsAppearInTargetList();
+                Log($"WASAPI: loaded {_audioTargets.Count} target(s).");
             }
 
-            EnsureSavedTargetsAppearInTargetList();
             RefreshChannelAssignmentLabels();
 
             ChannelTargetComboBox.Items.Refresh();
@@ -1600,8 +1627,6 @@ public partial class MainWindow : Window
             _audioTargetCache.Clear();
             foreach (AudioTargetItem cacheTarget in _audioTargets)
                 _audioTargetCache[cacheTarget.Key] = cacheTarget;
-
-            Log($"Loaded {_audioTargets.Count} target(s).");
         }
         catch (Exception ex)
         {
@@ -1947,6 +1972,18 @@ public partial class MainWindow : Window
             return;
         }
 
+        // ── VoiceMeeter path ──────────────────────────────────────────────
+        if (target.IsVoiceMeeter)
+        {
+            if (_voiceMeeterService == null || !_voiceMeeterService.IsAvailable) return;
+            bool? current = _voiceMeeterService.GetMuteByKey(target.Key);
+            bool next = !(current ?? false);
+            _voiceMeeterService.SetMuteByKey(target.Key, next);
+            Log(next ? $"{target.Label} muted (VoiceMeeter)" : $"{target.Label} unmuted (VoiceMeeter)");
+            return;
+        }
+
+        // ── WASAPI path ───────────────────────────────────────────────────
         if (target.IsMaster)
         {
             AudioEndpointVolume endpointVolume = _defaultRenderDevice!.AudioEndpointVolume;
@@ -2575,6 +2612,11 @@ public partial class MainWindow : Window
             return key[5..];
         }
 
+        if (VoiceMeeterService.IsVoiceMeeterKey(key))
+        {
+            return VoiceMeeterService.MakeDisplayLabel(key);
+        }
+
         return key;
     }
 
@@ -2725,6 +2767,13 @@ public partial class MainWindow : Window
     {
         AutoConnectCheckBox.IsChecked = _settings.AutoConnectOnLaunch;
         ScanAllComPortsCheckBox.IsChecked = _settings.ScanAllComPortsIfRememberedMissing;
+
+        // Audio backend selector
+        if (WasapiRadioButton != null)
+            WasapiRadioButton.IsChecked = _settings.AudioBackendMode == AudioBackendModes.Wasapi;
+        if (VoiceMeeterRadioButton != null)
+            VoiceMeeterRadioButton.IsChecked = _settings.AudioBackendMode == AudioBackendModes.VoiceMeeter;
+        UpdateVoiceMeeterStatus();
         MinimizeToTrayCheckBox.IsChecked = _settings.MinimizeToTray;
         StartMinimizedToTrayCheckBox.IsChecked = _settings.StartMinimizedToTray;
         StartWithWindowsCheckBox.IsChecked = _settings.StartWithWindows;
@@ -2857,6 +2906,12 @@ public partial class MainWindow : Window
         {
             WizardScanAllCheckBox.IsChecked = _settings.ScanAllComPortsIfRememberedMissing;
         }
+
+        // Audio backend step
+        if (WizardWasapiRadioButton != null)
+            WizardWasapiRadioButton.IsChecked = _settings.AudioBackendMode == AudioBackendModes.Wasapi;
+        if (WizardVoiceMeeterRadioButton != null)
+            WizardVoiceMeeterRadioButton.IsChecked = _settings.AudioBackendMode == AudioBackendModes.VoiceMeeter;
 
         if (FirstRunWizardTab != null)
         {
@@ -3306,6 +3361,162 @@ public partial class MainWindow : Window
         {
             Log($"Startup setting error: {ex.Message}");
         }
+    }
+
+    // ── VoiceMeeter backend ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Creates and initialises <see cref="VoiceMeeterService"/> when the current
+    /// audio backend mode is VoiceMeeter.  No-op in WASAPI mode.
+    /// Safe to call multiple times — disposes any existing instance first.
+    /// </summary>
+    private void InitVoiceMeeterIfNeeded()
+    {
+        // Clean up any previous instance.
+        _voiceMeeterService?.Dispose();
+        _voiceMeeterService = null;
+
+        if (_settings.AudioBackendMode != AudioBackendModes.VoiceMeeter) return;
+
+        _voiceMeeterService = new VoiceMeeterService(Log);
+        _voiceMeeterService.AvailabilityChanged += OnVoiceMeeterAvailabilityChanged;
+        _voiceMeeterService.Initialise();
+
+        UpdateVoiceMeeterBanner();
+        UpdateVoiceMeeterStatus();
+    }
+
+    /// <summary>
+    /// Called on any thread when VoiceMeeter transitions online or offline.
+    /// Marshals to the UI thread, updates the banner, and refreshes targets.
+    /// </summary>
+    private void OnVoiceMeeterAvailabilityChanged()
+    {
+        Dispatcher.InvokeAsync(() =>
+        {
+            UpdateVoiceMeeterBanner();
+            UpdateVoiceMeeterStatus();
+            RefreshAudioSessions();
+            RefreshAllChannelStates();
+            SendAllChannelStatesToDevice();
+        });
+    }
+
+    /// <summary>Shows or hides the "VoiceMeeter offline" warning banner.</summary>
+    private void UpdateVoiceMeeterBanner()
+    {
+        bool isVmMode = _settings.AudioBackendMode == AudioBackendModes.VoiceMeeter;
+        bool offline  = isVmMode && (_voiceMeeterService == null || !_voiceMeeterService.IsAvailable);
+        bool show     = offline;
+
+        if (_voiceMeeterBannerVisible == show) return;
+        _voiceMeeterBannerVisible = show;
+
+        if (VoiceMeeterOfflineBanner != null)
+            VoiceMeeterOfflineBanner.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>Refreshes the VoiceMeeter status label in the Setup tab.</summary>
+    private void UpdateVoiceMeeterStatus()
+    {
+        if (VoiceMeeterStatusTextBlock == null) return;
+
+        if (_settings.AudioBackendMode != AudioBackendModes.VoiceMeeter)
+        {
+            VoiceMeeterStatusTextBlock.Text = "Not active";
+            return;
+        }
+
+        if (_voiceMeeterService == null)
+        {
+            VoiceMeeterStatusTextBlock.Text = "Not initialised";
+            return;
+        }
+
+        if (!_voiceMeeterService.IsAvailable)
+        {
+            VoiceMeeterStatusTextBlock.Text = "VoiceMeeter: not running — please start VoiceMeeter.";
+            return;
+        }
+
+        VoiceMeeterStatusTextBlock.Text = "VoiceMeeter: running";
+    }
+
+    /// <summary>
+    /// Handles the user clicking "Apply" on the Audio Backend section in Setup.
+    /// Warns, backs up settings, clears all profiles' assignments, switches mode, saves.
+    /// </summary>
+    private void AudioBackendApplyButton_Click(object sender, RoutedEventArgs e)
+    {
+        string newMode = (VoiceMeeterRadioButton?.IsChecked == true)
+            ? AudioBackendModes.VoiceMeeter
+            : AudioBackendModes.Wasapi;
+
+        if (newMode == _settings.AudioBackendMode) return;
+
+        string modeName = newMode == AudioBackendModes.VoiceMeeter ? "VoiceMeeter" : "WASAPI";
+
+        var result = System.Windows.MessageBox.Show(this,
+            $"Switching to {modeName} mode will clear all channel assignments in every profile " +
+            "and cannot be undone without restoring a backup.\n\n" +
+            "A backup of your current settings will be saved automatically.\n\n" +
+            "Do you want to continue?",
+            "Switch Audio Backend",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (result != MessageBoxResult.Yes) return;
+
+        SwitchAudioBackendMode(newMode);
+    }
+
+    /// <summary>
+    /// Backs up settings, clears all profile channel assignments, sets the new backend
+    /// mode, reinitialises the backend, and refreshes the UI.
+    /// </summary>
+    private void SwitchAudioBackendMode(string newMode)
+    {
+        Log($"Switching audio backend from {_settings.AudioBackendMode} to {newMode}.");
+
+        // Backup current settings before any destructive change.
+        SettingsRepository.Backup($"pre-backend-switch-to-{newMode.ToLowerInvariant()}", Log);
+
+        // Clear all channel assignments in every profile.
+        if (_settings.Profiles != null)
+        {
+            foreach (ProfileEntry profile in _settings.Profiles)
+            {
+                if (profile.Channels == null) continue;
+                foreach (ChannelSettings ch in profile.Channels)
+                {
+                    ch.TargetKey    = string.Empty;
+                    ch.FriendlyName = string.Empty;
+                }
+            }
+        }
+
+        // Clear the active channel array too (it's a reference to the active profile).
+        foreach (ChannelSettings ch in _settings.Channels)
+        {
+            ch.TargetKey    = string.Empty;
+            ch.FriendlyName = string.Empty;
+        }
+
+        _settings.AudioBackendMode = newMode;
+        SaveSettings();
+
+        // Reinitialise backend.
+        InitVoiceMeeterIfNeeded();
+
+        // Rebuild channels and refresh the UI.
+        BuildChannels();
+        ApplySettingsToChannels();
+        RefreshAudioSessions();
+        ApplySettingsToUi();
+        RefreshAllChannelStates();
+        SendAllChannelStatesToDevice();
+
+        Log($"Audio backend switched to {newMode}. All channel assignments cleared.");
     }
 
     private void LoadSettings()
@@ -3931,6 +4142,8 @@ public partial class MainWindow : Window
         DisconnectSerial();
 
         _audioService.Dispose();
+        _voiceMeeterService?.Dispose();
+        _voiceMeeterService = null;
         _defaultRenderDevice  = null;
         _defaultCaptureDevice = null;
 
@@ -4100,6 +4313,14 @@ public static class DisplayModes
     }
 }
 
+public static class AudioBackendModes
+{
+    public const string Wasapi      = "WASAPI";
+    public const string VoiceMeeter = "VoiceMeeter";
+
+    public static bool IsValid(string? v) => v is Wasapi or VoiceMeeter;
+}
+
 public static class AccelerationPresets
 {
     public const string None = "None";
@@ -4195,6 +4416,10 @@ public sealed class DashboardSettings
     // Output device cycle list (v2.35+). Device IDs included in the cycle, in order.
     public List<string> OutputDeviceCycleList { get; set; } = new();
 
+    // Audio backend mode (v2.48+). "WASAPI" = Windows audio sessions (default).
+    // "VoiceMeeter" = route volume through VoiceMeeter Remote API.
+    public string AudioBackendMode { get; set; } = AudioBackendModes.Wasapi;
+
     public static DashboardSettings CreateDefault()
     {
         return new DashboardSettings
@@ -4272,8 +4497,9 @@ public sealed class AudioTargetItem
     public string State { get; set; } = string.Empty;
     public bool IsMaster { get; set; }
     public bool IsMicInput { get; set; }
+    public bool IsVoiceMeeter { get; set; }
 
-    public bool IsActiveOrMaster => IsMaster || IsMicInput || Session != null;
+    public bool IsActiveOrMaster => IsMaster || IsMicInput || Session != null || IsVoiceMeeter;
 
     public string VolumeDisplay => $"{Volume}%";
     public string MuteDisplay => Muted ? "Yes" : "No";
