@@ -32,9 +32,6 @@ internal static class UpdateChecker
     static UpdateChecker()
     {
         _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(12) };
-        _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("PcVolumeControllerDashboard/2.44");
-        // GitHub API requires Accept header
-        _httpClient.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
     }
 
     // ── Public API ──────────────────────────────────────────────────────────────
@@ -48,7 +45,14 @@ internal static class UpdateChecker
     {
         try
         {
-            string json = await _httpClient.GetStringAsync(ApiUrl).ConfigureAwait(false);
+            // Build a per-request message so the User-Agent reflects the current version
+            // and the static HttpClient is not mutated (safe for concurrent calls).
+            using var request = new HttpRequestMessage(HttpMethod.Get, ApiUrl);
+            request.Headers.UserAgent.ParseAdd($"PcVolumeControllerDashboard/{currentVersion}");
+            request.Headers.Accept.ParseAdd("application/vnd.github+json");
+
+            using var response = await _httpClient.SendAsync(request).ConfigureAwait(false);
+            string json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
             using JsonDocument doc = JsonDocument.Parse(json);
 
             if (!doc.RootElement.TryGetProperty("tag_name", out JsonElement tagElement))
