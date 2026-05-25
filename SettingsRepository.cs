@@ -305,7 +305,12 @@ internal static class SettingsRepository
                         DoublePressButtonAction = ch.DoublePressButtonAction,
                         RebindFallback          = ch.RebindFallback,
                         OledDisplayMode         = ch.OledDisplayMode,
-                        SensitivityPercent      = ch.SensitivityPercent
+                        SensitivityPercent      = ch.SensitivityPercent,
+                        MinVolumePercent        = ch.MinVolumePercent,
+                        MaxVolumePercent        = ch.MaxVolumePercent,
+                        MuteHotkey              = ch.MuteHotkey,
+                        Presets                 = ch.Presets,
+                        LinkedGroupId           = ch.LinkedGroupId,
                     }).ToArray()
                 });
                 settings.ActiveProfileName = "Default";

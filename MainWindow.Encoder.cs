@@ -280,6 +280,33 @@ public partial class MainWindow
             if (useSmoothingPath)
             {
                 _smoothingActive[encoderChannel] = true;
+
+                // Propagate the same delta to linked channels (smoothing path).
+                // Each linked channel gets its own target adjusted by the same delta,
+                // clamped to its own volume limits.
+                foreach (int linkedIndex in GetLinkedChannelIndices(encoderChannel))
+                {
+                    (float linkedLimMin, float linkedLimMax) = GetChannelVolumeLimitsNormalized(linkedIndex);
+
+                    if (_smoothingActive[linkedIndex])
+                    {
+                        // Linked channel already has an in-flight target — extend it.
+                        _smoothingTargetVolumes[linkedIndex] = Math.Clamp(
+                            _smoothingTargetVolumes[linkedIndex] + deltaNorm,
+                            linkedLimMin, linkedLimMax);
+                    }
+                    else
+                    {
+                        float linkedCurrent = GetChannelCurrentVolumeNormalized(linkedIndex);
+                        if (linkedCurrent >= 0f)
+                        {
+                            _smoothingCurrentVolumes[linkedIndex] = Math.Clamp(linkedCurrent, linkedLimMin, linkedLimMax);
+                            _smoothingTargetVolumes[linkedIndex]  = Math.Clamp(linkedCurrent + deltaNorm, linkedLimMin, linkedLimMax);
+                            _smoothingActive[linkedIndex] = true;
+                        }
+                    }
+                }
+
                 EnsureSmoothingTimerRunning();
 
                 int overlayVol = (int)Math.Round(_smoothingTargetVolumes[encoderChannel] * 100);
@@ -586,6 +613,31 @@ public partial class MainWindow
                 return GetVolumeStepPercentFromSensitivity(perChannel);
         }
         return GetVolumeStepPercent(); // fall back to global
+    }
+
+    /// <summary>
+    /// Returns the indices of all other channels that share the same non-empty
+    /// <see cref="ChannelSettings.LinkedGroupId"/> as <paramref name="sourceChannelIndex"/>.
+    /// Yields nothing when the source channel has no group or the group is empty.
+    /// </summary>
+    private IEnumerable<int> GetLinkedChannelIndices(int sourceChannelIndex)
+    {
+        if (sourceChannelIndex < 0 || sourceChannelIndex >= _settings.Channels.Length)
+            yield break;
+
+        string groupId = _settings.Channels[sourceChannelIndex].LinkedGroupId;
+
+        if (string.IsNullOrEmpty(groupId))
+            yield break;
+
+        for (int i = 0; i < _settings.Channels.Length && i < _channels.Count; i++)
+        {
+            if (i != sourceChannelIndex &&
+                _settings.Channels[i].LinkedGroupId == groupId)
+            {
+                yield return i;
+            }
+        }
     }
 
     /// <summary>

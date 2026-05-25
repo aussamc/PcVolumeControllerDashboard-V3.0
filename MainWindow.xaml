@@ -1468,6 +1468,41 @@
                                                            HorizontalAlignment="Right"
                                                            Margin="4,0,0,0"/>
                                             </Grid>
+
+                                            <!-- Channel Linking -->
+                                            <Separator Margin="0,12,0,8"/>
+                                            <TextBlock Text="Channel Linking"
+                                                       FontWeight="SemiBold"
+                                                       Margin="0,0,0,4"/>
+                                            <TextBlock Text="Channels sharing the same group name move together when an encoder is turned."
+                                                       Foreground="{DynamicResource SecondaryForeground}"
+                                                       FontSize="11"
+                                                       TextWrapping="Wrap"
+                                                       Margin="0,0,0,8"/>
+                                            <Grid Width="360" HorizontalAlignment="Left">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="86" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0"
+                                                           Text="Link group:"
+                                                           VerticalAlignment="Center"
+                                                           Margin="0,0,8,0" />
+                                                <TextBox Grid.Column="1"
+                                                         x:Name="ChannelLinkGroupTextBox"
+                                                         Height="28"
+                                                         MaxLength="32"
+                                                         ToolTip="Type a group name (e.g. A, music) to gang this channel with others that share the same name. Leave empty to unlink."
+                                                         LostFocus="ChannelLinkGroup_LostFocus" />
+                                                <Button Grid.Column="2"
+                                                        Content="Clear"
+                                                        Height="28"
+                                                        Width="54"
+                                                        Margin="4,0,0,0"
+                                                        ToolTip="Remove this channel from its link group"
+                                                        Click="ChannelLinkGroup_Clear" />
+                                            </Grid>
                                         </StackPanel>
                                     </Border>
 
