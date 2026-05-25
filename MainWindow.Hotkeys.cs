@@ -60,6 +60,10 @@ public partial class MainWindow
         RegisterHotkeyIfAssigned(hwnd, HotkeyIdToggleMasterMute, _settings.Hotkeys.ToggleMasterMute);
         RegisterHotkeyIfAssigned(hwnd, HotkeyIdCycleNextProfile, _settings.Hotkeys.CycleNextProfile);
         RegisterHotkeyIfAssigned(hwnd, HotkeyIdShowDashboard,    _settings.Hotkeys.ShowDashboard);
+
+        // Per-channel mute hotkeys
+        for (int i = 0; i < _settings.Channels.Length && i < ExpectedChannelCount; i++)
+            RegisterHotkeyIfAssigned(hwnd, HotkeyIdChannelMuteBase + i, _settings.Channels[i].MuteHotkey);
     }
 
 
@@ -129,6 +133,22 @@ public partial class MainWindow
 
             case HotkeyIdShowDashboard:
                 RestoreFromTray();
+                break;
+
+            default:
+                // Per-channel mute hotkeys (IDs: HotkeyIdChannelMuteBase + channel index)
+                int channelIndex = id - HotkeyIdChannelMuteBase;
+                if (channelIndex >= 0 && channelIndex < ExpectedChannelCount && channelIndex < _channels.Count)
+                {
+                    try
+                    {
+                        ToggleChannelMute(channelIndex);
+                        RefreshAllChannelStates();
+                        SendAllChannelStatesToDevice();
+                        SendStateToDevice(force: true);
+                    }
+                    catch (Exception ex) { Log($"Hotkey channel {channelIndex + 1} mute error: {ex.Message}"); }
+                }
                 break;
         }
     }

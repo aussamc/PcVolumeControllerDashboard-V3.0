@@ -28,7 +28,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.52";
+    private const string DashboardVersion = "2.53";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -369,10 +369,16 @@ public partial class MainWindow : Window
     private const int HotkeyIdCycleNextProfile = HotkeyIdBase + 3;
     private const int HotkeyIdShowDashboard    = HotkeyIdBase + 4;
 
+    // Per-channel mute hotkeys: IDs 5–10 (one per channel, 6 channels max).
+    private const int HotkeyIdChannelMuteBase = HotkeyIdBase + 5;
+
     private static readonly int[] AllHotkeyIds =
     {
         HotkeyIdMasterVolumeUp, HotkeyIdMasterVolumeDown,
-        HotkeyIdToggleMasterMute, HotkeyIdCycleNextProfile, HotkeyIdShowDashboard
+        HotkeyIdToggleMasterMute, HotkeyIdCycleNextProfile, HotkeyIdShowDashboard,
+        HotkeyIdChannelMuteBase + 0, HotkeyIdChannelMuteBase + 1,
+        HotkeyIdChannelMuteBase + 2, HotkeyIdChannelMuteBase + 3,
+        HotkeyIdChannelMuteBase + 4, HotkeyIdChannelMuteBase + 5,
     };
 
     private void QueueAudioRefreshTick()
@@ -2407,6 +2413,9 @@ public partial class MainWindow : Window
             _perChannelSensitivitySuppressEvents = false;
         }
 
+        // Per-channel mute hotkey label
+        UpdateChannelMuteHotkeyLabel();
+
         // Populate volume limits
         _volumeLimitsSuppressEvents = true;
         try
@@ -3856,6 +3865,7 @@ public partial class MainWindow : Window
             SensitivityPercent = (i < previous.Length) ? previous[i].SensitivityPercent : -1,
             MinVolumePercent   = (i < previous.Length) ? previous[i].MinVolumePercent   : 0,
             MaxVolumePercent   = (i < previous.Length) ? previous[i].MaxVolumePercent   : 100,
+            MuteHotkey         = (i < previous.Length) ? previous[i].MuteHotkey         : new HotkeyBinding(),
             Presets = (i < previous.Length && previous[i].Presets != null)
                 ? previous[i].Presets
                 : new[] { new VolumePreset { Name = "", VolumePercent = 25 }, new VolumePreset { Name = "", VolumePercent = 50 }, new VolumePreset { Name = "", VolumePercent = 75 } },
@@ -4300,6 +4310,40 @@ public partial class MainWindow : Window
     private void HotkeyCycleNextProfile_Clear(object sender, RoutedEventArgs e) => ClearHotkeyBinding(b => _settings.Hotkeys.CycleNextProfile = b);
     private void HotkeyShowDashboard_Clear(object sender, RoutedEventArgs e)  => ClearHotkeyBinding(b => _settings.Hotkeys.ShowDashboard    = b);
 
+    // ── Per-channel mute hotkey UI handlers ──────────────────────────────────────
+
+    private void ChannelMuteHotkey_Set(object sender, RoutedEventArgs e)
+    {
+        if (_selectedChannelIndex < 0 || _selectedChannelIndex >= _settings.Channels.Length) return;
+        int ch = _selectedChannelIndex;
+        string label = _channels.Count > ch ? $"Mute Channel {_channels[ch].ChannelNumber}" : $"Mute Channel {ch + 1}";
+        SetHotkeyBinding(label, _settings.Channels[ch].MuteHotkey, b =>
+        {
+            _settings.Channels[ch].MuteHotkey = b;
+            UpdateChannelMuteHotkeyLabel();
+        });
+    }
+
+    private void ChannelMuteHotkey_Clear(object sender, RoutedEventArgs e)
+    {
+        if (_selectedChannelIndex < 0 || _selectedChannelIndex >= _settings.Channels.Length) return;
+        _settings.Channels[_selectedChannelIndex].MuteHotkey = new HotkeyBinding { Enabled = false };
+        UpdateChannelMuteHotkeyLabel();
+        FlushUiToSettings();
+        RegisterAllHotkeys();
+    }
+
+    private void UpdateChannelMuteHotkeyLabel()
+    {
+        if (ChannelMuteHotkeyTextBlock == null) return;
+        if (_selectedChannelIndex < 0 || _selectedChannelIndex >= _settings.Channels.Length)
+        {
+            ChannelMuteHotkeyTextBlock.Text = "(unassigned)";
+            return;
+        }
+        ChannelMuteHotkeyTextBlock.Text = _settings.Channels[_selectedChannelIndex].MuteHotkey.ToDisplayString();
+    }
+
     protected override void OnClosed(EventArgs e)
     {
         _statePollTimer?.Dispose();
@@ -4661,6 +4705,9 @@ public sealed class ChannelSettings
     // Defaults give full 0–100 % range (i.e. unconstrained).
     public int MinVolumePercent { get; set; } = 0;
     public int MaxVolumePercent { get; set; } = 100;
+
+    // Per-channel mute toggle hotkey (defaults to unassigned).
+    public HotkeyBinding MuteHotkey { get; set; } = new HotkeyBinding();
 
     // Per-channel volume presets. Index 0 = Preset 1, 1 = Preset 2, 2 = Preset 3.
     public VolumePreset[] Presets { get; set; } = new[]
