@@ -28,7 +28,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.53";
+    private const string DashboardVersion = "2.54";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -149,6 +149,7 @@ public partial class MainWindow : Window
     private string _espFirmwareName = "Unknown";
     private string _espProtocolVersion = "Unknown";
     private string _espChannelCount = "Unknown";
+    private string _connectedDeviceChipId = string.Empty;   // chip ID from current HELLO (empty if not reported)
     private bool _esp32Seen;
     private bool _esp32HelloReceived;
     private DateTime? _serialConnectedAt;
@@ -4058,6 +4059,8 @@ public partial class MainWindow : Window
         sb.AppendLine($"Connected ESP32 firmware: {_espFirmwareName}");
         sb.AppendLine($"Connected ESP32 protocol: {_espProtocolVersion}");
         sb.AppendLine($"Connected ESP32 channels: {_espChannelCount}");
+        sb.AppendLine($"Connected ESP32 chip ID: {(string.IsNullOrEmpty(_connectedDeviceChipId) ? "not reported" : _connectedDeviceChipId)}");
+        sb.AppendLine($"Paired controller chip ID: {(string.IsNullOrWhiteSpace(_settings.LastDeviceChipId) ? "none (not yet paired)" : _settings.LastDeviceChipId)}");
         sb.AppendLine($"Active COM port: {(_serialService.IsConnected ? _serialService.PortName : "none")}");
         sb.AppendLine($"Remembered controller port: {(string.IsNullOrWhiteSpace(_settings.LastComPort) ? "none" : _settings.LastComPort)}");
         string[] ports = GetAvailableComPorts();
@@ -4588,6 +4591,11 @@ public sealed class DashboardSettings
     public int SettingsVersion { get; set; } = 0;
 
     public string LastComPort { get; set; } = string.Empty;
+
+    // Chip ID of the last successfully paired ESP32 controller.
+    // Empty = no controller has been paired yet (first connection auto-pairs).
+    // Non-empty = only controllers reporting this chip ID are recognised without a warning.
+    public string LastDeviceChipId { get; set; } = string.Empty;
     public bool AutoConnectOnLaunch { get; set; } = true;
     public bool FirstRunWizardCompleted { get; set; } = true;
     public bool ScanAllComPortsIfRememberedMissing { get; set; } = true;
