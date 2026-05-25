@@ -1208,6 +1208,79 @@
                                                 </StackPanel>
                                             </Grid>
 
+                                            <!-- Volume Limits -->
+                                            <Separator Margin="0,12,0,8"/>
+                                            <TextBlock Text="Volume Limits"
+                                                       FontWeight="SemiBold"
+                                                       Margin="0,0,0,4"/>
+                                            <TextBlock Text="Clamp this channel's volume to the selected range."
+                                                       Foreground="{DynamicResource SecondaryForeground}"
+                                                       FontSize="11"
+                                                       TextWrapping="Wrap"
+                                                       Margin="0,0,0,8"/>
+
+                                            <!-- Min volume row -->
+                                            <Grid Width="360" HorizontalAlignment="Left" Margin="0,0,0,6">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="90" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="42" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0"
+                                                           Text="Min volume:"
+                                                           VerticalAlignment="Center"
+                                                           Margin="0,0,8,0" />
+                                                <Slider Grid.Column="1"
+                                                        x:Name="ChannelMinVolumeSlider"
+                                                        Minimum="0"
+                                                        Maximum="100"
+                                                        TickFrequency="5"
+                                                        IsSnapToTickEnabled="False"
+                                                        ToolTip="Minimum allowed volume for this channel (0–100%)"
+                                                        ValueChanged="ChannelMinVolumeSlider_ValueChanged"
+                                                        PreviewMouseLeftButtonDown="Slider_PreviewMouseLeftButtonDown"
+                                                        PreviewMouseMove="Slider_PreviewMouseMove"
+                                                        PreviewMouseLeftButtonUp="Slider_PreviewMouseLeftButtonUp"
+                                                        VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="2"
+                                                           x:Name="ChannelMinVolumeValueTextBlock"
+                                                           Text="0%"
+                                                           VerticalAlignment="Center"
+                                                           HorizontalAlignment="Right"
+                                                           Margin="4,0,0,0" />
+                                            </Grid>
+
+                                            <!-- Max volume row -->
+                                            <Grid Width="360" HorizontalAlignment="Left" Margin="0,0,0,4">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="90" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="42" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0"
+                                                           Text="Max volume:"
+                                                           VerticalAlignment="Center"
+                                                           Margin="0,0,8,0" />
+                                                <Slider Grid.Column="1"
+                                                        x:Name="ChannelMaxVolumeSlider"
+                                                        Minimum="0"
+                                                        Maximum="100"
+                                                        TickFrequency="5"
+                                                        IsSnapToTickEnabled="False"
+                                                        ToolTip="Maximum allowed volume for this channel (0–100%)"
+                                                        ValueChanged="ChannelMaxVolumeSlider_ValueChanged"
+                                                        PreviewMouseLeftButtonDown="Slider_PreviewMouseLeftButtonDown"
+                                                        PreviewMouseMove="Slider_PreviewMouseMove"
+                                                        PreviewMouseLeftButtonUp="Slider_PreviewMouseLeftButtonUp"
+                                                        VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="2"
+                                                           x:Name="ChannelMaxVolumeValueTextBlock"
+                                                           Text="100%"
+                                                           VerticalAlignment="Center"
+                                                           HorizontalAlignment="Right"
+                                                           Margin="4,0,0,0" />
+                                            </Grid>
+
                                             <!-- Volume Presets -->
                                             <Separator Margin="0,12,0,8"/>
                                             <TextBlock Text="Volume Presets"

@@ -255,12 +255,13 @@ public partial class MainWindow
         if (_settings.VolumeSmoothingEnabled)
         {
             float deltaNorm = deltaPercent / 100f;
+            (float limMin, float limMax) = GetChannelVolumeLimitsNormalized(encoderChannel);
 
             if (_smoothingActive[encoderChannel])
             {
                 // Extend the in-flight target without re-reading from WASAPI.
                 _smoothingTargetVolumes[encoderChannel] = Math.Clamp(
-                    _smoothingTargetVolumes[encoderChannel] + deltaNorm, 0f, 1f);
+                    _smoothingTargetVolumes[encoderChannel] + deltaNorm, limMin, limMax);
                 useSmoothingPath = true;
             }
             else
@@ -269,8 +270,8 @@ public partial class MainWindow
                 if (current >= 0f)
                 {
                     // Channel is available — start smooth interpolation from actual volume.
-                    _smoothingCurrentVolumes[encoderChannel] = current;
-                    _smoothingTargetVolumes[encoderChannel] = Math.Clamp(current + deltaNorm, 0f, 1f);
+                    _smoothingCurrentVolumes[encoderChannel] = Math.Clamp(current, limMin, limMax);
+                    _smoothingTargetVolumes[encoderChannel] = Math.Clamp(current + deltaNorm, limMin, limMax);
                     useSmoothingPath = true;
                 }
                 // current < 0 → channel unassigned or unavailable; fall through to direct path.
@@ -585,6 +586,21 @@ public partial class MainWindow
                 return GetVolumeStepPercentFromSensitivity(perChannel);
         }
         return GetVolumeStepPercent(); // fall back to global
+    }
+
+    /// <summary>
+    /// Returns the per-channel volume limits as a normalized [0.0, 1.0] range.
+    /// Falls back to the full range (0, 1) when the channel index is out of bounds.
+    /// </summary>
+    private (float min, float max) GetChannelVolumeLimitsNormalized(int channelIndex)
+    {
+        if (channelIndex >= 0 && channelIndex < _settings.Channels.Length)
+        {
+            float min = _settings.Channels[channelIndex].MinVolumePercent / 100f;
+            float max = _settings.Channels[channelIndex].MaxVolumePercent / 100f;
+            return (min, max);
+        }
+        return (0f, 1f);
     }
 
     private int GetVolumeStepPercentFromSensitivity(int sensitivityPercent)

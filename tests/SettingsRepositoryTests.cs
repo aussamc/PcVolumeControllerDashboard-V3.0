@@ -124,7 +124,7 @@ public sealed class SettingsRepositoryTests : IDisposable
         settings.Profiles.Should().HaveCount(1);
         settings.Profiles[0].Name.Should().Be("Default");
         settings.ActiveProfileName.Should().Be("Default");
-        settings.SettingsVersion.Should().Be(6);
+        settings.SettingsVersion.Should().Be(7);
     }
 
     [Fact]
@@ -133,7 +133,7 @@ public sealed class SettingsRepositoryTests : IDisposable
         // A fully-current settings object should not be flagged as migrated.
         DashboardSettings settings = DashboardSettings.CreateDefault();
         settings.Channels = DashboardSettings.CreateDefaultChannels();
-        settings.SettingsVersion = 6;  // current schema version
+        settings.SettingsVersion = 7;  // current schema version
         settings.Profiles = new List<ProfileEntry>
         {
             new ProfileEntry { Name = "Default", Channels = DashboardSettings.CreateDefaultChannels() }
@@ -145,6 +145,34 @@ public sealed class SettingsRepositoryTests : IDisposable
         migrated.Should().BeFalse();
     }
 
+    [Fact]
+    public void Normalize_V6Settings_ClampsInvalidVolumeLimits()
+    {
+        // v6 → v7: inverted / out-of-range volume limits should be fixed.
+        var settings = new DashboardSettings { SettingsVersion = 6 };
+        settings.Channels = DashboardSettings.CreateDefaultChannels();
+        // Set an inverted pair and an out-of-range value on two channels.
+        settings.Channels[0].MinVolumePercent = 80;
+        settings.Channels[0].MaxVolumePercent = 20;  // inverted
+        settings.Channels[1].MinVolumePercent = -5;  // out of range
+        settings.Channels[1].MaxVolumePercent = 150; // out of range
+        settings.Profiles = new List<ProfileEntry>
+        {
+            new ProfileEntry { Name = "Default", Channels = settings.Channels }
+        };
+        settings.ActiveProfileName = "Default";
+
+        bool migrated = SettingsRepository.Normalize(settings, ChannelCount, MaxSensitivity);
+
+        migrated.Should().BeTrue();
+        // Inverted pair should be swapped.
+        settings.Channels[0].MinVolumePercent.Should().BeLessOrEqualTo(settings.Channels[0].MaxVolumePercent);
+        // Out-of-range values should be clamped.
+        settings.Channels[1].MinVolumePercent.Should().Be(0);
+        settings.Channels[1].MaxVolumePercent.Should().Be(100);
+        settings.SettingsVersion.Should().Be(7);
+    }
+
     // ── Normalize — value clamping ────────────────────────────────────────────────
 
     [Fact]
@@ -153,7 +181,7 @@ public sealed class SettingsRepositoryTests : IDisposable
         DashboardSettings settings = DashboardSettings.CreateDefault();
         settings.Channels = DashboardSettings.CreateDefaultChannels();
         settings.EncoderSensitivityPercent = MaxSensitivity + 999;
-        settings.SettingsVersion = 6;
+        settings.SettingsVersion = 7;
         settings.Profiles = new List<ProfileEntry>
         {
             new ProfileEntry { Name = "Default", Channels = DashboardSettings.CreateDefaultChannels() }
@@ -168,7 +196,7 @@ public sealed class SettingsRepositoryTests : IDisposable
     [Fact]
     public void Normalize_NullChannels_ReplacedWithDefaults()
     {
-        var settings = new DashboardSettings { SettingsVersion = 6 };
+        var settings = new DashboardSettings { SettingsVersion = 7 };
         settings.Channels = null!;  // force null to simulate corrupt/missing array
         settings.Profiles = new List<ProfileEntry>
         {
@@ -186,7 +214,7 @@ public sealed class SettingsRepositoryTests : IDisposable
     public void Normalize_ProfileWithWrongChannelCount_ReplacedWithDefaults()
     {
         DashboardSettings settings = DashboardSettings.CreateDefault();
-        settings.SettingsVersion = 6;
+        settings.SettingsVersion = 7;
         var badProfile = new ProfileEntry
         {
             Name = "Default",
@@ -227,7 +255,7 @@ public sealed class SettingsRepositoryTests : IDisposable
     {
         // Save a settings object with a known profile name, then re-load it.
         DashboardSettings original = DashboardSettings.CreateDefault();
-        original.SettingsVersion = 6;
+        original.SettingsVersion = 7;
         original.Profiles = new List<ProfileEntry>
         {
             new ProfileEntry { Name = "Gaming", Channels = DashboardSettings.CreateDefaultChannels() }
