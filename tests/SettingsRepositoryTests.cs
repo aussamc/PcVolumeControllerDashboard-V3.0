@@ -124,7 +124,7 @@ public sealed class SettingsRepositoryTests : IDisposable
         settings.Profiles.Should().HaveCount(1);
         settings.Profiles[0].Name.Should().Be("Default");
         settings.ActiveProfileName.Should().Be("Default");
-        settings.SettingsVersion.Should().Be(5);
+        settings.SettingsVersion.Should().Be(6);
     }
 
     [Fact]
@@ -133,7 +133,7 @@ public sealed class SettingsRepositoryTests : IDisposable
         // A fully-current settings object should not be flagged as migrated.
         DashboardSettings settings = DashboardSettings.CreateDefault();
         settings.Channels = DashboardSettings.CreateDefaultChannels();
-        settings.SettingsVersion = 5;  // current schema version
+        settings.SettingsVersion = 6;  // current schema version
         settings.Profiles = new List<ProfileEntry>
         {
             new ProfileEntry { Name = "Default", Channels = DashboardSettings.CreateDefaultChannels() }
@@ -153,7 +153,7 @@ public sealed class SettingsRepositoryTests : IDisposable
         DashboardSettings settings = DashboardSettings.CreateDefault();
         settings.Channels = DashboardSettings.CreateDefaultChannels();
         settings.EncoderSensitivityPercent = MaxSensitivity + 999;
-        settings.SettingsVersion = 5;
+        settings.SettingsVersion = 6;
         settings.Profiles = new List<ProfileEntry>
         {
             new ProfileEntry { Name = "Default", Channels = DashboardSettings.CreateDefaultChannels() }
@@ -168,7 +168,7 @@ public sealed class SettingsRepositoryTests : IDisposable
     [Fact]
     public void Normalize_NullChannels_ReplacedWithDefaults()
     {
-        var settings = new DashboardSettings { SettingsVersion = 5 };
+        var settings = new DashboardSettings { SettingsVersion = 6 };
         settings.Channels = null!;  // force null to simulate corrupt/missing array
         settings.Profiles = new List<ProfileEntry>
         {
@@ -186,7 +186,7 @@ public sealed class SettingsRepositoryTests : IDisposable
     public void Normalize_ProfileWithWrongChannelCount_ReplacedWithDefaults()
     {
         DashboardSettings settings = DashboardSettings.CreateDefault();
-        settings.SettingsVersion = 5;
+        settings.SettingsVersion = 6;
         var badProfile = new ProfileEntry
         {
             Name = "Default",
@@ -227,7 +227,7 @@ public sealed class SettingsRepositoryTests : IDisposable
     {
         // Save a settings object with a known profile name, then re-load it.
         DashboardSettings original = DashboardSettings.CreateDefault();
-        original.SettingsVersion = 5;
+        original.SettingsVersion = 6;
         original.Profiles = new List<ProfileEntry>
         {
             new ProfileEntry { Name = "Gaming", Channels = DashboardSettings.CreateDefaultChannels() }
