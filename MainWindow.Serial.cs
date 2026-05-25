@@ -778,6 +778,7 @@ public partial class MainWindow
             _espFirmwareName = "Unknown";
             _espProtocolVersion = "Unknown";
             _espChannelCount = "Unknown";
+            _connectedDeviceChipId = string.Empty;
             _lastEspMessage = "--";
             _lastEspMessageTime = null;
             SetConnectionStatus($"Identifying controller on {portName}...", connected: false);
@@ -849,6 +850,7 @@ public partial class MainWindow
         _espFirmwareName = "Unknown";
         _espProtocolVersion = "Unknown";
         _espChannelCount = "Unknown";
+        _connectedDeviceChipId = string.Empty;
         _lastEspMessage = "--";
         _lastEspMessageTime = null;
 
@@ -1287,6 +1289,8 @@ public partial class MainWindow
         string deviceIdentity = parts.Length > 1 ? parts[1] : "Unknown";
         string protocolVersion = parts.Length > 2 ? parts[2] : "Unknown";
         string channelCount = parts.Length > 3 ? parts[3] : "Unknown";
+        // Optional 5th field: ESP32 chip ID (e.g. "0x1234ABCD"). Present only in firmware >= v2.25.
+        string chipId = parts.Length > 4 ? parts[4].Trim() : string.Empty;
 
         if (!deviceIdentity.StartsWith(ExpectedDeviceIdentity, StringComparison.OrdinalIgnoreCase))
         {
@@ -1306,11 +1310,30 @@ public partial class MainWindow
         _espFirmwareName = deviceIdentity;
         _espProtocolVersion = protocolVersion;
         _espChannelCount = channelCount;
+        _connectedDeviceChipId = chipId;
         _activeConnectionState = "Connected";
         _manualAutoReconnectSuppressionLogged = false;
 
+        // ── Hardware identity pairing ────────────────────────────────────────────
+        if (!string.IsNullOrEmpty(chipId))
+        {
+            if (string.IsNullOrEmpty(_settings.LastDeviceChipId))
+            {
+                // First pairing — record the chip ID.
+                _settings.LastDeviceChipId = chipId;
+                Log($"Controller paired: chip ID {chipId}.");
+                SaveSettings();
+            }
+            else if (!string.Equals(_settings.LastDeviceChipId, chipId, StringComparison.OrdinalIgnoreCase))
+            {
+                // Chip ID mismatch — different hardware than previously paired.
+                Log($"WARNING: Connected controller chip ID ({chipId}) does not match paired controller ({_settings.LastDeviceChipId}). Use 'Forget controller' to re-pair.");
+            }
+        }
+
         SetConnectionStatus($"Connected to {connectedPort}", connected: true);
-        EspStatusTextBlock.Text = $"Connected - firmware {_espProtocolVersion} ({_espFirmwareName})";
+        string chipSuffix = string.IsNullOrEmpty(chipId) ? string.Empty : $", chip {chipId}";
+        EspStatusTextBlock.Text = $"Connected - firmware {_espProtocolVersion} ({_espFirmwareName}){chipSuffix}";
 
         _settings.LastComPort = connectedPort;
         SaveSettings();
