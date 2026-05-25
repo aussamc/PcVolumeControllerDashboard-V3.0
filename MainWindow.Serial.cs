@@ -781,6 +781,7 @@ public partial class MainWindow
             _connectedDeviceChipId = string.Empty;
             _lastEspMessage = "--";
             _lastEspMessageTime = null;
+            HideChipIdMismatchBanner();
             SetConnectionStatus($"Identifying controller on {portName}...", connected: false);
             EspStatusTextBlock.Text = "Waiting for controller hello...";
             UpdateVersionHeader();
@@ -853,6 +854,7 @@ public partial class MainWindow
         _connectedDeviceChipId = string.Empty;
         _lastEspMessage = "--";
         _lastEspMessageTime = null;
+        HideChipIdMismatchBanner();
 
         if (refreshPortsAfterDisconnect)
         {
@@ -1315,21 +1317,30 @@ public partial class MainWindow
         _manualAutoReconnectSuppressionLogged = false;
 
         // ── Hardware identity pairing ────────────────────────────────────────────
+        bool chipIdMismatch = false;
         if (!string.IsNullOrEmpty(chipId))
         {
             if (string.IsNullOrEmpty(_settings.LastDeviceChipId))
             {
-                // First pairing — record the chip ID.
+                // First pairing — record the chip ID silently.
                 _settings.LastDeviceChipId = chipId;
                 Log($"Controller paired: chip ID {chipId}.");
                 SaveSettings();
+                Dispatcher.InvokeAsync(UpdatePairedControllerIdLabel);
             }
             else if (!string.Equals(_settings.LastDeviceChipId, chipId, StringComparison.OrdinalIgnoreCase))
             {
-                // Chip ID mismatch — different hardware than previously paired.
+                // Chip ID mismatch — show the warning banner.
+                chipIdMismatch = true;
                 Log($"WARNING: Connected controller chip ID ({chipId}) does not match paired controller ({_settings.LastDeviceChipId}). Use 'Forget controller' to re-pair.");
+                string captured = chipId;
+                Dispatcher.InvokeAsync(() => ShowChipIdMismatchBanner(captured));
             }
         }
+
+        // Clean connection (no mismatch) — ensure any stale banner is hidden.
+        if (!chipIdMismatch)
+            Dispatcher.InvokeAsync(HideChipIdMismatchBanner);
 
         SetConnectionStatus($"Connected to {connectedPort}", connected: true);
         string chipSuffix = string.IsNullOrEmpty(chipId) ? string.Empty : $", chip {chipId}";

@@ -668,6 +668,7 @@
                             CornerRadius="8"
                             Padding="12"
                             Margin="0,0,0,12">
+                        <StackPanel>
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
@@ -732,6 +733,38 @@
                                        Margin="0,10,0,0"
                                        Foreground="{DynamicResource SecondaryForeground}" />
                         </Grid>
+
+                        <!-- Wrong-controller warning banner (hidden unless chip ID mismatch) -->
+                        <Border x:Name="ChipIdMismatchBanner"
+                                Visibility="Collapsed"
+                                CornerRadius="4"
+                                Padding="10,8"
+                                Margin="0,10,0,0">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Left"
+                                           Text="⚠ "
+                                           FontSize="14"
+                                           VerticalAlignment="Center" />
+                                <StackPanel DockPanel.Dock="Right"
+                                            Orientation="Horizontal">
+                                    <Button Content="Forget &amp; re-pair"
+                                            Height="26"
+                                            Margin="8,0,4,0"
+                                            ToolTip="Clear the paired controller ID and accept this device as the new controller"
+                                            Click="ChipIdMismatch_ForgetAndRepair" />
+                                    <Button Content="Dismiss"
+                                            Height="26"
+                                            Margin="0,0,0,0"
+                                            ToolTip="Hide this warning for the current session"
+                                            Click="ChipIdMismatch_Dismiss" />
+                                </StackPanel>
+                                <TextBlock x:Name="ChipIdMismatchMessageTextBlock"
+                                           Text="Connected controller is different from the previously paired device."
+                                           VerticalAlignment="Center"
+                                           TextWrapping="Wrap" />
+                            </DockPanel>
+                        </Border>
+                        </StackPanel>
                     </Border>
 
                     <!-- Profile bar -->
@@ -2007,6 +2040,23 @@
                                         Cursor="Hand"
                                         Margin="0,8,0,0"
                                         Click="ShowFirstRunWizardButton_Click" />
+
+                                <Separator Margin="0,12,0,8"/>
+                                <TextBlock Text="Controller Pairing"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,4" />
+                                <TextBlock x:Name="PairedControllerIdTextBlock"
+                                           Text="Paired controller: (none)"
+                                           Foreground="{DynamicResource SecondaryForeground}"
+                                           Margin="0,0,0,8"
+                                           TextWrapping="Wrap" />
+                                <Button x:Name="ForgetControllerButton"
+                                        Content="Forget controller"
+                                        Width="160"
+                                        Height="30"
+                                        HorizontalAlignment="Left"
+                                        ToolTip="Clear the paired controller chip ID so the next connection auto-pairs with any controller"
+                                        Click="ForgetControllerButton_Click" />
                             </StackPanel>
                         </Border>
 

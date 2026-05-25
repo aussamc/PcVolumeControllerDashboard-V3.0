@@ -28,7 +28,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.54";
+    private const string DashboardVersion = "2.55";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -2953,6 +2953,7 @@ public partial class MainWindow : Window
     {
         AutoConnectCheckBox.IsChecked = _settings.AutoConnectOnLaunch;
         ScanAllComPortsCheckBox.IsChecked = _settings.ScanAllComPortsIfRememberedMissing;
+        UpdatePairedControllerIdLabel();
 
         // Audio backend selector
         if (WasapiRadioButton != null)
@@ -3114,6 +3115,57 @@ public partial class MainWindow : Window
             FirstRunWizardTab.Visibility = Visibility.Visible;
             MainTabs.SelectedItem = FirstRunWizardTab;
         }
+    }
+
+    // ── Controller pairing / chip-ID mismatch ────────────────────────────────────
+
+    /// <summary>
+    /// Shows the chip-ID mismatch warning banner with the supplied message.
+    /// Called from the serial thread via Dispatcher.
+    /// </summary>
+    private void ShowChipIdMismatchBanner(string connectedChipId)
+    {
+        if (ChipIdMismatchBanner == null) return;
+        if (ChipIdMismatchMessageTextBlock != null)
+            ChipIdMismatchMessageTextBlock.Text =
+                $"Connected controller (chip ID: {connectedChipId}) differs from the paired controller " +
+                $"(chip ID: {_settings.LastDeviceChipId}). Click \"Forget & re-pair\" to accept this device, " +
+                "or \"Dismiss\" to suppress this warning for the session.";
+        ChipIdMismatchBanner.Visibility = Visibility.Visible;
+    }
+
+    private void HideChipIdMismatchBanner()
+    {
+        if (ChipIdMismatchBanner != null)
+            ChipIdMismatchBanner.Visibility = Visibility.Collapsed;
+    }
+
+    private void ChipIdMismatch_ForgetAndRepair(object sender, RoutedEventArgs e)
+    {
+        _settings.LastDeviceChipId = _connectedDeviceChipId;
+        SaveSettings();
+        HideChipIdMismatchBanner();
+        UpdatePairedControllerIdLabel();
+        Log($"Controller re-paired to chip ID {_connectedDeviceChipId}.");
+    }
+
+    private void ChipIdMismatch_Dismiss(object sender, RoutedEventArgs e) => HideChipIdMismatchBanner();
+
+    private void ForgetControllerButton_Click(object sender, RoutedEventArgs e)
+    {
+        _settings.LastDeviceChipId = string.Empty;
+        SaveSettings();
+        HideChipIdMismatchBanner();
+        UpdatePairedControllerIdLabel();
+        Log("Paired controller forgotten. Next connection will auto-pair.");
+    }
+
+    private void UpdatePairedControllerIdLabel()
+    {
+        if (PairedControllerIdTextBlock == null) return;
+        PairedControllerIdTextBlock.Text = string.IsNullOrEmpty(_settings.LastDeviceChipId)
+            ? "Paired controller: (none)"
+            : $"Paired controller: chip ID {_settings.LastDeviceChipId}";
     }
 
     private void UpdateFirstRunWizardStatus()
