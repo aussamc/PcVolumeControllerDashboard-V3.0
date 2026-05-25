@@ -5,8 +5,8 @@
         Icon="Assets/app-icon.ico"
         Height="800"
         Width="1120"
-        MinHeight="680"
-        MinWidth="980"
+        MinHeight="600"
+        MinWidth="860"
         ResizeMode="CanResize"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource AppBackground}"
@@ -1019,8 +1019,10 @@
                                 BorderThickness="1"
                                 CornerRadius="8"
                                 Padding="12">
-                            <DockPanel>
-                                <StackPanel DockPanel.Dock="Top">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Disabled"
+                                          Focusable="False">
+                                <StackPanel>
                                     <TextBlock Text="Selected Channel"
                                                FontSize="18"
                                                FontWeight="SemiBold" />
@@ -1077,7 +1079,7 @@
                                                        TextWrapping="Wrap"
                                                        Margin="0,0,0,8" />
 
-                                            <Grid Width="360" HorizontalAlignment="Left">
+                                            <Grid MaxWidth="360">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="90" />
                                                     <ColumnDefinition Width="*" />
@@ -1106,7 +1108,7 @@
                                                 </ComboBox>
                                             </Grid>
 
-                                            <Grid Width="360" HorizontalAlignment="Left" Margin="0,8,0,0">
+                                            <Grid MaxWidth="360" Margin="0,8,0,0">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="90" />
                                                     <ColumnDefinition Width="*" />
@@ -1134,7 +1136,7 @@
                                                 </ComboBox>
                                             </Grid>
 
-                                            <Grid Width="360" HorizontalAlignment="Left" Margin="0,8,0,0">
+                                            <Grid MaxWidth="360" Margin="0,8,0,0">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="90" />
                                                     <ColumnDefinition Width="*" />
@@ -1162,7 +1164,7 @@
                                                 </ComboBox>
                                             </Grid>
 
-                                            <Grid Width="360" HorizontalAlignment="Left" Margin="0,12,0,0">
+                                            <Grid MaxWidth="360" Margin="0,12,0,0">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="90" />
                                                     <ColumnDefinition Width="*" />
@@ -1185,7 +1187,7 @@
                                                 </ComboBox>
                                             </Grid>
 
-                                            <Grid Width="360" HorizontalAlignment="Left" Margin="0,12,0,0">
+                                            <Grid MaxWidth="360" Margin="0,12,0,0">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="90" />
                                                     <ColumnDefinition Width="*" />
@@ -1199,7 +1201,7 @@
                                                 </ComboBox>
                                             </Grid>
 
-                                            <Grid Width="360" HorizontalAlignment="Left" Margin="0,12,0,0">
+                                            <Grid MaxWidth="360" Margin="0,12,0,0">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="90" />
                                                     <ColumnDefinition Width="*" />
@@ -1242,7 +1244,7 @@
                                             </Grid>
 
                                             <!-- Mute hotkey -->
-                                            <Grid Width="360" HorizontalAlignment="Left" Margin="0,8,0,0">
+                                            <Grid MaxWidth="360" Margin="0,8,0,0">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="90" />
                                                     <ColumnDefinition Width="*" />
@@ -1283,7 +1285,7 @@
                                                        Margin="0,0,0,8"/>
 
                                             <!-- Min volume row -->
-                                            <Grid Width="360" HorizontalAlignment="Left" Margin="0,0,0,6">
+                                            <Grid MaxWidth="360" Margin="0,0,0,6">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="90" />
                                                     <ColumnDefinition Width="*" />
@@ -1314,7 +1316,7 @@
                                             </Grid>
 
                                             <!-- Max volume row -->
-                                            <Grid Width="360" HorizontalAlignment="Left" Margin="0,0,0,4">
+                                            <Grid MaxWidth="360" Margin="0,0,0,4">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="90" />
                                                     <ColumnDefinition Width="*" />
@@ -1356,7 +1358,7 @@
                                                        Margin="0,0,0,8"/>
 
                                             <!-- Preset 1 -->
-                                            <Grid Width="360" HorizontalAlignment="Left" Margin="0,0,0,6">
+                                            <Grid MaxWidth="360" Margin="0,0,0,6">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="62"/>
                                                     <ColumnDefinition Width="90"/>
@@ -1394,7 +1396,7 @@
                                             </Grid>
 
                                             <!-- Preset 2 -->
-                                            <Grid Width="360" HorizontalAlignment="Left" Margin="0,0,0,6">
+                                            <Grid MaxWidth="360" Margin="0,0,0,6">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="62"/>
                                                     <ColumnDefinition Width="90"/>
@@ -1432,7 +1434,7 @@
                                             </Grid>
 
                                             <!-- Preset 3 -->
-                                            <Grid Width="360" HorizontalAlignment="Left" Margin="0,0,0,4">
+                                            <Grid MaxWidth="360" Margin="0,0,0,4">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="62"/>
                                                     <ColumnDefinition Width="90"/>
@@ -1479,7 +1481,7 @@
                                                        FontSize="11"
                                                        TextWrapping="Wrap"
                                                        Margin="0,0,0,8"/>
-                                            <Grid Width="360" HorizontalAlignment="Left">
+                                            <Grid MaxWidth="360">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="86" />
                                                     <ColumnDefinition Width="*" />
@@ -1567,22 +1569,22 @@
                                             Margin="0,0,0,8"
                                             ToolTip="Manually refresh the list of Windows audio sessions"
                                             Click="RefreshSessionsButton_Click" />
+                                    <ListView x:Name="AudioSessionsListView"
+                                              Margin="0,0,0,0"
+                                              MinHeight="120"
+                                              MaxHeight="280"
+                                              ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                        <ListView.View>
+                                            <GridView>
+                                                <GridViewColumn Header="Target" Width="130" DisplayMemberBinding="{Binding Label}" />
+                                                <GridViewColumn Header="Vol" Width="60" DisplayMemberBinding="{Binding VolumeDisplay}" />
+                                                <GridViewColumn Header="Mute" Width="60" DisplayMemberBinding="{Binding MuteDisplay}" />
+                                                <GridViewColumn Header="State" Width="110" DisplayMemberBinding="{Binding State}" />
+                                            </GridView>
+                                        </ListView.View>
+                                    </ListView>
                                 </StackPanel>
-
-                                <ListView x:Name="AudioSessionsListView"
-                                          Margin="0,0,0,0"
-                                          MinHeight="150"
-                                          ScrollViewer.VerticalScrollBarVisibility="Auto">
-                                    <ListView.View>
-                                        <GridView>
-                                            <GridViewColumn Header="Target" Width="130" DisplayMemberBinding="{Binding Label}" />
-                                            <GridViewColumn Header="Vol" Width="60" DisplayMemberBinding="{Binding VolumeDisplay}" />
-                                            <GridViewColumn Header="Mute" Width="60" DisplayMemberBinding="{Binding MuteDisplay}" />
-                                            <GridViewColumn Header="State" Width="110" DisplayMemberBinding="{Binding State}" />
-                                        </GridView>
-                                    </ListView.View>
-                                </ListView>
-                            </DockPanel>
+                            </ScrollViewer>
                         </Border>
 
                         <!-- Empty state — shown when controller is not connected -->
@@ -1663,8 +1665,7 @@
                                         PreviewMouseMove="Slider_PreviewMouseMove"
                                         PreviewMouseLeftButtonUp="Slider_PreviewMouseLeftButtonUp"
                                         LostMouseCapture="Slider_LostMouseCapture"
-                                        Width="420"
-                                        HorizontalAlignment="Left"
+                                        MaxWidth="420"
                                         Margin="0,0,0,10" />
 
                                 <TextBlock x:Name="OledSleepTimeoutValueTextBlock"
@@ -1682,8 +1683,7 @@
                                         PreviewMouseMove="Slider_PreviewMouseMove"
                                         PreviewMouseLeftButtonUp="Slider_PreviewMouseLeftButtonUp"
                                         LostMouseCapture="Slider_LostMouseCapture"
-                                        Width="420"
-                                        HorizontalAlignment="Left"
+                                        MaxWidth="420"
                                         Margin="0,0,0,14" />
 
                                 <Grid Margin="0,0,0,10">
@@ -1719,8 +1719,7 @@
                                         PreviewMouseMove="Slider_PreviewMouseMove"
                                         PreviewMouseLeftButtonUp="Slider_PreviewMouseLeftButtonUp"
                                         LostMouseCapture="Slider_LostMouseCapture"
-                                        Width="420"
-                                        HorizontalAlignment="Left"
+                                        MaxWidth="420"
                                         Margin="0,0,0,14" />
 
                                 <CheckBox x:Name="OledAntiBurnInCheckBox"
@@ -2238,7 +2237,7 @@
                                            TextWrapping="Wrap"
                                            Margin="0,0,0,10" />
 
-                                <Grid Width="420" HorizontalAlignment="Left">
+                                <Grid MaxWidth="420">
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto" />
                                         <RowDefinition Height="Auto" />
@@ -2256,8 +2255,7 @@
                                             PreviewMouseMove="Slider_PreviewMouseMove"
                                             PreviewMouseLeftButtonUp="Slider_PreviewMouseLeftButtonUp"
                                             LostMouseCapture="Slider_LostMouseCapture"
-                                            Width="420"
-                                            HorizontalAlignment="Left" />
+                                            MaxWidth="420" />
 
                                     <Grid Grid.Row="1" Margin="0,2,0,0">
                                         <TextBlock Text="0%" HorizontalAlignment="Left" />
