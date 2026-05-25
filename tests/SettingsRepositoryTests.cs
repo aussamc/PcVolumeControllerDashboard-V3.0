@@ -280,4 +280,32 @@ public sealed class SettingsRepositoryTests : IDisposable
         Action act = () => SettingsRepository.Save(settings, logger: null);
         act.Should().NotThrow();
     }
+
+    // ── Channel linking ───────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Normalize_LinkedGroupId_IsPreservedThroughMigration()
+    {
+        // LinkedGroupId has no migration gate — it should survive a full Normalize
+        // pass regardless of the incoming SettingsVersion.
+        var settings = new DashboardSettings { SettingsVersion = 0 };
+        settings.Channels = DashboardSettings.CreateDefaultChannels();
+        settings.Channels[0].LinkedGroupId = "music";
+        settings.Channels[2].LinkedGroupId = "music";
+
+        SettingsRepository.Normalize(settings, ChannelCount, MaxSensitivity);
+
+        settings.Channels[0].LinkedGroupId.Should().Be("music");
+        settings.Channels[2].LinkedGroupId.Should().Be("music");
+        settings.Channels[1].LinkedGroupId.Should().BeEmpty();
+        settings.Channels[3].LinkedGroupId.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Normalize_LinkedGroupId_DefaultIsEmpty()
+    {
+        // Freshly constructed ChannelSettings should default to no link group.
+        var ch = new ChannelSettings();
+        ch.LinkedGroupId.Should().BeEmpty();
+    }
 }

@@ -28,7 +28,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.55";
+    private const string DashboardVersion = "2.56";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -1047,6 +1047,7 @@ public partial class MainWindow : Window
     }
 
     private bool _volumeLimitsSuppressEvents;
+    private bool _linkGroupSuppressEvents;
 
     private void ChannelMinVolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
@@ -1095,6 +1096,28 @@ public partial class MainWindow : Window
         if (_selectedChannelIndex < 0 || _selectedChannelIndex >= _settings.Channels.Length) return;
         _settings.Channels[_selectedChannelIndex].MinVolumePercent = Math.Clamp((int)Math.Round(ChannelMinVolumeSlider.Value), 0, 100);
         _settings.Channels[_selectedChannelIndex].MaxVolumePercent = Math.Clamp((int)Math.Round(ChannelMaxVolumeSlider.Value), 0, 100);
+        FlushUiToSettings();
+    }
+
+    private void ChannelLinkGroup_LostFocus(object sender, RoutedEventArgs e)
+    {
+        if (_linkGroupSuppressEvents) return;
+        SaveChannelLinkGroup();
+    }
+
+    private void ChannelLinkGroup_Clear(object sender, RoutedEventArgs e)
+    {
+        _linkGroupSuppressEvents = true;
+        ChannelLinkGroupTextBox.Text = string.Empty;
+        _linkGroupSuppressEvents = false;
+        SaveChannelLinkGroup();
+    }
+
+    private void SaveChannelLinkGroup()
+    {
+        if (_selectedChannelIndex < 0 || _selectedChannelIndex >= _settings.Channels.Length) return;
+        _settings.Channels[_selectedChannelIndex].LinkedGroupId =
+            ChannelLinkGroupTextBox.Text.Trim();
         FlushUiToSettings();
     }
 
@@ -1923,7 +1946,7 @@ public partial class MainWindow : Window
         ChangeChannelVolumeWithComHandling(_selectedChannelIndex, deltaPercent);
     }
 
-    private void ChangeChannelVolume(int channelIndex, int deltaPercent)
+    private void ChangeChannelVolume(int channelIndex, int deltaPercent, bool propagate = true)
     {
         if (channelIndex < 0 || channelIndex >= _channels.Count)
         {
@@ -2008,6 +2031,16 @@ public partial class MainWindow : Window
         if (IsAdvancedDebugLoggingEnabled())
         {
             Log($"Channel {channel.ChannelNumber} / {target.Label}: volume changed.");
+        }
+
+        // Propagate the same delta to all channels in the same link group.
+        // propagate=false prevents the recursive calls from re-propagating.
+        if (propagate)
+        {
+            foreach (int linkedIndex in GetLinkedChannelIndices(channelIndex))
+            {
+                ChangeChannelVolume(linkedIndex, deltaPercent, propagate: false);
+            }
         }
     }
 
@@ -2472,6 +2505,21 @@ public partial class MainWindow : Window
         finally
         {
             _suppressPresetCallbacks = false;
+        }
+
+        // Populate channel link group
+        _linkGroupSuppressEvents = true;
+        try
+        {
+            int index = _selectedChannelIndex;
+            ChannelLinkGroupTextBox.Text =
+                (_settings.Channels != null && index < _settings.Channels.Length)
+                    ? (_settings.Channels[index].LinkedGroupId ?? string.Empty)
+                    : string.Empty;
+        }
+        finally
+        {
+            _linkGroupSuppressEvents = false;
         }
     }
 
@@ -3922,6 +3970,7 @@ public partial class MainWindow : Window
             Presets = (i < previous.Length && previous[i].Presets != null)
                 ? previous[i].Presets
                 : new[] { new VolumePreset { Name = "", VolumePercent = 25 }, new VolumePreset { Name = "", VolumePercent = 50 }, new VolumePreset { Name = "", VolumePercent = 75 } },
+            LinkedGroupId  = (i < previous.Length) ? previous[i].LinkedGroupId  : string.Empty,
         }).ToArray();
 
         _settings.ChannelTargetKeys = _settings.Channels.Select(channel => channel.TargetKey).ToArray();
@@ -4776,6 +4825,13 @@ public sealed class ChannelSettings
         new VolumePreset { Name = "", VolumePercent = 50 },
         new VolumePreset { Name = "", VolumePercent = 75 },
     };
+
+    // Channel linking group identifier (v2.56+).
+    // Channels that share the same non-empty string are "linked": when an encoder
+    // moves one channel by a given delta, all other channels in the group receive the
+    // same delta (ganged-potentiometer behaviour).
+    // Empty string = not linked.
+    public string LinkedGroupId { get; set; } = string.Empty;
 }
 
 public sealed class VolumePreset
