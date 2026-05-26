@@ -308,8 +308,17 @@ internal static class SettingsRepository
                         SensitivityPercent      = ch.SensitivityPercent,
                         MinVolumePercent        = ch.MinVolumePercent,
                         MaxVolumePercent        = ch.MaxVolumePercent,
-                        MuteHotkey              = ch.MuteHotkey,
-                        Presets                 = ch.Presets,
+                        MuteHotkey              = new HotkeyBinding
+                        {
+                            Enabled    = ch.MuteHotkey.Enabled,
+                            Modifiers  = ch.MuteHotkey.Modifiers,
+                            VirtualKey = ch.MuteHotkey.VirtualKey,
+                        },
+                        Presets                 = ch.Presets?.Select(p => new VolumePreset
+                        {
+                            Name          = p.Name,
+                            VolumePercent = p.VolumePercent,
+                        }).ToArray() ?? Array.Empty<VolumePreset>(),
                         LinkedGroupId           = ch.LinkedGroupId,
                     }).ToArray()
                 });

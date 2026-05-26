@@ -1984,6 +1984,11 @@ public partial class MainWindow : Window
             {
                 Log($"Channel {channel.ChannelNumber} / Master: {next}%");
             }
+            if (propagate)
+            {
+                foreach (int linkedIndex in GetLinkedChannelIndices(channelIndex))
+                    ChangeChannelVolume(linkedIndex, deltaPercent, propagate: false);
+            }
             return;
         }
 
@@ -1997,6 +2002,11 @@ public partial class MainWindow : Window
                 _defaultCaptureDevice.AudioEndpointVolume.Mute = false;
             if (IsAdvancedDebugLoggingEnabled())
                 Log($"Channel {channel.ChannelNumber} / Mic Input: {next}%");
+            if (propagate)
+            {
+                foreach (int linkedIndex in GetLinkedChannelIndices(channelIndex))
+                    ChangeChannelVolume(linkedIndex, deltaPercent, propagate: false);
+            }
             return;
         }
 
