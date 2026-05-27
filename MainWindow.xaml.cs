@@ -1690,18 +1690,32 @@ public partial class MainWindow : Window
 
                 List<AudioSessionControl> sessions = _audioService.GetActiveSessions();
 
+                // Collect all enumerable sessions first so we can disambiguate labels
+                // before adding to _audioTargets.  We do NOT deduplicate by process name
+                // here: multiple windows / instances of the same app (e.g. two browser
+                // windows) each get their own row in the dropdown.
+                var sessionTargets = new List<AudioTargetItem>();
                 foreach (AudioSessionControl session in sessions)
                 {
                     AudioTargetItem? target = TryCreateAudioTargetFromSession(session);
-
-                    if (target == null)
-                        continue;
-
-                    if (_audioTargets.Any(t => t.Key.Equals(target.Key, StringComparison.OrdinalIgnoreCase)))
-                        continue;
-
-                    _audioTargets.Add(target);
+                    if (target != null)
+                        sessionTargets.Add(target);
                 }
+
+                // Disambiguate labels when the same process produces more than one
+                // audio session: first instance keeps the bare name ("chrome"),
+                // subsequent ones are suffixed ("chrome (2)", "chrome (3)", …).
+                var processNameCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                foreach (AudioTargetItem t in sessionTargets)
+                {
+                    processNameCounts.TryGetValue(t.ProcessName, out int seen);
+                    processNameCounts[t.ProcessName] = seen + 1;
+                    if (seen > 0)
+                        t.Label = $"{t.ProcessName} ({seen + 1})";
+                }
+
+                foreach (AudioTargetItem t in sessionTargets)
+                    _audioTargets.Add(t);
 
                 EnsureSavedTargetsAppearInTargetList();
                 Log($"WASAPI: loaded {_audioTargets.Count} target(s).");
@@ -1715,9 +1729,15 @@ public partial class MainWindow : Window
             _lastAudioSessionSnapshot = GetAudioSessionSnapshot();
 
             // Rebuild the lookup cache so FindTargetByKey() is O(1).
+            // When multiple sessions share the same process-name key (e.g. two
+            // browser windows both map to PROC:chrome), keep the first entry so
+            // the cache result is stable across refreshes.
             _audioTargetCache.Clear();
             foreach (AudioTargetItem cacheTarget in _audioTargets)
-                _audioTargetCache[cacheTarget.Key] = cacheTarget;
+            {
+                if (!_audioTargetCache.ContainsKey(cacheTarget.Key))
+                    _audioTargetCache[cacheTarget.Key] = cacheTarget;
+            }
         }
         catch (Exception ex)
         {
