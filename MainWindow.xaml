@@ -2620,9 +2620,33 @@
                 <Grid Margin="0,12,0,0" Background="{DynamicResource AppBackground}">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
-                    <Border Grid.Row="0" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12">
+
+                    <!-- ⚠ TEMPORARY — window size helper, remove before release -->
+                    <Border Grid.Row="0" BorderThickness="1" CornerRadius="8" Padding="10,8"
+                            Margin="0,0,0,12"
+                            BorderBrush="{DynamicResource WarningForeground}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="⚠ Temp — Window size: "
+                                       Foreground="{DynamicResource WarningForeground}"
+                                       VerticalAlignment="Center" FontSize="13" />
+                            <TextBlock FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center">
+                                <TextBlock.Text>
+                                    <MultiBinding StringFormat="{}{0:F0} × {1:F0}">
+                                        <Binding RelativeSource="{RelativeSource AncestorType=Window}" Path="ActualWidth" />
+                                        <Binding RelativeSource="{RelativeSource AncestorType=Window}" Path="ActualHeight" />
+                                    </MultiBinding>
+                                </TextBlock.Text>
+                            </TextBlock>
+                            <TextBlock Text=" px   (min 980 × 600)"
+                                       Foreground="{DynamicResource SecondaryForeground}"
+                                       VerticalAlignment="Center" FontSize="12" Margin="6,0,0,0" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Row="1" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12">
                         <StackPanel>
                             <TextBlock Text="Serial / Debug Console" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,8" />
                             <WrapPanel>
@@ -2633,7 +2657,7 @@
                             </WrapPanel>
                         </StackPanel>
                     </Border>
-                    <TextBox Grid.Row="1" x:Name="DebugConsoleTextBox" FontFamily="Consolas" AcceptsReturn="True" TextWrapping="NoWrap" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" IsReadOnly="True" />
+                    <TextBox Grid.Row="2" x:Name="DebugConsoleTextBox" FontFamily="Consolas" AcceptsReturn="True" TextWrapping="NoWrap" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" IsReadOnly="True" />
                 </Grid>
             </TabItem>
             <TabItem x:Name="FirstRunWizardTab" Header="First Run" Visibility="Collapsed">
