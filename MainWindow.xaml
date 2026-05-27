@@ -893,6 +893,7 @@
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
 
                                         <TextBlock Grid.Column="0"
@@ -925,8 +926,17 @@
                                                 Width="80"
                                                 Height="30"
                                                 Style="{StaticResource PrimaryButton}"
-                                                ToolTip="Assign the selected audio target to the selected channel"
+                                                ToolTip="Set this as the only app for this channel (replaces any existing pool)"
                                                 Click="AssignChannelButton_Click" />
+
+                                        <Button Grid.Column="5"
+                                                x:Name="AddToPoolButton"
+                                                Content="Add"
+                                                Width="60"
+                                                Height="30"
+                                                Margin="4,0,0,0"
+                                                ToolTip="Add this app to the channel's pool — the channel will watch all pooled apps and control whichever is running"
+                                                Click="AddToPoolButton_Click" />
                                     </Grid>
 
                                     <!-- Row 1: OLED display name + Save Name button -->
@@ -964,6 +974,57 @@
                                                 ToolTip="Save this display name to the selected channel"
                                                 Click="SaveDisplayNameButton_Click" />
                                     </Grid>
+
+                                    <!-- Row 2: multi-app pool chips (hidden when pool is empty) -->
+                                    <Border x:Name="ChannelPoolBorder"
+                                            Visibility="Collapsed"
+                                            Margin="0,0,0,8"
+                                            Padding="8,6"
+                                            CornerRadius="4"
+                                            BorderThickness="1"
+                                            BorderBrush="{DynamicResource CardBorder}"
+                                            Background="{DynamicResource ListBackground}">
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Left"
+                                                       Text="App pool:"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,10,0"
+                                                       FontWeight="SemiBold" />
+                                            <ItemsControl x:Name="ChannelPoolItemsControl">
+                                                <ItemsControl.ItemsPanel>
+                                                    <ItemsPanelTemplate>
+                                                        <WrapPanel Orientation="Horizontal" />
+                                                    </ItemsPanelTemplate>
+                                                </ItemsControl.ItemsPanel>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Border Margin="0,0,6,4"
+                                                                Padding="6,2"
+                                                                CornerRadius="4"
+                                                                BorderThickness="1"
+                                                                BorderBrush="{DynamicResource CardBorder}"
+                                                                Background="{DynamicResource ButtonBackground}">
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <TextBlock Text="{Binding Label}"
+                                                                           VerticalAlignment="Center"
+                                                                           FontSize="12"
+                                                                           Margin="0,0,4,0" />
+                                                                <Button Content="×"
+                                                                        Tag="{Binding Key}"
+                                                                        Width="16"
+                                                                        Height="16"
+                                                                        Padding="0"
+                                                                        FontSize="10"
+                                                                        VerticalAlignment="Center"
+                                                                        ToolTip="Remove from pool"
+                                                                        Click="RemoveFromChannelPool_Click" />
+                                                            </StackPanel>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </DockPanel>
+                                    </Border>
                                 </StackPanel>
 
                                 <ListView x:Name="ChannelMappingsListView"

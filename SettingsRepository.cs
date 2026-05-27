@@ -391,6 +391,38 @@ internal static class SettingsRepository
                 ch.MaxVolumePercent = ch.MinVolumePercent;
         }
 
+        // v7 → v8: TargetKeys (multi-app pool) introduced.
+        // Seed TargetKeys from the existing single TargetKey so existing
+        // assignments are preserved without the user having to re-configure.
+        if (settings.SettingsVersion < 8)
+        {
+            foreach (ChannelSettings ch in settings.Channels)
+            {
+                ch.TargetKeys ??= new List<string>();
+                if (ch.TargetKeys.Count == 0 && !string.IsNullOrWhiteSpace(ch.TargetKey))
+                    ch.TargetKeys.Add(ch.TargetKey);
+            }
+            foreach (ProfileEntry profile in settings.Profiles ?? new List<ProfileEntry>())
+            {
+                foreach (ChannelSettings ch in profile.Channels ?? Array.Empty<ChannelSettings>())
+                {
+                    ch.TargetKeys ??= new List<string>();
+                    if (ch.TargetKeys.Count == 0 && !string.IsNullOrWhiteSpace(ch.TargetKey))
+                        ch.TargetKeys.Add(ch.TargetKey);
+                }
+            }
+            settings.SettingsVersion = 8;
+            migrated = true;
+        }
+
+        // Ongoing: ensure TargetKeys is never null and is consistent with TargetKey.
+        foreach (ChannelSettings ch in settings.Channels)
+        {
+            ch.TargetKeys ??= new List<string>();
+            if (ch.TargetKeys.Count == 0 && !string.IsNullOrWhiteSpace(ch.TargetKey))
+                ch.TargetKeys.Add(ch.TargetKey);
+        }
+
         return migrated;
     }
 }

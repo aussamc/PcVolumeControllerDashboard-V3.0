@@ -28,7 +28,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.57";
+    private const string DashboardVersion = "2.58";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -79,6 +79,7 @@ public partial class MainWindow : Window
     private const int DbtDevNodesChanged = 0x0007;
 
     private readonly ObservableCollection<AudioTargetItem> _audioTargets = new();
+    private readonly ObservableCollection<ChannelPoolItem> _channelPoolItems = new();
     private readonly Dictionary<string, AudioTargetItem> _audioTargetCache =
         new(StringComparer.OrdinalIgnoreCase);
     private readonly System.Collections.ObjectModel.ObservableCollection<OutputDeviceItem> _outputDevices = new();
@@ -213,6 +214,7 @@ public partial class MainWindow : Window
         AudioSessionsListView.ItemsSource = _audioTargets;
         ChannelTargetComboBox.ItemsSource = _audioTargets;
         ChannelMappingsListView.ItemsSource = _channels;
+        ChannelPoolItemsControl.ItemsSource = _channelPoolItems;
         OutputDevicesListView.ItemsSource = _outputDevices;
 
         LoadSettings();
@@ -815,6 +817,7 @@ public partial class MainWindow : Window
             Channels = source.Channels.Select(ch => new ChannelSettings
             {
                 TargetKey = ch.TargetKey,
+                TargetKeys = ch.TargetKeys != null ? new List<string>(ch.TargetKeys) : new List<string>(),
                 FriendlyName = ch.FriendlyName,
                 ButtonAction = ch.ButtonAction,
                 LongPressButtonAction = ch.LongPressButtonAction,
@@ -1229,23 +1232,22 @@ public partial class MainWindow : Window
     private void AssignChannelButton_Click(object sender, RoutedEventArgs e)
     {
         if (ChannelTargetComboBox.SelectedItem is not AudioTargetItem target)
-        {
             return;
-        }
 
         ChannelMappingItem channel = _channels[_selectedChannelIndex];
 
-        channel.TargetKey = target.Key;
+        // Replace pool with just this one app.
+        channel.TargetKeys = new List<string> { target.Key };
+        channel.TargetKey  = target.Key;
         channel.AssignedLabel = target.Label;
         channel.FriendlyName = ChannelDisplayNameTextBox.Text.Trim();
 
         if (string.IsNullOrWhiteSpace(channel.FriendlyName))
-        {
             channel.FriendlyName = target.Label;
-        }
 
         channel.Status = target.IsActiveOrMaster ? "Active" : "Waiting for app";
 
+        UpdateChannelPoolUi();
         FlushUiToSettings();
         RefreshAudioSessions();
         RefreshAllChannelStates();
@@ -1253,6 +1255,78 @@ public partial class MainWindow : Window
         SendStateToDevice(force: true);
 
         Log($"Channel {channel.ChannelNumber} assigned to {target.Label}.");
+    }
+
+    private void AddToPoolButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (ChannelTargetComboBox.SelectedItem is not AudioTargetItem target)
+            return;
+
+        ChannelMappingItem channel = _channels[_selectedChannelIndex];
+
+        // Reject MASTER and MIC_INPUT — they don't make sense in a pool.
+        if (target.IsMaster || target.IsMicInput)
+        {
+            System.Windows.MessageBox.Show(
+                "Master and Microphone Input targets cannot be added to an app pool.\nUse Assign instead.",
+                "Cannot add to pool",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Information);
+            return;
+        }
+
+        if (channel.TargetKeys.Contains(target.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            Log($"Channel {channel.ChannelNumber}: {target.Label} is already in the pool.");
+            return;
+        }
+
+        // If the channel has no assignment yet, treat Add as Assign.
+        if (channel.TargetKeys.Count == 0)
+        {
+            channel.TargetKey  = target.Key;
+            channel.AssignedLabel = target.Label;
+            if (string.IsNullOrWhiteSpace(channel.FriendlyName))
+                channel.FriendlyName = target.Label;
+        }
+
+        channel.TargetKeys.Add(target.Key);
+
+        UpdateChannelPoolUi();
+        FlushUiToSettings();
+        RefreshAudioSessions();
+        RefreshAllChannelStates();
+        SendAllChannelStatesToDevice();
+        SendStateToDevice(force: true);
+
+        Log($"Channel {channel.ChannelNumber}: added {target.Label} to app pool (pool size: {channel.TargetKeys.Count}).");
+    }
+
+    private void RemoveFromChannelPool_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.Button btn || btn.Tag is not string key)
+            return;
+
+        ChannelMappingItem channel = _channels[_selectedChannelIndex];
+        bool removed = channel.TargetKeys.Remove(key);
+        if (!removed) return;
+
+        // Keep TargetKey in sync.
+        channel.TargetKey = channel.TargetKeys.FirstOrDefault() ?? string.Empty;
+        if (channel.TargetKeys.Count == 0)
+        {
+            channel.AssignedLabel = "Unassigned";
+            channel.FriendlyName  = string.Empty;
+            channel.Status        = "Unassigned";
+        }
+
+        UpdateChannelPoolUi();
+        FlushUiToSettings();
+        RefreshAllChannelStates();
+        SendAllChannelStatesToDevice();
+        SendStateToDevice(force: true);
+
+        Log($"Channel {channel.ChannelNumber}: removed {key} from app pool.");
     }
 
     private void ChannelDisplayNameTextBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -1413,6 +1487,7 @@ public partial class MainWindow : Window
 
         RefreshAllChannelStates();
         UpdateSelectedChannelUi();
+        UpdateChannelPoolUi();
         SendStateToDevice(force: true);
 
         }
@@ -1752,8 +1827,13 @@ public partial class MainWindow : Window
     private void EnsureSavedTargetsAppearInTargetList()
     {
         string[] savedKeys = _settings.Channels
-            .Select(channel => channel.TargetKey)
-            .Concat(_channels.Select(channel => channel.TargetKey))
+            .SelectMany(ch => {
+                var keys = new List<string>();
+                if (!string.IsNullOrWhiteSpace(ch.TargetKey)) keys.Add(ch.TargetKey);
+                if (ch.TargetKeys != null) keys.AddRange(ch.TargetKeys);
+                return keys;
+            })
+            .Concat(_channels.SelectMany(ch => ch.TargetKeys ?? Enumerable.Empty<string>()))
             .Where(key => !string.IsNullOrWhiteSpace(key))
             .Where(key => !key.Equals("MASTER", StringComparison.OrdinalIgnoreCase))
             .Where(key => !key.Equals("MIC_INPUT", StringComparison.OrdinalIgnoreCase))
@@ -1851,13 +1931,41 @@ public partial class MainWindow : Window
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// For a multi-app pool channel, returns the key of the first pool entry
+    /// that currently has active audio sessions. Falls back to the first entry
+    /// if nothing is running so the channel always has a meaningful target.
+    /// Returns channel.TargetKey directly for single-app channels.
+    /// </summary>
+    private string ResolveActiveTargetKey(ChannelMappingItem channel)
+    {
+        if (channel.TargetKeys.Count <= 1)
+            return channel.TargetKey;
+
+        // Find first pool entry that has a live session.
+        foreach (string key in channel.TargetKeys)
+        {
+            if (string.IsNullOrWhiteSpace(key)) continue;
+            if (key.Equals("MASTER", StringComparison.OrdinalIgnoreCase)) return key;
+            if (key.Equals("MIC_INPUT", StringComparison.OrdinalIgnoreCase)) return key;
+            if (FindSessionsForKey(key).Any()) return key;
+        }
+
+        // None running — return first pool entry so the channel shows "waiting" for it.
+        return channel.TargetKeys[0];
+    }
+
     private void RefreshAllChannelStates()
     {
         try
         {
         foreach (ChannelMappingItem channel in _channels)
         {
-            AudioTargetItem? target = FindTargetByKey(channel.TargetKey);
+            // For multi-app pool channels, find whichever app is currently running.
+            string effectiveKey = ResolveActiveTargetKey(channel);
+            if (channel.TargetKeys.Count > 1)
+                channel.TargetKey = effectiveKey; // keep in sync for volume/mute operations
+            AudioTargetItem? target = FindTargetByKey(effectiveKey);
 
             if (target == null)
             {
@@ -2402,6 +2510,29 @@ public partial class MainWindow : Window
         Log($"Channel {channelIndex + 1}: applied {presetName} ({preset.VolumePercent}%).");
     }
 
+    private void UpdateChannelPoolUi()
+    {
+        _channelPoolItems.Clear();
+        if (_selectedChannelIndex < 0 || _selectedChannelIndex >= _channels.Count)
+        {
+            if (ChannelPoolBorder != null) ChannelPoolBorder.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        ChannelMappingItem channel = _channels[_selectedChannelIndex];
+        foreach (string key in channel.TargetKeys)
+        {
+            string label = _audioTargetCache.TryGetValue(key, out AudioTargetItem? cached)
+                ? cached.Label
+                : MakeDisplayLabelFromTargetKey(key);
+            _channelPoolItems.Add(new ChannelPoolItem { Key = key, Label = label });
+        }
+
+        if (ChannelPoolBorder != null)
+            ChannelPoolBorder.Visibility = _channelPoolItems.Count > 0
+                ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     private void UpdateSelectedChannelUi()
     {
         ChannelMappingItem channel = SelectedChannel;
@@ -2540,6 +2671,8 @@ public partial class MainWindow : Window
         {
             _linkGroupSuppressEvents = false;
         }
+
+        UpdateChannelPoolUi();
     }
 
     private int GetEncoderSensitivityPercentFromUi()
@@ -2961,6 +3094,29 @@ public partial class MainWindow : Window
                     channel.FriendlyName = string.Empty;
                 }
 
+                continue;
+            }
+
+            // Multi-app pool: show active app label or pool summary.
+            if (channel.TargetKeys.Count > 1)
+            {
+                // Try to show the currently active app.
+                string activeKey = ResolveActiveTargetKey(channel);
+                AudioTargetItem? activeTarget = FindTargetByKey(activeKey);
+                if (activeTarget != null && (activeTarget.IsActiveOrMaster || FindSessionsForKey(activeKey).Any()))
+                {
+                    channel.AssignedLabel = activeTarget.Label;
+                }
+                else
+                {
+                    // Show pool summary: first two names + count
+                    var labels = channel.TargetKeys
+                        .Select(k => _audioTargetCache.TryGetValue(k, out AudioTargetItem? t) ? t.Label : MakeDisplayLabelFromTargetKey(k))
+                        .ToList();
+                    channel.AssignedLabel = labels.Count <= 2
+                        ? string.Join(" / ", labels)
+                        : $"{labels[0]} / +{labels.Count - 1} more";
+                }
                 continue;
             }
 
@@ -3971,6 +4127,12 @@ public partial class MainWindow : Window
         {
             _channels[i].TargetKey = _settings.Channels[i].TargetKey ?? string.Empty;
             _channels[i].FriendlyName = _settings.Channels[i].FriendlyName ?? string.Empty;
+            _channels[i].TargetKeys = _settings.Channels[i].TargetKeys != null
+                ? new List<string>(_settings.Channels[i].TargetKeys)
+                : new List<string>();
+            // Sync TargetKey from pool when only one entry
+            if (_channels[i].TargetKeys.Count == 1)
+                _channels[i].TargetKey = _channels[i].TargetKeys[0];
             // Default for ButtonAction is ToggleAssignedMute (not NoAction) to match intended out-of-box behaviour.
             _channels[i].ButtonAction = ChannelButtonActions.IsValid(_settings.Channels[i].ButtonAction) ? _settings.Channels[i].ButtonAction : ChannelButtonActions.ToggleAssignedMute;
             _channels[i].LongPressButtonAction = ChannelButtonActions.IsValidLongPressAction(_settings.Channels[i].LongPressButtonAction) ? _settings.Channels[i].LongPressButtonAction : ChannelButtonActions.NoAction;
@@ -3997,7 +4159,8 @@ public partial class MainWindow : Window
         // this call above the SensitivityPercent assignment in FlushUiToSettings().
         _settings.Channels = _channels.Select((channel, i) => new ChannelSettings
         {
-            TargetKey    = channel.TargetKey,
+            TargetKey    = channel.TargetKeys?.FirstOrDefault() ?? channel.TargetKey,
+            TargetKeys   = new List<string>(channel.TargetKeys ?? new List<string>()),
             FriendlyName = channel.FriendlyName,
             ButtonAction          = ChannelButtonActions.IsValid(channel.ButtonAction)                     ? channel.ButtonAction                     : ChannelButtonActions.ToggleAssignedMute,
             LongPressButtonAction = ChannelButtonActions.IsValidLongPressAction(channel.LongPressButtonAction)  ? channel.LongPressButtonAction  : ChannelButtonActions.NoAction,
@@ -4874,12 +5037,24 @@ public sealed class ChannelSettings
     // same delta (ganged-potentiometer behaviour).
     // Empty string = not linked.
     public string LinkedGroupId { get; set; } = string.Empty;
+
+    // Multi-app pool (v2.58+). Ordered list of PROC:/MASTER/MIC_INPUT keys to
+    // watch. At runtime the first key with an active audio session wins.
+    // When this list has exactly one entry it behaves identically to TargetKey.
+    public List<string> TargetKeys { get; set; } = new();
 }
 
 public sealed class VolumePreset
 {
     public string Name { get; set; } = "";
     public int VolumePercent { get; set; } = 50;
+}
+
+/// <summary>One entry in a channel's multi-app pool, used to bind the pool chip list.</summary>
+public sealed class ChannelPoolItem
+{
+    public string Key   { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
 }
 
 public sealed class AudioTargetItem
@@ -4962,6 +5137,9 @@ public sealed class ChannelMappingItem
 
     // Per-channel OLED display mode override. Empty = inherit global mode.
     public string OledDisplayMode { get; set; } = string.Empty;
+
+    // Runtime mirror of ChannelSettings.TargetKeys.
+    public List<string> TargetKeys { get; set; } = new();
 
     public string ChannelDisplay => ChannelNumber.ToString();
 
