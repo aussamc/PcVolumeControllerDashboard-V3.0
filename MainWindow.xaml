@@ -885,83 +885,84 @@
                                                Margin="0,4,0,8"
                                                TextWrapping="Wrap" />
 
-                                    <Grid Margin="0,0,0,12">
+                                    <!-- Row 0: channel selector + target assignment + Assign button -->
+                                    <Grid Margin="0,0,0,6">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="120" />
                                             <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="210" />
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="160" />
-                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="Auto" />
-                                        </Grid.RowDefinitions>
 
-                                        <TextBlock Grid.Row="0" Grid.Column="0"
+                                        <TextBlock Grid.Column="0"
                                                    Text="Channel:"
                                                    VerticalAlignment="Center"
                                                    Margin="0,0,8,0" />
 
-                                        <ComboBox Grid.Row="0" Grid.Column="1"
+                                        <ComboBox Grid.Column="1"
                                                   x:Name="LogicalChannelComboBox"
                                                   Height="30"
                                                   Margin="0,0,12,0"
                                                   ToolTip="Select which encoder channel to configure"
                                                   SelectionChanged="LogicalChannelComboBox_SelectionChanged" />
 
-                                        <TextBlock Grid.Row="0" Grid.Column="2"
+                                        <TextBlock Grid.Column="2"
                                                    Text="Assign to:"
                                                    VerticalAlignment="Center"
                                                    Margin="0,0,8,0" />
 
-                                        <ComboBox Grid.Row="0" Grid.Column="3"
+                                        <ComboBox Grid.Column="3"
                                                   x:Name="ChannelTargetComboBox"
                                                   Height="30"
                                                   Margin="0,0,12,0"
                                                   ToolTip="Select the Windows audio session to assign to this channel"
                                                   DisplayMemberPath="Label" />
 
-                                        <TextBlock Grid.Row="0" Grid.Column="4"
-                                                   Text="Display:"
-                                                   VerticalAlignment="Center"
-                                                   Margin="0,0,8,0" />
-
-                                        <TextBox Grid.Row="0" Grid.Column="5"
-                                                 x:Name="ChannelDisplayNameTextBox"
-                                                 Height="30"
-                                                 MaxLength="16"
-                                                 Margin="0,0,12,0"
-                                                 ToolTip="Friendly name shown on the OLED display (max 16 characters)"
-                                                 TextChanged="ChannelDisplayNameTextBox_TextChanged" />
-
-                                        <Button Grid.Row="0" Grid.Column="6"
+                                        <Button Grid.Column="4"
                                                 x:Name="AssignChannelButton"
                                                 Content="_Assign"
                                                 Width="80"
                                                 Height="30"
-                                                Margin="0,0,8,0"
                                                 Style="{StaticResource PrimaryButton}"
                                                 ToolTip="Assign the selected audio target to the selected channel"
                                                 Click="AssignChannelButton_Click" />
+                                    </Grid>
 
-                                        <Button Grid.Row="0" Grid.Column="7"
+                                    <!-- Row 1: OLED display name + Save Name button -->
+                                    <Grid Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <TextBlock Grid.Column="0"
+                                                   Text="Display name:"
+                                                   VerticalAlignment="Top"
+                                                   Margin="0,6,8,0" />
+
+                                        <StackPanel Grid.Column="1" Margin="0,0,12,0">
+                                            <TextBox x:Name="ChannelDisplayNameTextBox"
+                                                     Height="30"
+                                                     MaxLength="16"
+                                                     ToolTip="Friendly name shown on the OLED display (max 16 characters)"
+                                                     TextChanged="ChannelDisplayNameTextBox_TextChanged" />
+                                            <TextBlock x:Name="DisplayNameCharCountTextBlock"
+                                                       Text="0 / 16"
+                                                       FontSize="10"
+                                                       Foreground="{DynamicResource SecondaryForeground}"
+                                                       Margin="0,2,0,0" />
+                                        </StackPanel>
+
+                                        <Button Grid.Column="2"
                                                 x:Name="SaveDisplayNameButton"
                                                 Content="Save Name"
                                                 Width="90"
                                                 Height="30"
+                                                VerticalAlignment="Top"
                                                 ToolTip="Save this display name to the selected channel"
                                                 Click="SaveDisplayNameButton_Click" />
-
-                                        <TextBlock x:Name="DisplayNameCharCountTextBlock"
-                                                   Grid.Row="1" Grid.Column="5"
-                                                   Text="0 / 16"
-                                                   FontSize="10"
-                                                   Foreground="{DynamicResource SecondaryForeground}"
-                                                   Margin="0,2,12,0" />
                                     </Grid>
                                 </StackPanel>
 
