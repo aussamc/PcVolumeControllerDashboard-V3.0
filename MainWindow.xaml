@@ -5,6 +5,8 @@
         Icon="Assets/app-icon.ico"
         Height="833"
         Width="1268"
+        MinWidth="570"
+        MinHeight="320"
         ResizeMode="CanResize"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource AppBackground}"
@@ -1738,7 +1740,7 @@
                                 <TextBlock x:Name="OledPreviewModeTextBlock" Text="Preview mode: App name + volume" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,10" />
 
                                 <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-                                    <Border BorderThickness="1" CornerRadius="10" Padding="18" Background="{DynamicResource PreviewSurfaceBackground}" BorderBrush="{DynamicResource PreviewSurfaceBorder}" MinWidth="1320">
+                                    <Border BorderThickness="1" CornerRadius="10" Padding="18" Background="{DynamicResource PreviewSurfaceBackground}" BorderBrush="{DynamicResource PreviewSurfaceBorder}">
                                         <Grid>
                                             <Grid.RowDefinitions>
                                                 <RowDefinition Height="Auto" />
@@ -1748,105 +1750,57 @@
                                             <UniformGrid Grid.Row="0" Columns="6" Rows="1" Margin="0,0,0,18">
                                                 <StackPanel HorizontalAlignment="Center" Margin="6,0">
                                                     <TextBlock x:Name="OledPreview1Title" Text="OLED 1" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
-                                                    <Viewbox Width="192" Height="96" Stretch="Uniform" HorizontalAlignment="Center">
-                                                        <Border Width="128" Height="64" Background="#111111" BorderBrush="#333333" BorderThickness="1" Padding="4" SnapsToDevicePixels="True">
-                                                            <Grid>
-                                                                <Grid.RowDefinitions>
-                                                                    <RowDefinition Height="Auto" />
-                                                                    <RowDefinition Height="*" />
-                                                                    <RowDefinition Height="Auto" />
-                                                                </Grid.RowDefinitions>
-                                                                <TextBlock x:Name="OledPreview1Line1" Grid.Row="0" Text="Master" Foreground="White" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                                                <TextBlock x:Name="OledPreview1Line2" Grid.Row="1" Text="0%" Foreground="White" FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                                <ProgressBar x:Name="OledPreview1Progress" Grid.Row="2" Minimum="0" Maximum="100" Height="6" Margin="0,2,0,0" />
-                                                            </Grid>
-                                                        </Border>
-                                                    </Viewbox>
+                                                    <Border BorderBrush="#444444" BorderThickness="1" HorizontalAlignment="Center">
+                                                        <Image x:Name="OledPreview1Image"
+                                                               Width="192" Height="96"
+                                                               Stretch="Fill"
+                                                               RenderOptions.BitmapScalingMode="NearestNeighbor" />
+                                                    </Border>
                                                 </StackPanel>
                                                 <StackPanel HorizontalAlignment="Center" Margin="6,0">
                                                     <TextBlock x:Name="OledPreview2Title" Text="OLED 2" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
-                                                    <Viewbox Width="192" Height="96" Stretch="Uniform" HorizontalAlignment="Center">
-                                                        <Border Width="128" Height="64" Background="#111111" BorderBrush="#333333" BorderThickness="1" Padding="4" SnapsToDevicePixels="True">
-                                                            <Grid>
-                                                                <Grid.RowDefinitions>
-                                                                    <RowDefinition Height="Auto" />
-                                                                    <RowDefinition Height="*" />
-                                                                    <RowDefinition Height="Auto" />
-                                                                </Grid.RowDefinitions>
-                                                                <TextBlock x:Name="OledPreview2Line1" Grid.Row="0" Text="Browser" Foreground="White" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                                                <TextBlock x:Name="OledPreview2Line2" Grid.Row="1" Text="0%" Foreground="White" FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                                <ProgressBar x:Name="OledPreview2Progress" Grid.Row="2" Minimum="0" Maximum="100" Height="6" Margin="0,2,0,0" />
-                                                            </Grid>
-                                                        </Border>
-                                                    </Viewbox>
+                                                    <Border BorderBrush="#444444" BorderThickness="1" HorizontalAlignment="Center">
+                                                        <Image x:Name="OledPreview2Image"
+                                                               Width="192" Height="96"
+                                                               Stretch="Fill"
+                                                               RenderOptions.BitmapScalingMode="NearestNeighbor" />
+                                                    </Border>
                                                 </StackPanel>
                                                 <StackPanel HorizontalAlignment="Center" Margin="6,0">
                                                     <TextBlock x:Name="OledPreview3Title" Text="OLED 3" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
-                                                    <Viewbox Width="192" Height="96" Stretch="Uniform" HorizontalAlignment="Center">
-                                                        <Border Width="128" Height="64" Background="#111111" BorderBrush="#333333" BorderThickness="1" Padding="4" SnapsToDevicePixels="True">
-                                                            <Grid>
-                                                                <Grid.RowDefinitions>
-                                                                    <RowDefinition Height="Auto" />
-                                                                    <RowDefinition Height="*" />
-                                                                    <RowDefinition Height="Auto" />
-                                                                </Grid.RowDefinitions>
-                                                                <TextBlock x:Name="OledPreview3Line1" Grid.Row="0" Text="Music" Foreground="White" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                                                <TextBlock x:Name="OledPreview3Line2" Grid.Row="1" Text="0%" Foreground="White" FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                                <ProgressBar x:Name="OledPreview3Progress" Grid.Row="2" Minimum="0" Maximum="100" Height="6" Margin="0,2,0,0" />
-                                                            </Grid>
-                                                        </Border>
-                                                    </Viewbox>
+                                                    <Border BorderBrush="#444444" BorderThickness="1" HorizontalAlignment="Center">
+                                                        <Image x:Name="OledPreview3Image"
+                                                               Width="192" Height="96"
+                                                               Stretch="Fill"
+                                                               RenderOptions.BitmapScalingMode="NearestNeighbor" />
+                                                    </Border>
                                                 </StackPanel>
                                                 <StackPanel HorizontalAlignment="Center" Margin="6,0">
                                                     <TextBlock x:Name="OledPreview4Title" Text="OLED 4" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
-                                                    <Viewbox Width="192" Height="96" Stretch="Uniform" HorizontalAlignment="Center">
-                                                        <Border Width="128" Height="64" Background="#111111" BorderBrush="#333333" BorderThickness="1" Padding="4" SnapsToDevicePixels="True">
-                                                            <Grid>
-                                                                <Grid.RowDefinitions>
-                                                                    <RowDefinition Height="Auto" />
-                                                                    <RowDefinition Height="*" />
-                                                                    <RowDefinition Height="Auto" />
-                                                                </Grid.RowDefinitions>
-                                                                <TextBlock x:Name="OledPreview4Line1" Grid.Row="0" Text="Discord" Foreground="White" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                                                <TextBlock x:Name="OledPreview4Line2" Grid.Row="1" Text="0%" Foreground="White" FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                                <ProgressBar x:Name="OledPreview4Progress" Grid.Row="2" Minimum="0" Maximum="100" Height="6" Margin="0,2,0,0" />
-                                                            </Grid>
-                                                        </Border>
-                                                    </Viewbox>
+                                                    <Border BorderBrush="#444444" BorderThickness="1" HorizontalAlignment="Center">
+                                                        <Image x:Name="OledPreview4Image"
+                                                               Width="192" Height="96"
+                                                               Stretch="Fill"
+                                                               RenderOptions.BitmapScalingMode="NearestNeighbor" />
+                                                    </Border>
                                                 </StackPanel>
                                                 <StackPanel HorizontalAlignment="Center" Margin="6,0">
                                                     <TextBlock x:Name="OledPreview5Title" Text="OLED 5" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
-                                                    <Viewbox Width="192" Height="96" Stretch="Uniform" HorizontalAlignment="Center">
-                                                        <Border Width="128" Height="64" Background="#111111" BorderBrush="#333333" BorderThickness="1" Padding="4" SnapsToDevicePixels="True">
-                                                            <Grid>
-                                                                <Grid.RowDefinitions>
-                                                                    <RowDefinition Height="Auto" />
-                                                                    <RowDefinition Height="*" />
-                                                                    <RowDefinition Height="Auto" />
-                                                                </Grid.RowDefinitions>
-                                                                <TextBlock x:Name="OledPreview5Line1" Grid.Row="0" Text="Unassigned" Foreground="White" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                                                <TextBlock x:Name="OledPreview5Line2" Grid.Row="1" Text="0%" Foreground="White" FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                                <ProgressBar x:Name="OledPreview5Progress" Grid.Row="2" Minimum="0" Maximum="100" Height="6" Margin="0,2,0,0" />
-                                                            </Grid>
-                                                        </Border>
-                                                    </Viewbox>
+                                                    <Border BorderBrush="#444444" BorderThickness="1" HorizontalAlignment="Center">
+                                                        <Image x:Name="OledPreview5Image"
+                                                               Width="192" Height="96"
+                                                               Stretch="Fill"
+                                                               RenderOptions.BitmapScalingMode="NearestNeighbor" />
+                                                    </Border>
                                                 </StackPanel>
                                                 <StackPanel HorizontalAlignment="Center" Margin="6,0">
                                                     <TextBlock x:Name="OledPreview6Title" Text="OLED 6" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
-                                                    <Viewbox Width="192" Height="96" Stretch="Uniform" HorizontalAlignment="Center">
-                                                        <Border Width="128" Height="64" Background="#111111" BorderBrush="#333333" BorderThickness="1" Padding="4" SnapsToDevicePixels="True">
-                                                            <Grid>
-                                                                <Grid.RowDefinitions>
-                                                                    <RowDefinition Height="Auto" />
-                                                                    <RowDefinition Height="*" />
-                                                                    <RowDefinition Height="Auto" />
-                                                                </Grid.RowDefinitions>
-                                                                <TextBlock x:Name="OledPreview6Line1" Grid.Row="0" Text="Unassigned" Foreground="White" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                                                <TextBlock x:Name="OledPreview6Line2" Grid.Row="1" Text="0%" Foreground="White" FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                                <ProgressBar x:Name="OledPreview6Progress" Grid.Row="2" Minimum="0" Maximum="100" Height="6" Margin="0,2,0,0" />
-                                                            </Grid>
-                                                        </Border>
-                                                    </Viewbox>
+                                                    <Border BorderBrush="#444444" BorderThickness="1" HorizontalAlignment="Center">
+                                                        <Image x:Name="OledPreview6Image"
+                                                               Width="192" Height="96"
+                                                               Stretch="Fill"
+                                                               RenderOptions.BitmapScalingMode="NearestNeighbor" />
+                                                    </Border>
                                                 </StackPanel>
                                             </UniformGrid>
 
@@ -1942,14 +1896,6 @@
                             </StackPanel>
                         </Border>
 
-                        <Button x:Name="SaveOledSetupButton"
-                                Content="Save _OLED Setup"
-                                Width="160"
-                                Height="34"
-                                HorizontalAlignment="Left"
-                                Margin="0,0,0,12"
-                                ToolTip="Save OLED settings and send configuration to the controller"
-                                Click="SaveOledSetupButton_Click" />
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
@@ -2638,7 +2584,7 @@
                                     </MultiBinding>
                                 </TextBlock.Text>
                             </TextBlock>
-                            <TextBlock Text=" px   (default 1268 × 833, no minimum)"
+                            <TextBlock Text=" px   (default 1268 × 833, min 570 × 320)"
                                        Foreground="{DynamicResource SecondaryForeground}"
                                        VerticalAlignment="Center" FontSize="12" Margin="6,0,0,0" />
                         </StackPanel>

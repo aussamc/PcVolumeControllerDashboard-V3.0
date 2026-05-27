@@ -432,17 +432,6 @@ public partial class MainWindow : Window
         SaveSettings();
     }
 
-    private void SaveOledSetupButton_Click(object sender, RoutedEventArgs e)
-    {
-        FlushUiToSettings();
-        UpdateOledBrightnessLabel();
-        UpdateOledSleepTimeoutLabel();
-        UpdateOledConnectedIdleTimeoutLabel();
-        UpdateOledPreviewPanels();
-        SendOledSettingsToDevice(logIfNotConnected: true);
-        Log("OLED setup saved.");
-    }
-
     private void CloseAppButton_Click(object sender, RoutedEventArgs e)
     {
         ExitApplication();
@@ -3326,6 +3315,7 @@ public partial class MainWindow : Window
 
         _settings.OledDisplayMode = GetDisplayModeFromUi();
         UpdateOledPreviewPanels();
+        SendOledSettingsToDevice(logIfNotConnected: false);
     }
 
     private void OledBrightnessSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -3338,6 +3328,7 @@ public partial class MainWindow : Window
         _settings.OledBrightnessPercent = GetOledBrightnessPercentFromUi();
         UpdateOledBrightnessLabel();
         UpdateOledPreviewPanels();
+        SendOledSettingsToDevice(logIfNotConnected: false);
     }
 
     private void OledSleepTimeoutSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -3349,6 +3340,7 @@ public partial class MainWindow : Window
 
         _settings.OledSleepTimeoutMinutes = GetOledSleepTimeoutMinutesFromUi();
         UpdateOledSleepTimeoutLabel();
+        SendOledSettingsToDevice(logIfNotConnected: false);
     }
 
     private void OledConnectedIdleActionComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -3360,6 +3352,7 @@ public partial class MainWindow : Window
 
         _settings.OledConnectedIdleAction = GetOledConnectedIdleActionFromUi();
         UpdateOledPreviewPanels();
+        SendOledSettingsToDevice(logIfNotConnected: false);
     }
 
     private void OledConnectedIdleTimeoutSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -3372,6 +3365,7 @@ public partial class MainWindow : Window
         _settings.OledConnectedIdleTimeoutMinutes = GetOledConnectedIdleTimeoutMinutesFromUi();
         UpdateOledConnectedIdleTimeoutLabel();
         UpdateOledPreviewPanels();
+        SendOledSettingsToDevice(logIfNotConnected: false);
     }
 
     private void OledAntiBurnInCheckBox_Changed(object sender, RoutedEventArgs e)
@@ -3383,6 +3377,7 @@ public partial class MainWindow : Window
 
         _settings.OledAntiBurnInEnabled = IsOledAntiBurnInEnabledFromUi();
         UpdateOledPreviewPanels();
+        SendOledSettingsToDevice(logIfNotConnected: false);
     }
 
     private int GetDisplayModeIndex(string mode)
@@ -3524,54 +3519,71 @@ public partial class MainWindow : Window
     {
         try
         {
-            TextBlock[] titleBlocks = { OledPreview1Title, OledPreview2Title, OledPreview3Title, OledPreview4Title, OledPreview5Title, OledPreview6Title };
-            TextBlock[] line1Blocks = { OledPreview1Line1, OledPreview2Line1, OledPreview3Line1, OledPreview4Line1, OledPreview5Line1, OledPreview6Line1 };
-            TextBlock[] line2Blocks = { OledPreview1Line2, OledPreview2Line2, OledPreview3Line2, OledPreview4Line2, OledPreview5Line2, OledPreview6Line2 };
-            System.Windows.Controls.ProgressBar[] progressBars = { OledPreview1Progress, OledPreview2Progress, OledPreview3Progress, OledPreview4Progress, OledPreview5Progress, OledPreview6Progress };
+            System.Windows.Controls.Image[] previewImages =
+            {
+                OledPreview1Image, OledPreview2Image, OledPreview3Image,
+                OledPreview4Image, OledPreview5Image, OledPreview6Image
+            };
+            TextBlock[] titleBlocks =
+            {
+                OledPreview1Title, OledPreview2Title, OledPreview3Title,
+                OledPreview4Title, OledPreview5Title, OledPreview6Title
+            };
 
-            string mode = GetDisplayModeFromUi();
+            string globalMode = GetDisplayModeFromUi();
+
             if (OledPreviewModeTextBlock != null)
             {
-                OledPreviewModeTextBlock.Text = $"Preview mode: {GetDisplayModeDisplayName(mode)} | Brightness: {GetOledBrightnessPercentFromUi()}% | Connected idle: {GetOledConnectedIdleTimeoutMinutesFromUi()} min / {GetOledConnectedIdleActionDisplayName(GetOledConnectedIdleActionFromUi())} | Anti-burn-in: {(IsOledAntiBurnInEnabledFromUi() ? "on" : "off")}";
+                OledPreviewModeTextBlock.Text =
+                    $"Preview mode: {GetDisplayModeDisplayName(globalMode)} | " +
+                    $"Brightness: {GetOledBrightnessPercentFromUi()}% | " +
+                    $"Connected idle: {GetOledConnectedIdleTimeoutMinutesFromUi()} min / " +
+                    $"{GetOledConnectedIdleActionDisplayName(GetOledConnectedIdleActionFromUi())} | " +
+                    $"Anti-burn-in: {(IsOledAntiBurnInEnabledFromUi() ? "on" : "off")}";
             }
 
-            for (int i = 0; i < Math.Min(_channels.Count, titleBlocks.Length); i++)
+            for (int i = 0; i < Math.Min(_channels.Count, previewImages.Length); i++)
             {
-                ChannelMappingItem channel = _channels[i];
-                string label = string.IsNullOrWhiteSpace(channel.DisplayLabel) ? $"Channel {channel.ChannelNumber}" : channel.DisplayLabel;
-                string assigned = string.IsNullOrWhiteSpace(channel.AssignedLabel) ? "Unassigned" : channel.AssignedLabel;
-                string mute = channel.Muted ? "MUTED" : "UNMUTED";
+                ChannelMappingItem ch = _channels[i];
 
-                titleBlocks[i].Text = $"OLED {channel.ChannelNumber}";
-                progressBars[i].Value = Math.Clamp(channel.Volume, 0, 100);
+                // Resolve per-channel mode override (same logic as firmware)
+                string mode = !string.IsNullOrEmpty(ch.OledDisplayMode)
+                    ? ch.OledDisplayMode
+                    : globalMode;
 
+                string label  = ch.DisplayLabel;
+                int    volume = Math.Clamp(ch.Volume, 0, 100);
+                bool   muted  = ch.Muted;
+                string status = ch.Status;
+
+                titleBlocks[i].Text = $"OLED {ch.ChannelNumber}";
+
+                var renderer = new OledRenderer();
                 switch (mode)
                 {
                     case DisplayModes.LargeVolume:
-                        line1Blocks[i].Text = $"{channel.Volume}%";
-                        line2Blocks[i].Text = label;
+                        renderer.RenderLargeVolume(label, volume, muted);
                         break;
                     case DisplayModes.MuteStatus:
-                        line1Blocks[i].Text = mute;
-                        line2Blocks[i].Text = $"{label} {channel.Volume}%";
+                        renderer.RenderMuteStatus(label, volume, muted);
                         break;
                     case DisplayModes.AppOrDeviceName:
-                        line1Blocks[i].Text = label;
-                        line2Blocks[i].Text = assigned;
+                        renderer.RenderAppOrDeviceName(ch.ChannelNumber, label, status, volume);
                         break;
                     case DisplayModes.BarPercent:
-                        line1Blocks[i].Text = label;
-                        line2Blocks[i].Text = $"Volume bar {channel.Volume}%";
+                        renderer.RenderBarPercent(label, volume, muted);
                         break;
                     default:
-                        line1Blocks[i].Text = label;
-                        line2Blocks[i].Text = $"{channel.Volume}% {(channel.Muted ? "Muted" : channel.Status)}";
+                        renderer.RenderAppVolume(label, volume, muted, status);
                         break;
                 }
+
+                previewImages[i].Source = renderer.ToWriteableBitmap();
             }
         }
         catch
         {
+            // Swallow — preview failure must never crash the app.
         }
     }
 
