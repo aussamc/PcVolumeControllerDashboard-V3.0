@@ -1853,7 +1853,10 @@
                                 <TextBlock Text="This preview shows the full six-channel controller layout, with the six OLEDs across the top and the six encoder positions underneath. Each OLED still renders a 128x64 logical canvas, scaled up on screen for readability." TextWrapping="Wrap" Foreground="{DynamicResource SecondaryForeground}" Margin="0,0,0,8" />
                                 <TextBlock x:Name="OledPreviewModeTextBlock" Text="Preview mode: App name + volume" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,10" />
 
-                                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                                <!-- Viewbox makes the entire controller preview (OLEDs + encoders)
+                                     scale proportionally with the available panel width.
+                                     All internal sizes stay fixed; Viewbox handles the scaling. -->
+                                <Viewbox Stretch="Uniform" HorizontalAlignment="Stretch">
                                     <Border BorderThickness="1" CornerRadius="10" Padding="18" Background="{DynamicResource PreviewSurfaceBackground}" BorderBrush="{DynamicResource PreviewSurfaceBorder}">
                                         <Grid>
                                             <Grid.RowDefinitions>
@@ -2006,7 +2009,7 @@
                                             </UniformGrid>
                                         </Grid>
                                     </Border>
-                                </ScrollViewer>
+                                </Viewbox>
                             </StackPanel>
                         </Border>
 
