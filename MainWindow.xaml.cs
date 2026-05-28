@@ -1595,47 +1595,46 @@ public partial class MainWindow : Window
 
     private void RefreshOutputDevices()
     {
-        Task.Run(() =>
+        // Run synchronously on the UI (STA) thread.  Device name enumeration
+        // takes <20 ms and the COM objects from MMDeviceEnumerator must be
+        // accessed from the same apartment they were created in.  The previous
+        // Task.Run + InvokeAsync pattern disposed the enumerator before the
+        // Dispatcher callback ran, leaving the COM collection in a bad state.
+        try
         {
+            using var enumerator = new NAudio.CoreAudioApi.MMDeviceEnumerator();
+            NAudio.CoreAudioApi.MMDeviceCollection devices = enumerator.EnumerateAudioEndPoints(
+                NAudio.CoreAudioApi.DataFlow.Render,
+                NAudio.CoreAudioApi.DeviceState.Active);
+
+            string? defaultId = null;
             try
             {
-                using var enumerator = new NAudio.CoreAudioApi.MMDeviceEnumerator();
-                NAudio.CoreAudioApi.MMDeviceCollection devices = enumerator.EnumerateAudioEndPoints(
+                using var defaultDevice = enumerator.GetDefaultAudioEndpoint(
                     NAudio.CoreAudioApi.DataFlow.Render,
-                    NAudio.CoreAudioApi.DeviceState.Active);
+                    NAudio.CoreAudioApi.Role.Multimedia);
+                defaultId = defaultDevice.ID;
+            }
+            catch { /* no default device */ }
 
-                string? defaultId = null;
-                try
+            _outputDevices.Clear();
+            for (int i = 0; i < devices.Count; i++)
+            {
+                var dev = devices[i];
+                bool inCycle = _settings.OutputDeviceCycleList.Contains(dev.ID, StringComparer.OrdinalIgnoreCase);
+                _outputDevices.Add(new OutputDeviceItem
                 {
-                    using var defaultDevice = enumerator.GetDefaultAudioEndpoint(
-                        NAudio.CoreAudioApi.DataFlow.Render,
-                        NAudio.CoreAudioApi.Role.Multimedia);
-                    defaultId = defaultDevice.ID;
-                }
-                catch { /* no default device */ }
-
-                Dispatcher.InvokeAsync(() =>
-                {
-                    _outputDevices.Clear();
-                    for (int i = 0; i < devices.Count; i++)
-                    {
-                        var dev = devices[i];
-                        bool inCycle = _settings.OutputDeviceCycleList.Contains(dev.ID, StringComparer.OrdinalIgnoreCase);
-                        _outputDevices.Add(new OutputDeviceItem
-                        {
-                            DeviceId = dev.ID,
-                            FriendlyName = dev.FriendlyName,
-                            IsDefault = string.Equals(dev.ID, defaultId, StringComparison.OrdinalIgnoreCase),
-                            IncludeInCycle = inCycle
-                        });
-                    }
+                    DeviceId = dev.ID,
+                    FriendlyName = dev.FriendlyName,
+                    IsDefault = string.Equals(dev.ID, defaultId, StringComparison.OrdinalIgnoreCase),
+                    IncludeInCycle = inCycle
                 });
             }
-            catch (Exception ex)
-            {
-                Log($"RefreshOutputDevices error: {ex.Message}");
-            }
-        });
+        }
+        catch (Exception ex)
+        {
+            Log($"RefreshOutputDevices error: {ex.Message}");
+        }
     }
 
     private void CycleOutputDevice()
