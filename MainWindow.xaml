@@ -3,8 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="PC Volume Controller Dashboard"
         Icon="Assets/app-icon.ico"
-        Height="833"
-        Width="1268"
+        Height="900"
+        Width="1300"
         MinWidth="570"
         MinHeight="320"
         ResizeMode="CanResize"
@@ -2645,7 +2645,7 @@
                                     </MultiBinding>
                                 </TextBlock.Text>
                             </TextBlock>
-                            <TextBlock Text=" px   (default 1268 × 833, min 570 × 320)"
+                            <TextBlock Text=" px   (default 1300 × 900, min 570 × 320)"
                                        Foreground="{DynamicResource SecondaryForeground}"
                                        VerticalAlignment="Center" FontSize="12" Margin="6,0,0,0" />
                         </StackPanel>
