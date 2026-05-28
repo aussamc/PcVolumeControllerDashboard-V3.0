@@ -117,6 +117,9 @@ public partial class MainWindow
     {
         try
         {
+            if (!_settings.TrayNotificationsEnabled)
+                return;
+
             if (_trayIcon == null || !_trayIcon.Visible)
             {
                 return;
