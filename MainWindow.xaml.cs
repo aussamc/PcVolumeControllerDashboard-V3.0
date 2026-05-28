@@ -28,7 +28,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.59";
+    private const string DashboardVersion = "2.59.1";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -1900,6 +1900,14 @@ public partial class MainWindow : Window
         List<AudioSessionControl> sessions = _audioService.GetActiveSessions();
 
         HashSet<string> keys = new(StringComparer.OrdinalIgnoreCase) { "MASTER" };
+
+        // Mirror what RefreshAudioSessions() adds to _audioTargets so that
+        // GetAudioSessionSnapshot() and this method produce identical key sets
+        // for the same hardware state.  Without this, MIC_INPUT is always
+        // present in the stored snapshot but absent here, causing the
+        // comparison to report a "change" every 2.5-second poll tick.
+        if (_defaultCaptureDevice != null)
+            keys.Add("MIC_INPUT");
 
         foreach (AudioSessionControl session in sessions)
         {
