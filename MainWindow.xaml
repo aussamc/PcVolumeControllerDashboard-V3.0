@@ -859,12 +859,49 @@
                         </DockPanel>
                     </Border>
 
-                    <Grid Grid.Row="3">
+                    <Grid Grid.Row="3" x:Name="AudioSplitGrid">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="1.22*" />
-                            <ColumnDefinition Width="16" />
-                            <ColumnDefinition Width="1*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="6" />
+                            <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
+
+                        <!-- Draggable splitter between Channel Mapping and Selected Channel panels -->
+                        <GridSplitter Grid.Column="1"
+                                      x:Name="AudioPanelSplitter"
+                                      HorizontalAlignment="Stretch"
+                                      VerticalAlignment="Stretch"
+                                      ShowsPreview="False"
+                                      Cursor="SizeWE"
+                                      ToolTip="Drag to resize panels"
+                                      DragCompleted="AudioPanelSplitter_DragCompleted">
+                            <GridSplitter.Style>
+                                <Style TargetType="GridSplitter">
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="GridSplitter">
+                                                <Border x:Name="SplitterBorder"
+                                                        Background="Transparent"
+                                                        Margin="1,0">
+                                                    <StackPanel VerticalAlignment="Center"
+                                                                HorizontalAlignment="Center"
+                                                                Orientation="Vertical">
+                                                        <Ellipse Width="3" Height="3" Fill="#7A7F88" Margin="0,2,0,0" />
+                                                        <Ellipse Width="3" Height="3" Fill="#7A7F88" Margin="0,2,0,0" />
+                                                        <Ellipse Width="3" Height="3" Fill="#7A7F88" Margin="0,2,0,0" />
+                                                    </StackPanel>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="SplitterBorder" Property="Background" Value="#252830" />
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </GridSplitter.Style>
+                        </GridSplitter>
 
                         <Border Grid.Column="0"
                                 BorderThickness="1"

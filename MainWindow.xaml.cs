@@ -3439,6 +3439,40 @@ public partial class MainWindow : Window
 
         Width = Math.Max(width, MinWidth);
         Height = Math.Max(height, MinHeight);
+
+        ApplySavedSplitterRatio();
+    }
+
+    /// <summary>
+    /// Applies the persisted Audio-tab splitter ratio to the two column definitions
+    /// so the Channel Mapping / Selected Channel split matches where the user left it.
+    /// </summary>
+    private void ApplySavedSplitterRatio()
+    {
+        if (AudioSplitGrid == null) return;
+        double ratio = Math.Clamp(_settings.AudioSplitterRatio, 0.1, 0.9);
+        AudioSplitGrid.ColumnDefinitions[0].Width = new GridLength(ratio, GridUnitType.Star);
+        AudioSplitGrid.ColumnDefinitions[2].Width = new GridLength(1.0 - ratio, GridUnitType.Star);
+    }
+
+    /// <summary>
+    /// Reads the current column widths and stores the left-panel fraction back into settings.
+    /// </summary>
+    private void SaveSplitterRatio()
+    {
+        if (AudioSplitGrid == null) return;
+        double left  = AudioSplitGrid.ColumnDefinitions[0].ActualWidth;
+        double right = AudioSplitGrid.ColumnDefinitions[2].ActualWidth;
+        double total = left + right;
+        if (total > 0)
+            _settings.AudioSplitterRatio = left / total;
+    }
+
+    private void AudioPanelSplitter_DragCompleted(object sender,
+        System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+    {
+        SaveSplitterRatio();
+        SaveSettings();
     }
 
     private void FlushUiToSettings()
@@ -4211,6 +4245,8 @@ public partial class MainWindow : Window
             _settings.WindowWidth = widthToSave;
             _settings.WindowHeight = heightToSave;
         }
+
+        SaveSplitterRatio();
     }
 
     private void SaveSettings() => SettingsRepository.Save(_settings, Log);
@@ -4937,6 +4973,13 @@ public sealed class DashboardSettings
 
     public double WindowWidth { get; set; } = 1300;
     public double WindowHeight { get; set; } = 900;
+
+    /// <summary>
+    /// Fraction (0–1) of the Audio tab split grid's total width allocated to the
+    /// left (Channel Mapping) panel.  Persisted so the user's chosen split is
+    /// remembered across restarts.  Defaults to 0.5 (equal halves).
+    /// </summary>
+    public double AudioSplitterRatio { get; set; } = 0.5;
 
     public ChannelSettings[] Channels { get; set; } = CreateDefaultChannels();
 
