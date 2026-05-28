@@ -3427,8 +3427,8 @@ public partial class MainWindow : Window
 
     private void ApplySavedWindowSize()
     {
-        const double defaultWidth = 1120;
-        const double defaultHeight = 800;
+        const double defaultWidth = 1300;
+        const double defaultHeight = 900;
 
         double width = _settings.WindowWidth >= defaultWidth
             ? _settings.WindowWidth
@@ -4936,8 +4936,8 @@ public sealed class DashboardSettings
     public int OledConnectedIdleTimeoutMinutes { get; set; } = 10;
     public bool OledAntiBurnInEnabled { get; set; } = true;
 
-    public double WindowWidth { get; set; } = 1120;
-    public double WindowHeight { get; set; } = 800;
+    public double WindowWidth { get; set; } = 1300;
+    public double WindowHeight { get; set; } = 900;
 
     public ChannelSettings[] Channels { get; set; } = CreateDefaultChannels();
 
