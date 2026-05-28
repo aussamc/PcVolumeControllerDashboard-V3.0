@@ -2121,6 +2121,11 @@
                                           Margin="0,0,0,8"
                                           ToolTip="Write verbose debug output to the log file. Useful for troubleshooting." />
 
+                                <CheckBox x:Name="TrayNotificationsCheckBox"
+                                          Content="Show tray notifications"
+                                          Margin="0,0,0,8"
+                                          ToolTip="Show system tray notifications for events such as controller connected, disconnected, and reconnect failures." />
+
                                 <TextBlock Text="Startup now restores saved channels and friendly names before apps are opened."
                                            Foreground="{DynamicResource SecondaryForeground}"
                                            TextWrapping="Wrap"

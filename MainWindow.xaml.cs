@@ -28,7 +28,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.59.1";
+    private const string DashboardVersion = "2.60";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -3197,6 +3197,8 @@ public partial class MainWindow : Window
         StartMinimizedToTrayCheckBox.IsChecked = _settings.StartMinimizedToTray;
         StartWithWindowsCheckBox.IsChecked = _settings.StartWithWindows;
         AdvancedDebugLoggingCheckBox.IsChecked = _settings.AdvancedDebugLogging;
+        if (TrayNotificationsCheckBox != null)
+            TrayNotificationsCheckBox.IsChecked = _settings.TrayNotificationsEnabled;
 
         if (DisplayModeComboBox != null)
         {
@@ -3509,6 +3511,7 @@ public partial class MainWindow : Window
         if (StartMinimizedToTrayCheckBox != null) _settings.StartMinimizedToTray = StartMinimizedToTrayCheckBox.IsChecked == true;
         if (StartWithWindowsCheckBox != null) _settings.StartWithWindows = StartWithWindowsCheckBox.IsChecked == true;
         if (AdvancedDebugLoggingCheckBox != null) _settings.AdvancedDebugLogging = AdvancedDebugLoggingCheckBox.IsChecked == true;
+        if (TrayNotificationsCheckBox != null) _settings.TrayNotificationsEnabled = TrayNotificationsCheckBox.IsChecked == true;
         if (DisplayModeComboBox != null) _settings.OledDisplayMode = GetDisplayModeFromUi();
         if (OledBrightnessSlider != null) _settings.OledBrightnessPercent = GetOledBrightnessPercentFromUi();
         if (OledSleepTimeoutSlider != null) _settings.OledSleepTimeoutMinutes = GetOledSleepTimeoutMinutesFromUi();
@@ -4968,6 +4971,7 @@ public sealed class DashboardSettings
     public bool StartMinimizedToTray { get; set; }
     public bool StartWithWindows { get; set; }
     public bool AdvancedDebugLogging { get; set; }
+    public bool TrayNotificationsEnabled { get; set; } = true;
     public int SelectedChannelIndex { get; set; }
 
     public int EncoderSensitivityPercent { get; set; } = 50;
