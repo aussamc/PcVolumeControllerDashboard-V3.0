@@ -822,41 +822,61 @@
                             CornerRadius="8"
                             Padding="10,8"
                             Margin="0,0,0,12">
-                        <DockPanel>
-                            <TextBlock Text="Output Devices:"
-                                       VerticalAlignment="Center"
-                                       Margin="0,0,10,0"
-                                       DockPanel.Dock="Left"/>
-                            <Button x:Name="RefreshOutputDevicesButton"
-                                    Content="Refresh"
-                                    Width="70" Height="26"
-                                    DockPanel.Dock="Right"
-                                    Margin="6,0,0,0"
-                                    ToolTip="Re-scan available audio output devices"
-                                    Click="RefreshOutputDevicesButton_Click"/>
-                            <ListView x:Name="OutputDevicesListView"
-                                      MaxHeight="80"
-                                      ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                      BorderThickness="0"
-                                      Background="Transparent">
-                                <ListView.View>
-                                    <GridView>
-                                        <GridViewColumn Header="Cycle" Width="48">
-                                            <GridViewColumn.CellTemplate>
-                                                <DataTemplate>
-                                                    <CheckBox IsChecked="{Binding IncludeInCycle, Mode=TwoWay}"
-                                                              HorizontalAlignment="Center"
-                                                              Checked="OutputDeviceInclude_Changed"
-                                                              Unchecked="OutputDeviceInclude_Changed"/>
-                                                </DataTemplate>
-                                            </GridViewColumn.CellTemplate>
-                                        </GridViewColumn>
-                                        <GridViewColumn Header="Device" Width="280" DisplayMemberBinding="{Binding FriendlyName}"/>
-                                        <GridViewColumn Header="Active" Width="50" DisplayMemberBinding="{Binding DefaultIndicator}"/>
-                                    </GridView>
-                                </ListView.View>
-                            </ListView>
-                        </DockPanel>
+                        <StackPanel>
+                            <!-- Header row — always visible, click chevron to expand/collapse -->
+                            <DockPanel>
+                                <TextBlock Text="Output Devices"
+                                           FontWeight="SemiBold"
+                                           VerticalAlignment="Center"
+                                           DockPanel.Dock="Left" />
+                                <Button x:Name="OutputDevicesToggleButton"
+                                        Content="▶"
+                                        Width="26" Height="22"
+                                        Padding="0"
+                                        DockPanel.Dock="Right"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Foreground="{DynamicResource SecondaryForeground}"
+                                        Cursor="Hand"
+                                        ToolTip="Expand or collapse the output devices list"
+                                        Click="OutputDevicesToggleButton_Click" />
+                            </DockPanel>
+
+                            <!-- Collapsible content -->
+                            <DockPanel x:Name="OutputDevicesContent"
+                                       Visibility="Collapsed"
+                                       Margin="0,8,0,0">
+                                <Button x:Name="RefreshOutputDevicesButton"
+                                        Content="Refresh"
+                                        Width="70" Height="26"
+                                        DockPanel.Dock="Right"
+                                        Margin="6,0,0,0"
+                                        ToolTip="Re-scan available audio output devices"
+                                        Click="RefreshOutputDevicesButton_Click"/>
+                                <ListView x:Name="OutputDevicesListView"
+                                          MaxHeight="80"
+                                          ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                          BorderThickness="0"
+                                          Background="Transparent">
+                                    <ListView.View>
+                                        <GridView>
+                                            <GridViewColumn Header="Cycle" Width="48">
+                                                <GridViewColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <CheckBox IsChecked="{Binding IncludeInCycle, Mode=TwoWay}"
+                                                                  HorizontalAlignment="Center"
+                                                                  Checked="OutputDeviceInclude_Changed"
+                                                                  Unchecked="OutputDeviceInclude_Changed"/>
+                                                    </DataTemplate>
+                                                </GridViewColumn.CellTemplate>
+                                            </GridViewColumn>
+                                            <GridViewColumn Header="Device" Width="280" DisplayMemberBinding="{Binding FriendlyName}"/>
+                                            <GridViewColumn Header="Active" Width="50" DisplayMemberBinding="{Binding DefaultIndicator}"/>
+                                        </GridView>
+                                    </ListView.View>
+                                </ListView>
+                            </DockPanel>
+                        </StackPanel>
                     </Border>
 
                     <Grid Grid.Row="3" x:Name="AudioSplitGrid">

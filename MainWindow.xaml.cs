@@ -3173,6 +3173,8 @@ public partial class MainWindow : Window
 
     private void ApplySettingsToUi()
     {
+        SetOutputDevicesExpanded(_settings.OutputDevicesExpanded);
+
         AutoConnectCheckBox.IsChecked = _settings.AutoConnectOnLaunch;
         ScanAllComPortsCheckBox.IsChecked = _settings.ScanAllComPortsIfRememberedMissing;
         UpdatePairedControllerIdLabel();
@@ -3473,6 +3475,20 @@ public partial class MainWindow : Window
     {
         SaveSplitterRatio();
         SaveSettings();
+    }
+
+    private void OutputDevicesToggleButton_Click(object sender, RoutedEventArgs e)
+    {
+        bool expand = OutputDevicesContent.Visibility != Visibility.Visible;
+        SetOutputDevicesExpanded(expand);
+        _settings.OutputDevicesExpanded = expand;
+        SaveSettings();
+    }
+
+    private void SetOutputDevicesExpanded(bool expanded)
+    {
+        OutputDevicesContent.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
+        OutputDevicesToggleButton.Content = expanded ? "▼" : "▶";
     }
 
     private void FlushUiToSettings()
@@ -4980,6 +4996,9 @@ public sealed class DashboardSettings
     /// remembered across restarts.  Defaults to 0.5 (equal halves).
     /// </summary>
     public double AudioSplitterRatio { get; set; } = 0.5;
+
+    /// <summary>Whether the Output Devices card is expanded. Defaults to false (collapsed).</summary>
+    public bool OutputDevicesExpanded { get; set; } = false;
 
     public ChannelSettings[] Channels { get; set; } = CreateDefaultChannels();
 
