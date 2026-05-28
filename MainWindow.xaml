@@ -556,10 +556,6 @@
                 <TextBlock Text="PC Volume Controller Dashboard"
                            FontSize="26"
                            FontWeight="SemiBold" />
-
-                <TextBlock Text="v2.15 - Double-press button action; short/long/double all configurable per channel (reflash required)"
-                           Foreground="{DynamicResource SecondaryForeground}"
-                           Margin="0,4,0,0" />
             </StackPanel>
 
             <Button Grid.Column="1"
