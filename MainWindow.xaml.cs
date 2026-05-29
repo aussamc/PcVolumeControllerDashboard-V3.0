@@ -28,7 +28,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.60.1";
+    private const string DashboardVersion = "2.60.2";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -1528,7 +1528,12 @@ public partial class MainWindow : Window
 
         _updateCheckerLastChecked = DateTime.Now.ToString("yyyy-MM-dd HH:mm");
 
-        if (result.ErrorMessage != null)
+        if (result.NoReleasesPublished)
+        {
+            Log("Update check: no releases have been published yet.");
+            _updateCheckerStatus = "No releases published yet";
+        }
+        else if (result.ErrorMessage != null)
         {
             Log($"Update check failed: {result.ErrorMessage}");
             _updateCheckerStatus = $"Check failed: {result.ErrorMessage}";
