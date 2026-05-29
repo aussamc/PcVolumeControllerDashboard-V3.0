@@ -19,6 +19,12 @@ internal sealed class AudioService : IDisposable
     private DateTime _sessionCacheExpiry = DateTime.MinValue;
     private const int SessionCacheTtlMs = 100;
 
+    // Render-endpoint devices enumerated for the current session list. Held alive
+    // because the AudioSessionControl objects returned to callers borrow COM
+    // pointers from each device's AudioSessionManager. Disposed at the start of
+    // the next enumeration, by which point the previous session list is stale.
+    private readonly List<MMDevice> _enumeratedRenderDevices = new();
+
     // ─────────────────────────────────────────── state ──
 
     public MMDevice? RenderDevice  => _renderDevice;
@@ -81,7 +87,10 @@ internal sealed class AudioService : IDisposable
     // ─────────────────────────────────────────── session enumeration ──
 
     /// <summary>
-    /// Enumerates all active audio sessions on the default render device.
+    /// Enumerates all active audio sessions across <b>every</b> active render
+    /// endpoint, not just the default device. This lets the dashboard see apps
+    /// (e.g. a browser) that render to a non-default output, or that keep
+    /// streaming to the previous default device after the user switches outputs.
     /// Returns an empty list if no device is available.
     /// Results are cached for <see cref="SessionCacheTtlMs"/> ms to avoid calling
     /// <c>mgr.RefreshSessions()</c> hundreds of times per second during volume smoothing.
@@ -93,24 +102,71 @@ internal sealed class AudioService : IDisposable
             return _sessionCache;
 
         var result = new List<AudioSessionControl>();
-        if (_renderDevice == null) return result;
 
-        try
+        // Release the render devices held alive for the previous (now stale) list.
+        DisposeEnumeratedRenderDevices();
+
+        if (_enumerator != null)
         {
-            AudioSessionManager mgr = _renderDevice.AudioSessionManager;
-            mgr.RefreshSessions();
-            SessionCollection sessions = mgr.Sessions;
-            if (sessions != null)
+            try
             {
-                for (int i = 0; i < sessions.Count; i++)
-                    result.Add(sessions[i]);
+                MMDeviceCollection renderDevices =
+                    _enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active);
+
+                for (int d = 0; d < renderDevices.Count; d++)
+                {
+                    MMDevice device = renderDevices[d];
+                    // Keep the device alive: the session objects below borrow COM
+                    // pointers from its AudioSessionManager.
+                    _enumeratedRenderDevices.Add(device);
+
+                    try
+                    {
+                        AudioSessionManager mgr = device.AudioSessionManager;
+                        mgr.RefreshSessions();
+                        SessionCollection sessions = mgr.Sessions;
+                        if (sessions != null)
+                        {
+                            for (int i = 0; i < sessions.Count; i++)
+                                result.Add(sessions[i]);
+                        }
+                    }
+                    catch { /* skip this endpoint, keep enumerating the rest */ }
+                }
             }
+            catch { /* fall back to default-device-only enumeration below */ }
         }
-        catch { /* returns partial list */ }
+
+        // Fallback: if endpoint enumeration produced nothing, try the cached
+        // default render device directly (preserves pre-existing behaviour).
+        if (result.Count == 0 && _renderDevice != null)
+        {
+            try
+            {
+                AudioSessionManager mgr = _renderDevice.AudioSessionManager;
+                mgr.RefreshSessions();
+                SessionCollection sessions = mgr.Sessions;
+                if (sessions != null)
+                {
+                    for (int i = 0; i < sessions.Count; i++)
+                        result.Add(sessions[i]);
+                }
+            }
+            catch { /* returns partial list */ }
+        }
 
         _sessionCache = result;
         _sessionCacheExpiry = DateTime.Now.AddMilliseconds(SessionCacheTtlMs);
         return result;
+    }
+
+    private void DisposeEnumeratedRenderDevices()
+    {
+        foreach (MMDevice device in _enumeratedRenderDevices)
+        {
+            try { device.Dispose(); } catch { }
+        }
+        _enumeratedRenderDevices.Clear();
     }
 
     /// <summary>
@@ -221,6 +277,7 @@ internal sealed class AudioService : IDisposable
         {
             try { _enumerator.UnregisterEndpointNotificationCallback(_listener); } catch { }
         }
+        DisposeEnumeratedRenderDevices();
         _renderDevice?.Dispose();
         _captureDevice?.Dispose();
         _enumerator?.Dispose();

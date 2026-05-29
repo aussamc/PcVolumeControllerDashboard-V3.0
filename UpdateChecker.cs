@@ -23,6 +23,12 @@ internal static class UpdateChecker
         public string LatestVersion { get; init; } = string.Empty;
         public string ReleaseUrl { get; init; } = ReleasesUrl;
         public string? ErrorMessage { get; init; }
+
+        /// <summary>
+        /// True when the GitHub repo has no published releases yet (HTTP 404).
+        /// This is a normal state, not an error or an "update available" result.
+        /// </summary>
+        public bool NoReleasesPublished { get; init; }
     }
 
     // ── HTTP client (static — reuse socket) ─────────────────────────────────────
@@ -53,6 +59,16 @@ internal static class UpdateChecker
 
             using var response = await _httpClient.SendAsync(request).ConfigureAwait(false);
             string json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+            // 404 means no releases have been published yet — that is a normal
+            // state, not an error, so surface a friendly message instead of a
+            // confusing "missing tag_name" parse failure.
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                return new UpdateResult { NoReleasesPublished = true };
+
+            if (!response.IsSuccessStatusCode)
+                return new UpdateResult { ErrorMessage = $"GitHub API returned HTTP {(int)response.StatusCode}." };
+
             using JsonDocument doc = JsonDocument.Parse(json);
 
             if (!doc.RootElement.TryGetProperty("tag_name", out JsonElement tagElement))
