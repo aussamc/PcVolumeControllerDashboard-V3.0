@@ -116,7 +116,14 @@ internal static class SettingsRepository
                 Directory.CreateDirectory(directory);
 
             string json = JsonSerializer.Serialize(settings, _writeOptions);
-            File.WriteAllText(path, json);
+
+            // Write atomically: serialise to a temporary file first, then move it into
+            // place.  If the process is terminated mid-write (e.g. during a Windows
+            // shutdown/restart), the live settings.json is never left half-written and
+            // therefore never read back as corrupt on the next launch.
+            string tempPath = path + ".tmp";
+            File.WriteAllText(tempPath, json);
+            File.Move(tempPath, path, overwrite: true);
         }
         catch (Exception ex)
         {

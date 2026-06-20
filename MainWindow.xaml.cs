@@ -28,7 +28,7 @@ namespace PcVolumeControllerDashboard;
 
 public partial class MainWindow : Window
 {
-    private const string DashboardVersion = "2.61";
+    private const string DashboardVersion = "2.61.1";
     private const string RequiredProtocolVersion = "2.24";
     private const string ExpectedDeviceIdentity = "PC_VOLUME_CONTROLLER";
     private const int LogRetentionDays = 7;
@@ -221,6 +221,11 @@ public partial class MainWindow : Window
         SetupTrayIcon();
         SystemEvents.SessionSwitch += OnSessionSwitch;
         SystemEvents.PowerModeChanged += OnPowerModeChanged;
+        // Persist settings when Windows is shutting down, restarting, or logging off.
+        // The app is normally terminated by the OS in these cases without a graceful
+        // window close, so OnClosing never runs and any in-memory-only settings would
+        // otherwise be lost.  SessionEnding gives us a final chance to flush them.
+        SystemEvents.SessionEnding += OnSessionEnding;
 
         _audioService.DefaultDeviceChanged += () => Dispatcher.InvokeAsync(() =>
         {
@@ -4736,6 +4741,7 @@ public partial class MainWindow : Window
 
         SystemEvents.SessionSwitch -= OnSessionSwitch;
         SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+        SystemEvents.SessionEnding -= OnSessionEnding;
 
         DisconnectSerial();
 

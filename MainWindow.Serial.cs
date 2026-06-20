@@ -951,6 +951,30 @@ public partial class MainWindow
     }
 
 
+    /// <summary>
+    /// Fires when Windows is shutting down, restarting, or the user is logging off.
+    /// The OS terminates the process shortly after, normally without a graceful window
+    /// close, so this is the last opportunity to persist settings that are only held in
+    /// memory until <see cref="FlushUiToSettings"/> runs (OLED, encoder feel, theme,
+    /// window size, etc.).  Runs synchronously on the UI thread so the write completes
+    /// before the process is killed.
+    /// </summary>
+    private void OnSessionEnding(object sender, SessionEndingEventArgs e)
+    {
+        try
+        {
+            Dispatcher.Invoke(() =>
+            {
+                FlushUiToSettings();
+                Log($"Session ending ({e.Reason}); settings flushed to disk.");
+            });
+        }
+        catch
+        {
+        }
+    }
+
+
     private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
     {
         try
