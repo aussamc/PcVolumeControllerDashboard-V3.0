@@ -151,7 +151,9 @@ internal sealed class MainWindow : Window
         catch (Exception ex)
         {
             // The classic Linux failure here is permission denied — add your user
-            // to the 'dialout' group (sudo usermod -aG dialout $USER) and re-login.
+            // to the serial device's group and re-login:
+            //   Arch / CachyOS:        sudo usermod -aG uucp $USER
+            //   Debian/Ubuntu/Fedora:  sudo usermod -aG dialout $USER
             Log($"OPEN FAILED: {ex.GetType().Name}: {ex.Message}");
             _serial?.Dispose();
             _serial = null;

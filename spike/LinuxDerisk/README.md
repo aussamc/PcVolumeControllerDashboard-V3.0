@@ -15,15 +15,28 @@ branch once you have your answers** — the learning is the deliverable.
 
 ## Prerequisites (Linux)
 
-- A distro with **PipeWire** (Fedora, Ubuntu 24.04, Linux Mint, etc.).
+- A distro with **PipeWire** (Fedora, Ubuntu 24.04, Linux Mint, CachyOS/Arch, etc.).
 - **.NET 10 SDK**.
-- `wpctl` (ships with `wireplumber`) and/or `pactl` (`pulseaudio-utils`).
+  - Debian/Ubuntu/Fedora: distro packages or Microsoft's `dotnet-install.sh`.
+  - **Arch / CachyOS:** `sudo pacman -S dotnet-sdk` (or the AUR / `dotnet-install.sh`
+    if the repo version lags).
+- `wpctl` (ships with `wireplumber`) and/or `pactl`. On CachyOS both are present
+  out of the box (PipeWire + pipewire-pulse are the default).
 - For the serial probe: the ESP32 controller plugged in, and your user in the
-  **`dialout`** group:
+  serial device's group. **The group name differs by distro:**
   ```sh
-  sudo usermod -aG dialout $USER   # then log out/in (or reboot)
+  # Debian/Ubuntu/Fedora:
+  sudo usermod -aG dialout $USER
+  # Arch / CachyOS (ttyACM*/ttyUSB* are owned by group 'uucp'):
+  sudo usermod -aG uucp $USER
   ```
+  Then **log out/in (or reboot)** for the group to take effect. If Connect still
+  fails, check the actual owner with `ls -l /dev/ttyACM0`.
   In a VM, give the guest **USB passthrough** to the controller first.
+
+### Wayland note (CachyOS often defaults to Wayland)
+Avalonia 11.2 renders through **XWayland** automatically, so no action is needed.
+Native Wayland is experimental and not required for this spike.
 
 ## Run
 
@@ -35,7 +48,8 @@ dotnet run --project spike/LinuxDerisk
 
 - **Serial:** pick the port (typically `/dev/ttyACM0`), click **Connect**, and
   see `RX HELLO,PC_VOLUME_CONTROLLER,...` and live `ENC`/`BTN` lines in the log.
-  - `OPEN FAILED: ... permission denied` ⇒ the `dialout` step above wasn't applied.
+  - `OPEN FAILED: ... permission denied` ⇒ the serial-group step above wasn't
+    applied (`uucp` on Arch/CachyOS, `dialout` on Debian/Ubuntu/Fedora).
 - **PipeWire:** start an app playing audio (browser, Spotify), click
   **List audio apps**, copy a stream/sink-input **id** into the box, move the
   slider, click **Set volume** — the app's volume should change in the system mixer.
