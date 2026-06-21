@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    PcVolumeControllerDashboard.Core — platform-agnostic library.
+
+    This project MUST NOT reference WPF, WinForms, or any Windows-only UI/audio
+    API. It is the shared core consumed by the Windows host today and the
+    Avalonia + Linux/macOS hosts in later phases. Keep the target framework as
+    plain net10.0 (no -windows suffix) so a non-Windows reference fails the
+    build immediately rather than silently coupling Core to Windows.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <AssemblyName>PcVolumeControllerDashboard.Core</AssemblyName>
+    <RootNamespace>PcVolumeControllerDashboard.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.IO.Ports" Version="10.0.0" />
+  </ItemGroup>
+
+</Project>

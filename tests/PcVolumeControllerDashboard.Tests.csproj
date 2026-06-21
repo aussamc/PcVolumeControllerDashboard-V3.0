@@ -23,6 +23,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PcVolumeControllerDashboard.csproj" />
+    <ProjectReference Include="..\Core\PcVolumeControllerDashboard.Core.csproj" />
+  </ItemGroup>
+
+  <!-- SerialService (and later Core types) live in this namespace. -->
+  <ItemGroup>
+    <Using Include="PcVolumeControllerDashboard.Core" />
   </ItemGroup>
 
 </Project>
