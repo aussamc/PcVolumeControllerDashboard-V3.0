@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Phase 0.5 Linux derisk spike — THROWAWAY.
+
+    Purpose: prove on real Linux that (1) the extracted Core SerialService opens
+    the ESP32 CDC port and reads lines, and (2) we can change a per-app
+    (sink-input) volume via PipeWire's wpctl. Delete this whole spike/ tree and
+    the spike/linux-derisk branch once the questions are answered.
+
+    Targets plain net10.0 (cross-platform). UI is built in code (no AXAML) to
+    keep the scaffold minimal and dependency-light.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.2.1" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.2.1" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.1" />
+  </ItemGroup>
+
+  <!-- Reuse the real Core library — this spike also validates that Core is
+       genuinely consumable on a non-Windows target. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\Core\PcVolumeControllerDashboard.Core.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -63,6 +63,10 @@
     <Compile Remove="Core\**" />
     <EmbeddedResource Remove="Core\**" />
     <None Remove="Core\**" />
+    <!-- Throwaway Phase 0.5 derisk spike (spike/linux-derisk branch only). -->
+    <Compile Remove="spike\**" />
+    <EmbeddedResource Remove="spike\**" />
+    <None Remove="spike\**" />
   </ItemGroup>
 
 </Project>
