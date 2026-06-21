@@ -1,14 +1,14 @@
 using System.IO;
 using System.IO.Ports;
 
-namespace PcVolumeControllerDashboard;
+namespace PcVolumeControllerDashboard.Core;
 
 /// <summary>
 /// Owns a single SerialPort instance. Handles open/close, locked writes,
 /// and buffered line-by-line reading. Does not contain any reconnect logic
 /// or protocol knowledge.
 /// </summary>
-internal sealed class SerialService : IDisposable
+public sealed class SerialService : IDisposable
 {
     private SerialPort? _port;
     private readonly object _lock = new();

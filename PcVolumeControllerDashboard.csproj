@@ -33,7 +33,12 @@
 
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />
-    <PackageReference Include="System.IO.Ports" Version="10.0.0" />
+  </ItemGroup>
+
+  <!-- Platform-agnostic core library. System.IO.Ports now flows transitively
+       from Core (SerialService moved there in the Phase 0 extraction). -->
+  <ItemGroup>
+    <ProjectReference Include="Core\PcVolumeControllerDashboard.Core.csproj" />
   </ItemGroup>
 
   <!-- App icon — copy to output so LoadAppIcon() can find it at runtime -->
@@ -53,6 +58,11 @@
     <Compile Remove="tests\**" />
     <EmbeddedResource Remove="tests\**" />
     <None Remove="tests\**" />
+    <!-- Core is its own project (referenced via ProjectReference); keep its
+         sources out of the host's default **/*.cs glob. -->
+    <Compile Remove="Core\**" />
+    <EmbeddedResource Remove="Core\**" />
+    <None Remove="Core\**" />
   </ItemGroup>
 
 </Project>
