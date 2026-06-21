@@ -1,20 +1,31 @@
 using System;
-using System.Windows;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
 
-namespace PcVolumeControllerDashboard
+namespace PcVolumeControllerDashboard.Core
 {
     /// <summary>
     /// Pixel-accurate replica of the Adafruit SSD1306 / GFX drawing API used by the firmware.
-    /// Renders to a 128x64 monochrome pixel buffer and exports as a WriteableBitmap.
+    /// Renders to a 128x64 monochrome pixel buffer. The buffer is exposed via
+    /// <see cref="Pixels"/>; converting it to a platform bitmap is the host's job
+    /// (e.g. the WPF host's OledRenderer.ToWriteableBitmap extension) so this type
+    /// stays free of any UI-framework dependency.
     /// </summary>
     public sealed class OledRenderer
     {
-        private const int W = 128;
-        private const int H = 64;
+        /// <summary>Display width in pixels (matches the SSD1315 panel and firmware).</summary>
+        public const int Width = 128;
+        /// <summary>Display height in pixels.</summary>
+        public const int Height = 64;
+
+        private const int W = Width;
+        private const int H = Height;
 
         private readonly bool[] _pixels = new bool[W * H];
+
+        /// <summary>
+        /// Raw 128×64 monochrome buffer, row-major (index = y * Width + x).
+        /// true = lit pixel. Hosts read this to build a platform bitmap.
+        /// </summary>
+        public ReadOnlySpan<bool> Pixels => _pixels;
 
         // ── Adafruit GFX glcdfont.c  (5 bytes per glyph, 96 printable ASCII chars 0x20–0x7E)
         // Column-major, bit 0 = top row of each column byte.
@@ -364,36 +375,5 @@ namespace PcVolumeControllerDashboard
             DrawCenteredSmall(muted ? "Muted" : "Unmuted", 56, 1);
         }
 
-        // ── Bitmap export ────────────────────────────────────────────────────────
-
-        /// <summary>
-        /// Builds a 128×64 WriteableBitmap (Bgr32).
-        /// White pixels = 0x00FFFFFF, black pixels = 0x00000000.
-        /// </summary>
-        public WriteableBitmap ToWriteableBitmap()
-        {
-            var bitmap = new WriteableBitmap(W, H, 96, 96, PixelFormats.Bgr32, null);
-            int stride = W * 4; // 4 bytes per pixel for Bgr32
-            byte[] buffer = new byte[stride * H];
-
-            for (int y = 0; y < H; y++)
-            {
-                for (int x = 0; x < W; x++)
-                {
-                    int bufIdx = (y * W + x) * 4;
-                    if (_pixels[y * W + x])
-                    {
-                        buffer[bufIdx + 0] = 0xFF; // B
-                        buffer[bufIdx + 1] = 0xFF; // G
-                        buffer[bufIdx + 2] = 0xFF; // R
-                        buffer[bufIdx + 3] = 0x00; // unused (Bgr32)
-                    }
-                    // else already 0x00000000 from Array initialisation
-                }
-            }
-
-            bitmap.WritePixels(new Int32Rect(0, 0, W, H), buffer, stride, 0);
-            return bitmap;
-        }
     }
 }
