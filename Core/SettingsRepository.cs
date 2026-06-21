@@ -4,13 +4,13 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 
-namespace PcVolumeControllerDashboard;
+namespace PcVolumeControllerDashboard.Core;
 
 /// <summary>
 /// Owns all settings I/O: path resolution, load, save, backup, and migration.
 /// Extracted from MainWindow in v2.40 to decouple persistence from the UI layer.
 /// </summary>
-internal static class SettingsRepository
+public static class SettingsRepository
 {
     // ── Path helpers ─────────────────────────────────────────────────────────────
 
