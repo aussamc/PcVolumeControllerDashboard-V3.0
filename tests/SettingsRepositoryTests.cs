@@ -124,7 +124,7 @@ public sealed class SettingsRepositoryTests : IDisposable
         settings.Profiles.Should().HaveCount(1);
         settings.Profiles[0].Name.Should().Be("Default");
         settings.ActiveProfileName.Should().Be("Default");
-        settings.SettingsVersion.Should().Be(7);
+        settings.SettingsVersion.Should().Be(8);
     }
 
     [Fact]
@@ -133,7 +133,7 @@ public sealed class SettingsRepositoryTests : IDisposable
         // A fully-current settings object should not be flagged as migrated.
         DashboardSettings settings = DashboardSettings.CreateDefault();
         settings.Channels = DashboardSettings.CreateDefaultChannels();
-        settings.SettingsVersion = 7;  // current schema version
+        settings.SettingsVersion = 8;  // current schema version
         settings.Profiles = new List<ProfileEntry>
         {
             new ProfileEntry { Name = "Default", Channels = DashboardSettings.CreateDefaultChannels() }
@@ -170,7 +170,7 @@ public sealed class SettingsRepositoryTests : IDisposable
         // Out-of-range values should be clamped.
         settings.Channels[1].MinVolumePercent.Should().Be(0);
         settings.Channels[1].MaxVolumePercent.Should().Be(100);
-        settings.SettingsVersion.Should().Be(7);
+        settings.SettingsVersion.Should().Be(8);
     }
 
     // ── Normalize — value clamping ────────────────────────────────────────────────
