@@ -9,9 +9,9 @@
     <UseWindowsForms>true</UseWindowsForms>
 
     <!-- Assembly identity — visible in Windows Explorer → Properties -->
-    <Version>2.61.1</Version>
-    <AssemblyVersion>2.61.1.0</AssemblyVersion>
-    <FileVersion>2.61.1.0</FileVersion>
+    <Version>3.0</Version>
+    <AssemblyVersion>3.0.0.0</AssemblyVersion>
+    <FileVersion>3.0.0.0</FileVersion>
     <ApplicationIcon>Assets\app-icon.ico</ApplicationIcon>
     <Product>PC Volume Controller Dashboard</Product>
     <Description>Dashboard for the PC Volume Controller hardware device</Description>

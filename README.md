@@ -64,7 +64,7 @@ Output is in `bin\Release\net10.0-windows\win-x64\publish\`.
 
 ## Firmware
 
-The ESP32 Arduino source is in `Computer_Volume_Controller_v2.24/`.
+The ESP32 Arduino source is in `Computer_Volume_Controller_v2.25/` (current; protocol v2.25 adds controller pairing via chip ID). The previous `Computer_Volume_Controller_v2.24/` is retained for reference.
 
 Flash the firmware via Arduino IDE / Arduino CLI with the ESP32-S3 Arduino core installed, or using esptool directly.
 
@@ -80,7 +80,8 @@ App.xaml / .cs                          — WPF app entry point
 AssemblyInfo.cs                         — assembly attributes
 Assets/                                 — application assets (app-icon.ico)
 tests/                                  — xUnit + FluentAssertions test project
-Computer_Volume_Controller_v2.24/       — ESP32 Arduino firmware source (v2.24, 6-channel)
+Computer_Volume_Controller_v2.25/       — ESP32 Arduino firmware source (v2.25, current — adds chip-ID pairing)
+Computer_Volume_Controller_v2.24/       — previous firmware source (v2.24, retained for reference)
 firmware_bin/                           — firmware build output
 ```
 
@@ -90,6 +91,7 @@ firmware_bin/                           — firmware build output
 
 | Dashboard | Required firmware protocol | Hardware       |
 |-----------|---------------------------|----------------|
+| v3.0      | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v2.61.1   | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v2.59     | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v2.57     | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
