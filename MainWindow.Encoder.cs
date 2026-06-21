@@ -334,40 +334,20 @@ public partial class MainWindow
     // ── Acceleration ─────────────────────────────────────────────────────────────
 
     // Returns a volume step scaled up when the encoder is turned quickly.
+    // The formula lives in Core.EncoderMath; this wrapper supplies the live settings.
     private int GetAcceleratedStep(int baseStep, double intervalMs)
-    {
-        // Custom preset: continuous formula using three tunable parameters.
-        //   speedFactor = how close to the threshold (0 = at/above threshold, 1 = instantaneous)
-        //   curved      = speedFactor shaped by the curve exponent
-        //   multiplier  = 1× (slow) → AccelMaxMultiplier× (fast)
-        if (_settings.AccelerationPreset == AccelerationPresets.Custom)
-        {
-            float threshold  = Math.Max(1f, _settings.AccelThresholdMs);
-            float sf         = (float)Math.Clamp((threshold - intervalMs) / threshold, 0.0, 1.0);
-            float curved     = MathF.Pow(sf, Math.Max(0.1f, _settings.AccelCurveExponent));
-            float multiplier = 1.0f + (_settings.AccelMaxMultiplier - 1.0f) * curved;
-            return Math.Clamp((int)Math.Round(baseStep * multiplier), 1, MaxVolumeStepPercent);
-        }
-
-        // Fixed presets: step-function multipliers for Light / Medium / Aggressive.
-        int intMultiplier = _settings.AccelerationPreset switch
-        {
-            AccelerationPresets.Light      => intervalMs < 80  ? 2 : 1,
-            AccelerationPresets.Medium     => intervalMs < 60  ? 3 : intervalMs < 100 ? 2 : 1,
-            AccelerationPresets.Aggressive => intervalMs < 50  ? 4 : intervalMs < 70  ? 3 : intervalMs < 110 ? 2 : 1,
-            _                              => 1,
-        };
-        return Math.Clamp(baseStep * intMultiplier, 1, MaxVolumeStepPercent);
-    }
+        => EncoderMath.GetAcceleratedStep(
+            baseStep,
+            intervalMs,
+            _settings.AccelerationPreset,
+            _settings.AccelThresholdMs,
+            _settings.AccelMaxMultiplier,
+            _settings.AccelCurveExponent,
+            MaxVolumeStepPercent);
 
     // Computes the custom-preset multiplier at a given interval for display in the preview.
     private float ComputeCustomAccelMultiplier(double intervalMs, int thresholdMs, float maxMult, float curveExp)
-    {
-        float threshold = Math.Max(1f, thresholdMs);
-        float sf        = (float)Math.Clamp((threshold - intervalMs) / threshold, 0.0, 1.0);
-        float curved    = MathF.Pow(sf, Math.Max(0.1f, curveExp));
-        return 1.0f + (maxMult - 1.0f) * curved;
-    }
+        => EncoderMath.ComputeCustomAccelMultiplier(intervalMs, thresholdMs, maxMult, curveExp);
 
     // ── Smoothing (EMA) ───────────────────────────────────────────────────────────
 
@@ -375,15 +355,7 @@ public partial class MainWindow
     //   Fast   (alpha 0.50): ~97 % converged in  5 ticks × 16 ms = ~80 ms
     //   Normal (alpha 0.35): ~97 % converged in  8 ticks × 16 ms = ~128 ms
     //   Slow   (alpha 0.22): ~97 % converged in 13 ticks × 16 ms = ~208 ms
-    private float GetSmoothingAlpha()
-    {
-        return _settings.VolumeSmoothingSpeed switch
-        {
-            SmoothingSpeed.Fast => 0.50f,
-            SmoothingSpeed.Slow => 0.22f,
-            _                   => 0.35f,  // Normal
-        };
-    }
+    private float GetSmoothingAlpha() => EncoderMath.GetSmoothingAlpha(_settings.VolumeSmoothingSpeed);
 
     // Returns the normalized volume (0.0–1.0) read directly from the active audio backend.
     // Returns -1 if the channel is unassigned or its session is unavailable.
