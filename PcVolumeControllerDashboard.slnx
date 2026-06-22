@@ -5,5 +5,8 @@
     </Project>
   </Folder>
   <Project Path="PcVolumeControllerDashboard.csproj" />
+  <Project Path="App.Avalonia/App.Avalonia.csproj">
+    <Platform Project="x64" />
+  </Project>
   <Project Path="Core/PcVolumeControllerDashboard.Core.csproj" />
 </Solution>
