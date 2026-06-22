@@ -9,4 +9,7 @@
     <Platform Project="x64" />
   </Project>
   <Project Path="Core/PcVolumeControllerDashboard.Core.csproj" />
+  <Project Path="Platform.Windows/PcVolumeControllerDashboard.Platform.Windows.csproj">
+    <Platform Project="x64" />
+  </Project>
 </Solution>
