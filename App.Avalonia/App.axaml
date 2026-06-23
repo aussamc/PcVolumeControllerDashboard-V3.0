@@ -1,0 +1,32 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="PcVolumeControllerDashboard.App.App"
+             RequestedThemeVariant="Default">
+    <!-- "Default" follows the OS light/dark setting (replaces the WPF host's
+         DwmSetWindowAttribute title-bar theming, which we deliberately drop). -->
+
+    <Application.Styles>
+        <FluentTheme />
+        <!-- DataGrid theme — required for the ListView+GridView → DataGrid
+             translations in later tab-port PRs. -->
+        <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
+    </Application.Styles>
+
+    <!-- System tray icon + menu. Avalonia's cross-platform TrayIcon replaces the
+         WPF host's WinForms NotifyIcon (Windows tray + Linux StatusNotifierItem). -->
+    <TrayIcon.Icons>
+        <TrayIcons>
+            <TrayIcon Icon="/Assets/app-icon.ico"
+                      ToolTipText="PC Volume Controller Dashboard"
+                      Clicked="TrayIcon_OnClicked">
+                <TrayIcon.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="Show Dashboard" Click="TrayShow_OnClick" />
+                        <NativeMenuItemSeparator />
+                        <NativeMenuItem Header="Exit" Click="TrayExit_OnClick" />
+                    </NativeMenu>
+                </TrayIcon.Menu>
+            </TrayIcon>
+        </TrayIcons>
+    </TrayIcon.Icons>
+</Application>

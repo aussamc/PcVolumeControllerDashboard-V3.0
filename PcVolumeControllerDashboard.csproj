@@ -67,6 +67,11 @@
     <Compile Remove="spike\**" />
     <EmbeddedResource Remove="spike\**" />
     <None Remove="spike\**" />
+    <!-- Avalonia host is its own project (Phase 1 port); keep its sources out of
+         the WPF host's default **/*.cs glob. -->
+    <Compile Remove="App.Avalonia\**" />
+    <EmbeddedResource Remove="App.Avalonia\**" />
+    <None Remove="App.Avalonia\**" />
   </ItemGroup>
 
 </Project>

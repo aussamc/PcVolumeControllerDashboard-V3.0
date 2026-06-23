@@ -1,0 +1,69 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    App.Avalonia — cross-platform Avalonia host for the v3 port.
+
+    Phase 1a faithful code-behind port of the WPF shell (PcVolumeControllerDashboard).
+    This project MUST stay cross-platform-clean: NO WinForms/WPF/Win32 references,
+    no `-windows` TFM. It references the platform-agnostic Core only. Windows-only
+    audio backends (WASAPI/VoiceMeeter) arrive behind a neutral IAudioBackend in a
+    later PR (the deferred Phase 0.4 work) — never reference NAudio here directly.
+
+    Avalonia 11.2.1 — the exact version validated on real Linux (CachyOS,
+    PipeWire 1.6.7) by the Phase 0.5 derisk spike.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <!-- Match the rest of the solution (host/Core/tests are all x64). x64 Linux
+         and Windows both build cleanly; revisit if arm64 targets are added. -->
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+
+    <!-- Assembly identity. Shipping version stays 3.1 (this scaffold is
+         infra-only, no user-facing tab yet); the 3.2 bump lands with the first
+         ported tab. -->
+    <Version>3.1</Version>
+    <AssemblyVersion>3.1.0.0</AssemblyVersion>
+    <FileVersion>3.1.0.0</FileVersion>
+    <Product>PC Volume Controller Dashboard</Product>
+    <Description>Cross-platform Avalonia dashboard for the PC Volume Controller hardware device</Description>
+    <Copyright>Copyright © 2026</Copyright>
+    <AssemblyName>PcVolumeControllerDashboard.Avalonia</AssemblyName>
+    <RootNamespace>PcVolumeControllerDashboard.App</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.2.1" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.2.1" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.1" />
+    <PackageReference Include="Avalonia.Controls.DataGrid" Version="11.2.1" />
+    <!-- Diagnostics/hot-reload tooling; harmless in Release (no-op). -->
+    <PackageReference Include="Avalonia.Diagnostics" Version="11.2.1">
+      <IncludeAssets Condition="'$(Configuration)' != 'Debug'">none</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
+    <!-- Override Avalonia 11.2.1's transitive Tmds.DBus.Protocol 0.20.0, which
+         carries GHSA-xrw6-gwf8-vvr9 (DoS). 0.21.3 is the minimal patched release
+         on that line — small enough to stay API-compatible with Avalonia's Linux
+         DBus path (tray / StatusNotifierItem). Drop this once we move to an
+         Avalonia release that references a patched Tmds itself. -->
+    <PackageReference Include="Tmds.DBus.Protocol" Version="0.21.3" />
+  </ItemGroup>
+
+  <!-- Platform-agnostic core library (SerialService, SettingsRepository,
+       OledRenderer, EncoderMath, constants, IKeystrokeSender). -->
+  <ItemGroup>
+    <ProjectReference Include="..\Core\PcVolumeControllerDashboard.Core.csproj" />
+  </ItemGroup>
+
+</Project>

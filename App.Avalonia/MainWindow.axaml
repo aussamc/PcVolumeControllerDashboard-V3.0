@@ -1,0 +1,25 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        x:Class="PcVolumeControllerDashboard.App.MainWindow"
+        Title="PC Volume Controller Dashboard"
+        Icon="/Assets/app-icon.ico"
+        Width="980" Height="680"
+        MinWidth="640" MinHeight="480"
+        WindowStartupLocation="CenterScreen">
+
+    <!-- Empty shell for PR 1. Tabs (Audio / OLED Setup / Setup / Hardware Test /
+         Debug / First Run) are ported one PR at a time, behind the still-shipping
+         WPF host. The placeholder TabControl mirrors the WPF MainTabs container. -->
+    <TabControl x:Name="MainTabs">
+        <TabItem Header="Dashboard">
+            <TextBlock Margin="24"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       TextAlignment="Center"
+                       Text="Avalonia shell — tabs are ported incrementally.&#x0a;(Phase 1a faithful port, PR 1: scaffold only.)" />
+        </TabItem>
+    </TabControl>
+</Window>
