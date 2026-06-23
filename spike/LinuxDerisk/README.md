@@ -40,9 +40,26 @@ Native Wayland is experimental and not required for this spike.
 
 ## Run
 
+GUI (watch the window yourself):
 ```sh
 dotnet run --project spike/LinuxDerisk
 ```
+
+Headless (no display needed — prints `PASS`/`FAIL`; ideal for letting Claude Code
+run and self-verify the spike):
+```sh
+# serial only, read for 8s (plug in the ESP32 first)
+dotnet run --project spike/LinuxDerisk -- --headless --no-audio --seconds 8
+
+# list audio nodes, then set+verify a per-app volume
+dotnet run --project spike/LinuxDerisk -- --headless --no-serial
+dotnet run --project spike/LinuxDerisk -- --headless --no-serial --node <ID> --volume 30
+```
+Options: `--port <name>`, `--seconds <n>`, `--node <id>`, `--volume <0-100>`,
+`--no-serial`, `--no-audio`.
+
+**Running this with Claude Code on Linux?** See `CLAUDE_HANDOFF.md` for a paste-in
+brief that drives the whole spike headlessly.
 
 ## What success looks like
 
