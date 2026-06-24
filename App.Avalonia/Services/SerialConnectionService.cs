@@ -28,23 +28,36 @@ public sealed class SerialConnectionService : IDisposable
     private const string MinProtocol = "2.24";
     private const int BaudRate = 115200;
     private const int IdentifyTimeoutMs = 4000;
-    private const int ReconnectIntervalMs = 3000;
+
+    // The monitor runs once a second. While connected it sends a PING (the
+    // firmware replies PONG, refreshing both its watchdog and our liveness clock)
+    // and declares the link dead if no inbound line has arrived within the
+    // liveness timeout — this catches an unplug that doesn't surface as a write
+    // error. While disconnected it re-scans for the controller, throttled so a
+    // missing device doesn't get hammered.
+    private const int MonitorIntervalMs = 1000;
+    private const int LivenessTimeoutMs = 3000;
+    private const int ReconnectThrottleMs = 3000;
 
     private readonly SerialService _serial;
     private readonly SettingsService _settings;
     private readonly LogService _log;
     private Timer? _identifyTimer;
-    private Timer? _reconnectTimer;
+    private Timer? _monitorTimer;
     private readonly Queue<string> _candidates = new();
 
     // Armed while we should keep (re)connecting automatically. A hardware drop
-    // leaves this true so the watchdog re-establishes the link when the
-    // controller returns; an explicit user Disconnect() clears it.
+    // leaves this true so the monitor re-establishes the link when the controller
+    // returns; an explicit user Disconnect() clears it.
     private volatile bool _autoReconnect;
 
     // Suppresses the verbose per-port scan logging during background reconnect
     // attempts so a disconnected controller doesn't spam the log every few seconds.
     private bool _quietScan;
+
+    // Liveness/throttle clocks (Environment.TickCount64 milliseconds).
+    private long _lastRxTicks;
+    private long _lastScanTicks;
 
     public SerialConnectionState State { get; private set; } = SerialConnectionState.Disconnected;
     public string? ConnectedChipId { get; private set; }
@@ -78,7 +91,7 @@ public sealed class SerialConnectionService : IDisposable
         }
 
         _autoReconnect = true;
-        EnsureReconnectWatchdog();
+        EnsureMonitor();
         StartScan(quiet: false);
     }
 
@@ -86,8 +99,9 @@ public sealed class SerialConnectionService : IDisposable
     public void Connect(string port)
     {
         _autoReconnect = true;
-        EnsureReconnectWatchdog();
+        EnsureMonitor();
         _quietScan = false;
+        _lastScanTicks = Environment.TickCount64;
         BeginScan(new List<string> { port });
     }
 
@@ -125,23 +139,40 @@ public sealed class SerialConnectionService : IDisposable
         }
 
         _quietScan = quiet;
+        _lastScanTicks = Environment.TickCount64;
         BeginScan(candidates);
     }
 
-    private void EnsureReconnectWatchdog() =>
-        _reconnectTimer ??= new Timer(_ => OnReconnectTick(), null, ReconnectIntervalMs, ReconnectIntervalMs);
+    private void EnsureMonitor() =>
+        _monitorTimer ??= new Timer(_ => OnMonitorTick(), null, MonitorIntervalMs, MonitorIntervalMs);
 
     /// <summary>
-    /// While armed and disconnected, periodically re-scans for the controller so
-    /// the link comes back on its own after the device is unplugged and replugged.
-    /// Skips while a scan is already in flight (state is Identifying).
+    /// Once-a-second connection monitor. Connected: PING for keepalive and drop
+    /// the link if it has gone silent past the liveness timeout (catches an unplug
+    /// that doesn't raise a write error). Disconnected: re-scan for the controller,
+    /// throttled, so it reconnects on its own after a replug. Identifying: a scan
+    /// is already in flight, so wait.
     /// </summary>
-    private void OnReconnectTick()
+    private void OnMonitorTick()
     {
-        if (!_autoReconnect) return;
-        if (State != SerialConnectionState.Disconnected) return;
-        if (!_settings.Settings.AutoConnectOnLaunch) return;
-        StartScan(quiet: true);
+        switch (State)
+        {
+            case SerialConnectionState.Connected:
+                if (Environment.TickCount64 - _lastRxTicks > LivenessTimeoutMs)
+                {
+                    ClosePort();
+                    _log.Log("Connection lost (no response from controller); will attempt to reconnect.");
+                    return;
+                }
+                _serial.SendLine(ProtocolCommands.Ping); // firmware replies PONG
+                break;
+
+            case SerialConnectionState.Disconnected:
+                if (!_autoReconnect || !_settings.Settings.AutoConnectOnLaunch) return;
+                if (Environment.TickCount64 - _lastScanTicks < ReconnectThrottleMs) return;
+                StartScan(quiet: true);
+                break;
+        }
     }
 
     private void BeginScan(IEnumerable<string> candidates)
@@ -234,6 +265,10 @@ public sealed class SerialConnectionService : IDisposable
 
     private void OnLineReceived(string line)
     {
+        // Any inbound line proves the controller is alive (PONG replies to our
+        // keepalive PING included), refreshing the liveness clock the monitor reads.
+        _lastRxTicks = Environment.TickCount64;
+
         DeviceMessage msg = SerialProtocol.Parse(line);
 
         if (State != SerialConnectionState.Connected)
@@ -302,7 +337,7 @@ public sealed class SerialConnectionService : IDisposable
     public void Dispose()
     {
         _autoReconnect = false;
-        _reconnectTimer?.Dispose();
+        _monitorTimer?.Dispose();
         _identifyTimer?.Dispose();
         _serial.LineReceived -= OnLineReceived;
         _serial.ErrorOccurred -= OnSerialError;
