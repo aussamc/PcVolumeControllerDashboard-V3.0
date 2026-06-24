@@ -6,6 +6,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Interactivity;
 using Avalonia.Styling;
 using Avalonia.Threading;
@@ -60,6 +61,53 @@ public partial class MainWindow : Window
     }
 
     private void Save() => _settingsService?.Save();
+
+    // ── Minimise-to-tray window behaviour ─────────────────────────────────────
+    // Mirrors the WPF host: with "minimise to tray" on, closing or minimising the
+    // window hides it (the tray icon keeps the app running); with it off, closing
+    // exits the app. Tray "Exit" sets _reallyClose to bypass the hide guard.
+
+    private bool _reallyClose;
+
+    /// <summary>Lets the tray "Exit" command close the window for real.</summary>
+    public void AllowClose() => _reallyClose = true;
+
+    protected override void OnClosing(WindowClosingEventArgs e)
+    {
+        if (!_reallyClose && _settings.MinimizeToTray)
+        {
+            e.Cancel = true;
+            HideToTray();
+            return;
+        }
+
+        base.OnClosing(e);
+
+        // A user close with minimise-to-tray off must exit the app (the lifetime is
+        // OnExplicitShutdown). When _reallyClose is set the shutdown is already in
+        // progress (tray "Exit" called it), so don't re-enter it.
+        if (!_reallyClose &&
+            Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+            desktop.Shutdown();
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+
+        if (change.Property == WindowStateProperty &&
+            WindowState == WindowState.Minimized &&
+            _settings.MinimizeToTray)
+        {
+            HideToTray();
+        }
+    }
+
+    private void HideToTray()
+    {
+        Hide();
+        ShowInTaskbar = false;
+    }
 
     // ── Audio tab ───────────────────────────────────────────────────────────────
 
@@ -300,6 +348,10 @@ public partial class MainWindow : Window
         _settings.AdvancedDebugLogging               = AdvancedDebugLoggingCheckBox.IsChecked == true;
         _settings.TrayNotificationsEnabled           = TrayNotificationsCheckBox.IsChecked == true;
         Save();
+
+        // Apply the run-on-login registry entry to match the toggle (Windows; no-op
+        // elsewhere). Idempotent, so running it for any app-setup change is fine.
+        Platform.WindowsGlue.ApplyRunOnStartup(_settings.StartWithWindows);
     }
 
     private void ForgetControllerButton_Click(object? sender, RoutedEventArgs e)
