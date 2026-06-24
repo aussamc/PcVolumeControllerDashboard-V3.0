@@ -19,12 +19,13 @@ namespace PcVolumeControllerDashboard.App;
 public partial class MainWindow : Window
 {
     // Shipping dashboard version (bumped per Avalonia-tab milestone).
-    private const string DashboardVersion = "3.4";
+    private const string DashboardVersion = "3.5";
     private const string RequiredProtocolVersion = "2.24";
 
     private readonly SettingsService? _settingsService;
     private IAudioBackend? _audioBackend;
     private SerialConnectionService? _connection;
+    private DeviceStateService? _deviceState;
     private readonly ObservableCollection<ChannelRow> _channelRows = new();
     private DispatcherTimer? _channelPollTimer;
     private DashboardSettings _settings = DashboardSettings.CreateDefault();
@@ -43,12 +44,13 @@ public partial class MainWindow : Window
         InitializeComponent();
     }
 
-    public MainWindow(SettingsService settingsService, IAudioBackend audioBackend, SerialConnectionService connection) : this()
+    public MainWindow(SettingsService settingsService, IAudioBackend audioBackend, SerialConnectionService connection, DeviceStateService deviceState) : this()
     {
         _settingsService = settingsService;
         _settings = settingsService.Settings;
         _audioBackend = audioBackend;
         _connection = connection;
+        _deviceState = deviceState;
 
         WireSliders();
         ApplySettingsToUi();
@@ -70,10 +72,17 @@ public partial class MainWindow : Window
         RefreshTargets();
         RefreshChannelStates();
 
-        // Connection status, updated live.
+        // Connection status, updated live. On connect, push channel state right
+        // away (the DeviceStateService pushes OLED config itself) so the OLEDs
+        // populate without waiting for the next poll tick.
         UpdateConnectionStatus();
         if (_connection != null)
-            _connection.StateChanged += _ => Dispatcher.UIThread.Post(UpdateConnectionStatus);
+            _connection.StateChanged += s => Dispatcher.UIThread.Post(() =>
+            {
+                UpdateConnectionStatus();
+                if (s == SerialConnectionState.Connected)
+                    RefreshChannelStates();
+            });
 
         // Poll live channel state (volume/mute/status) ~2x/sec, matching the WPF host.
         _channelPollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
@@ -105,6 +114,8 @@ public partial class MainWindow : Window
     private void RefreshChannelStates()
     {
         ChannelSettings[] channels = _settings.Channels;
+        var liveStates = new List<ChannelLiveState>(_channelRows.Count);
+
         for (int i = 0; i < _channelRows.Count && i < channels.Length; i++)
         {
             ChannelRow row = _channelRows[i];
@@ -112,32 +123,45 @@ public partial class MainWindow : Window
 
             row.DisplayName = string.IsNullOrWhiteSpace(ch.FriendlyName) ? $"Channel {i + 1}" : ch.FriendlyName;
 
+            int volumePercent = 0;
+            bool muted = false;
+            string status;
+
             string key = ch.TargetKey;
             if (string.IsNullOrWhiteSpace(key))
             {
                 row.AssignedLabel = "Unassigned";
                 row.VolumeDisplay = "—";
                 row.MuteDisplay = "—";
-                row.Status = "Unassigned";
-                continue;
-            }
-
-            row.AssignedLabel = LabelForKey(key);
-
-            float vol = _audioBackend?.GetVolumeByKey(key) ?? -1f;
-            if (vol < 0f)
-            {
-                row.VolumeDisplay = "—";
-                row.MuteDisplay = "—";
-                row.Status = key.StartsWith("PROC:", StringComparison.OrdinalIgnoreCase) ? "App offline" : "Unavailable";
+                row.Status = status = "Unassigned";
             }
             else
             {
-                row.VolumeDisplay = $"{Math.Clamp((int)Math.Round(vol * 100), 0, 100)}%";
-                row.MuteDisplay = (_audioBackend?.GetMuteByKey(key) ?? false) ? "Yes" : "No";
-                row.Status = "Active";
+                row.AssignedLabel = LabelForKey(key);
+
+                float vol = _audioBackend?.GetVolumeByKey(key) ?? -1f;
+                if (vol < 0f)
+                {
+                    row.VolumeDisplay = "—";
+                    row.MuteDisplay = "—";
+                    row.Status = status = key.StartsWith("PROC:", StringComparison.OrdinalIgnoreCase) ? "App offline" : "Unavailable";
+                }
+                else
+                {
+                    volumePercent = Math.Clamp((int)Math.Round(vol * 100), 0, 100);
+                    muted = _audioBackend?.GetMuteByKey(key) ?? false;
+                    row.VolumeDisplay = $"{volumePercent}%";
+                    row.MuteDisplay = muted ? "Yes" : "No";
+                    row.Status = status = "Active";
+                }
             }
+
+            liveStates.Add(new ChannelLiveState(i, row.DisplayName, volumePercent, muted, status));
         }
+
+        // Push live state to the controller so the physical OLEDs/display update.
+        // The service applies change detection, so calling it every poll is cheap.
+        _deviceState?.PushChannelStates(liveStates, ChannelGrid.SelectedIndex);
     }
 
     private void AssignTarget_Click(object? sender, RoutedEventArgs e)
@@ -485,6 +509,7 @@ public partial class MainWindow : Window
         _settings.OledDisplayMode = IndexToDisplayMode(DisplayModeComboBox.SelectedIndex);
         Save();
         RenderOledPreviews();
+        _deviceState?.PushOledConfig();
     }
 
     private void OledConnectedIdleActionComboBox_SelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -492,6 +517,7 @@ public partial class MainWindow : Window
         if (_initializing) return;
         _settings.OledConnectedIdleAction = IndexToIdleAction(OledConnectedIdleActionComboBox.SelectedIndex);
         Save();
+        _deviceState?.PushOledConfig();
     }
 
     private void OledAntiBurnInCheckBox_Changed(object? sender, RoutedEventArgs e)
@@ -499,6 +525,7 @@ public partial class MainWindow : Window
         if (_initializing) return;
         _settings.OledAntiBurnInEnabled = OledAntiBurnInCheckBox.IsChecked == true;
         Save();
+        _deviceState?.PushOledConfig();
     }
 
     private void OnOledBrightnessChanged()
@@ -507,6 +534,7 @@ public partial class MainWindow : Window
         if (_initializing) return;
         _settings.OledBrightnessPercent = (int)Math.Round(OledBrightnessSlider.Value);
         Save();
+        _deviceState?.PushOledConfig();
     }
 
     private void OnOledSleepTimeoutChanged()
@@ -515,6 +543,7 @@ public partial class MainWindow : Window
         if (_initializing) return;
         _settings.OledSleepTimeoutMinutes = (int)Math.Round(OledSleepTimeoutSlider.Value);
         Save();
+        _deviceState?.PushOledConfig();
     }
 
     private void OnOledConnectedIdleTimeoutChanged()
@@ -523,6 +552,7 @@ public partial class MainWindow : Window
         if (_initializing) return;
         _settings.OledConnectedIdleTimeoutMinutes = (int)Math.Round(OledConnectedIdleTimeoutSlider.Value);
         Save();
+        _deviceState?.PushOledConfig();
     }
 
     private void UpdateOledBrightnessLabel() =>

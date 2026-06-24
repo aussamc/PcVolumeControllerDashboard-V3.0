@@ -29,10 +29,11 @@ public partial class App : Application
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
             desktop.MainWindow = Services.GetRequiredService<MainWindow>();
 
-            // Activate the channel runtime first so it's subscribed to device
-            // events before the connection starts producing them, then
-            // auto-connect to the remembered controller.
+            // Activate the channel runtime and device-state push first so both are
+            // subscribed to connection/device events before the connection starts
+            // producing them, then auto-connect to the remembered controller.
             Services.GetRequiredService<Services.ChannelRuntime>();
+            Services.GetRequiredService<Services.DeviceStateService>();
             Services.GetRequiredService<Services.SerialConnectionService>().AutoConnect();
         }
 
@@ -59,6 +60,10 @@ public partial class App : Application
 
         // Channel runtime: maps device events (encoder/button) to audio operations.
         services.AddSingleton<Services.ChannelRuntime>();
+
+        // Device state push: PC → ESP32 STATE/CHSTATE + OLED config so the
+        // physical OLEDs/display reflect live audio.
+        services.AddSingleton<Services.DeviceStateService>();
 
         // Settings: loaded once at startup, shared, persisted on change.
         services.AddSingleton<Services.SettingsService>(_ =>

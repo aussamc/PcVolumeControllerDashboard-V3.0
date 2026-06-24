@@ -28,6 +28,7 @@ public static class ProtocolCommands
     public const string Ping          = "PING";
     public const string HelloQuery    = "HELLO?";
     public const string Disconnect    = "DISCONNECT";
+    public const string State         = "STATE";
     public const string ChannelState  = "CHSTATE";
     public const string DisplayMode   = "DISPMODE";
     public const string OledConfig    = "OLEDCFG";
