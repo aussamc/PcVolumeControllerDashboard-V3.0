@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
+using PcVolumeControllerDashboard.Core;
 
 namespace PcVolumeControllerDashboard.App;
 
@@ -15,6 +16,11 @@ public partial class App : Application
     /// </summary>
     public static IServiceProvider Services { get; private set; } = default!;
 
+    // The single canonical main window. Held so tray "Show" reveals this exact
+    // instance (rather than constructing a new one) and "Exit" can bypass the
+    // minimise-to-tray close guard.
+    private MainWindow? _mainWindow;
+
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
     public override void OnFrameworkInitializationCompleted()
@@ -23,11 +29,28 @@ public partial class App : Application
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            // Keep the process alive when the main window is closed/hidden to the
-            // tray; we exit explicitly from the tray "Exit" item. Minimise-to-tray
-            // behaviour is wired up properly when the window chrome is ported.
+            // The tray icon keeps the process alive when the window is hidden, so we
+            // drive shutdown explicitly (tray "Exit" or a close while minimise-to-tray
+            // is off). MainWindow.OnClosing decides hide-to-tray vs. real exit.
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-            desktop.MainWindow = Services.GetRequiredService<MainWindow>();
+
+            var settingsService = Services.GetRequiredService<Services.SettingsService>();
+            var log = Services.GetRequiredService<Services.LogService>();
+            DashboardSettings settings = settingsService.Settings;
+
+            _mainWindow = Services.GetRequiredService<MainWindow>();
+
+            // Keep the HKCU Run entry in sync with the saved preference each launch
+            // (covers the exe being moved/reinstalled). Windows-only; no-op elsewhere.
+            Platform.WindowsGlue.ApplyRunOnStartup(settings.StartWithWindows, log.Log);
+
+            // Start hidden in the tray when requested; otherwise show the window.
+            // Leaving desktop.MainWindow unset keeps the framework from auto-showing
+            // it — the tray icon holds the app open and "Show Dashboard" reveals it.
+            if (settings.StartMinimizedToTray && settings.MinimizeToTray)
+                log.Log("Started minimized to tray.");
+            else
+                desktop.MainWindow = _mainWindow;
 
             // Activate the channel runtime and device-state push first so both are
             // subscribed to connection/device events before the connection starts
@@ -98,19 +121,19 @@ public partial class App : Application
 
     private void TrayExit_OnClick(object? sender, System.EventArgs e)
     {
-        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-            desktop.Shutdown();
+        if (ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktop) return;
+        // Bypass the minimise-to-tray close guard so the app actually exits.
+        _mainWindow?.AllowClose();
+        desktop.Shutdown();
     }
 
     private void ShowMainWindow()
     {
-        if (ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktop)
-            return;
-
-        var window = desktop.MainWindow ??= Services.GetRequiredService<MainWindow>();
-        window.Show();
-        if (window.WindowState == WindowState.Minimized)
-            window.WindowState = WindowState.Normal;
-        window.Activate();
+        _mainWindow ??= Services.GetRequiredService<MainWindow>();
+        _mainWindow.Show();
+        _mainWindow.ShowInTaskbar = true;
+        if (_mainWindow.WindowState == WindowState.Minimized)
+            _mainWindow.WindowState = WindowState.Normal;
+        _mainWindow.Activate();
     }
 }
