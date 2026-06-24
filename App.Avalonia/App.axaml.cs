@@ -28,6 +28,10 @@ public partial class App : Application
             // behaviour is wired up properly when the window chrome is ported.
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
             desktop.MainWindow = Services.GetRequiredService<MainWindow>();
+
+            // Start the serial connection backbone: auto-connect to the
+            // remembered controller and begin the identity handshake.
+            Services.GetRequiredService<Services.SerialConnectionService>().AutoConnect();
         }
 
         base.OnFrameworkInitializationCompleted();
@@ -44,6 +48,12 @@ public partial class App : Application
 
         // Core serial layer — single shared connection for the app lifetime.
         services.AddSingleton<global::PcVolumeControllerDashboard.Core.SerialService>();
+
+        // Diagnostics log (file in the per-OS config dir's logs folder).
+        services.AddSingleton<Services.LogService>();
+
+        // Serial connection lifecycle (open + identity handshake + device events).
+        services.AddSingleton<Services.SerialConnectionService>();
 
         // Settings: loaded once at startup, shared, persisted on change.
         services.AddSingleton<Services.SettingsService>(_ =>
