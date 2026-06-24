@@ -28,6 +28,13 @@ public sealed class WasapiAudioBackend : IAudioBackend
     private AudioDeviceListener? _listener;
     private bool _isAvailable;
 
+    // Set (true) from the COM endpoint-notification callback, which runs on a
+    // system thread. The actual device re-query happens lazily on the consumer
+    // thread (in GetAvailableTargets), so all _renderDevice/_captureDevice
+    // mutation stays single-threaded — disposing a device on the callback thread
+    // while the UI thread reads it would be a cross-thread COM race.
+    private volatile bool _pendingDeviceRefresh;
+
     private List<AudioSessionControl> _sessionCache = new();
     private DateTime _sessionCacheExpiry = DateTime.MinValue;
     private const int SessionCacheTtlMs = 100;
@@ -60,8 +67,9 @@ public sealed class WasapiAudioBackend : IAudioBackend
         _enumerator = new MMDeviceEnumerator();
         _listener = new AudioDeviceListener(() =>
         {
-            // Default device changed: re-query and tell the host to refresh.
-            RefreshDefaultDevice();
+            // Runs on a system thread: do NOT touch device state here. Flag the
+            // refresh for the consumer thread and notify the host to re-enumerate.
+            _pendingDeviceRefresh = true;
             try { TargetsChanged?.Invoke(); } catch { }
         });
         _enumerator.RegisterEndpointNotificationCallback(_listener);
@@ -191,6 +199,14 @@ public sealed class WasapiAudioBackend : IAudioBackend
 
     public IReadOnlyList<AudioTarget> GetAvailableTargets()
     {
+        // Pick up any default-device change signalled by the COM callback, on
+        // this (consumer) thread — keeps all device mutation single-threaded.
+        if (_pendingDeviceRefresh)
+        {
+            _pendingDeviceRefresh = false;
+            RefreshDefaultDevice();
+        }
+
         var targets = new List<AudioTarget>();
 
         targets.Add(AudioTarget.CreateMaster());
