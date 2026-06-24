@@ -30,10 +30,11 @@
     <PlatformTarget>x64</PlatformTarget>
 
     <!-- Assembly identity. Bumped per Avalonia milestone (3.2 Setup, 3.3 OLED,
-         3.4 Audio, 3.5 device state push, …), per the versioning rule. -->
-    <Version>3.5</Version>
-    <AssemblyVersion>3.5.0.0</AssemblyVersion>
-    <FileVersion>3.5.0.0</FileVersion>
+         3.4 Audio, 3.5 device state push, 3.6 encoder feel + buttons, …),
+         per the versioning rule. -->
+    <Version>3.6</Version>
+    <AssemblyVersion>3.6.0.0</AssemblyVersion>
+    <FileVersion>3.6.0.0</FileVersion>
     <Product>PC Volume Controller Dashboard</Product>
     <Description>Cross-platform Avalonia dashboard for the PC Volume Controller hardware device</Description>
     <Copyright>Copyright © 2026</Copyright>

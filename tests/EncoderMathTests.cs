@@ -9,6 +9,29 @@ namespace PcVolumeControllerDashboard.Tests;
 public sealed class EncoderMathTests
 {
     private const int MaxStep = 25; // matches MainWindow.MaxVolumeStepPercent
+    private const int BaseStep = 2; // matches MainWindow.BaseVolumeStepPercent
+    private const int MaxSensitivity = 500;
+
+    // ── StepFromSensitivity ───────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(0, 1)]      // 0 % → minimum step of 1
+    [InlineData(50, 2)]     // 50 % → base step (2 × 1.0)
+    [InlineData(100, 4)]    // 100 % → 2 × 2.0
+    [InlineData(25, 1)]     // 25 % → round(2 × 0.5) = 1
+    [InlineData(500, 20)]   // 500 % → 2 × 10 = 20 (still under max)
+    public void StepFromSensitivity_ScalesAroundFiftyPercent(int sensitivity, int expected)
+    {
+        EncoderMath.StepFromSensitivity(sensitivity, BaseStep, MaxStep, MaxSensitivity).Should().Be(expected);
+    }
+
+    [Fact]
+    public void StepFromSensitivity_ClampsToBounds()
+    {
+        EncoderMath.StepFromSensitivity(-10, BaseStep, MaxStep, MaxSensitivity).Should().Be(1);
+        EncoderMath.StepFromSensitivity(99999, BaseStep, MaxStep, MaxSensitivity).Should().Be(20); // clamped to 500 % first
+        EncoderMath.StepFromSensitivity(500, 10, MaxStep, MaxSensitivity).Should().Be(MaxStep, "100× base would exceed the max step");
+    }
 
     // ── GetAcceleratedStep: fixed presets ─────────────────────────────────────────
 
