@@ -53,6 +53,17 @@ public partial class App : Application
             return settings;
         });
 
+        // Audio backend, selected per-OS (WASAPI/VoiceMeeter on Windows;
+        // NullAudioBackend elsewhere until Linux/macOS layers land). Initialised
+        // once for the app lifetime.
+        services.AddSingleton<global::PcVolumeControllerDashboard.Core.Audio.IAudioBackend>(sp =>
+        {
+            var settings = sp.GetRequiredService<Services.SettingsService>();
+            var backend = Audio.AudioBackendFactory.Create(settings.Settings.AudioBackendMode);
+            backend.Initialise();
+            return backend;
+        });
+
         // The shell. Transient so a future "reopen window" can rebuild it.
         services.AddTransient<MainWindow>();
 

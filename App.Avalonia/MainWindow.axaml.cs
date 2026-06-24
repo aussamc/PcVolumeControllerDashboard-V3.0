@@ -9,6 +9,7 @@ using Avalonia.Styling;
 using PcVolumeControllerDashboard.App.Oled;
 using PcVolumeControllerDashboard.App.Services;
 using PcVolumeControllerDashboard.Core;
+using PcVolumeControllerDashboard.Core.Audio;
 
 namespace PcVolumeControllerDashboard.App;
 
@@ -35,11 +36,17 @@ public partial class MainWindow : Window
         InitializeComponent();
     }
 
-    public MainWindow(SettingsService settingsService, SerialService serial) : this()
+    public MainWindow(SettingsService settingsService, SerialService serial, IAudioBackend audioBackend) : this()
     {
         _settingsService = settingsService;
         _settings = settingsService.Settings;
         _ = serial; // wiring proven in PR 1; serial orchestration ports later
+
+        // Surface the per-OS audio backend so the wiring is provable at a glance.
+        // Real channel orchestration (state polling + encoder handling) ports with
+        // the serial runtime in the next PR.
+        Title = $"PC Volume Controller Dashboard — {audioBackend.BackendName} backend, " +
+                $"{audioBackend.GetAvailableTargets().Count} target(s)";
 
         WireSliders();
         ApplySettingsToUi();
