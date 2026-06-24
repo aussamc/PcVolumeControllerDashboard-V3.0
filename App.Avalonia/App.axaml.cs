@@ -29,8 +29,10 @@ public partial class App : Application
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
             desktop.MainWindow = Services.GetRequiredService<MainWindow>();
 
-            // Start the serial connection backbone: auto-connect to the
-            // remembered controller and begin the identity handshake.
+            // Activate the channel runtime first so it's subscribed to device
+            // events before the connection starts producing them, then
+            // auto-connect to the remembered controller.
+            Services.GetRequiredService<Services.ChannelRuntime>();
             Services.GetRequiredService<Services.SerialConnectionService>().AutoConnect();
         }
 
@@ -54,6 +56,9 @@ public partial class App : Application
 
         // Serial connection lifecycle (open + identity handshake + device events).
         services.AddSingleton<Services.SerialConnectionService>();
+
+        // Channel runtime: maps device events (encoder/button) to audio operations.
+        services.AddSingleton<Services.ChannelRuntime>();
 
         // Settings: loaded once at startup, shared, persisted on change.
         services.AddSingleton<Services.SettingsService>(_ =>
