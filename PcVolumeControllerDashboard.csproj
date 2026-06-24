@@ -72,6 +72,12 @@
     <Compile Remove="App.Avalonia\**" />
     <EmbeddedResource Remove="App.Avalonia\**" />
     <None Remove="App.Avalonia\**" />
+    <!-- Windows audio platform lib is its own project; keep its sources out of
+         the WPF host's default **/*.cs glob. (Host consumes it via the seam in a
+         later PR; for now it builds standalone alongside the host.) -->
+    <Compile Remove="Platform.Windows\**" />
+    <EmbeddedResource Remove="Platform.Windows\**" />
+    <None Remove="Platform.Windows\**" />
   </ItemGroup>
 
 </Project>
