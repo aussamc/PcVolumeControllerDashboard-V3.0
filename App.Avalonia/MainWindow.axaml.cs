@@ -304,12 +304,25 @@ public partial class MainWindow : Window
     {
         try
         {
+            // Use ArgumentList so the launcher receives the path as a single,
+            // unquoted argument — manual quoting would be passed through literally
+            // (e.g. xdg-open would look for a path including the quote characters).
+            var psi = new ProcessStartInfo { UseShellExecute = false };
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                Process.Start(new ProcessStartInfo("explorer.exe", $"\"{path}\"") { UseShellExecute = true });
-            else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-                Process.Start(new ProcessStartInfo("xdg-open", $"\"{path}\"") { UseShellExecute = false });
+            {
+                psi.FileName = "explorer.exe";
+                psi.UseShellExecute = true;
+            }
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-                Process.Start(new ProcessStartInfo("open", $"\"{path}\"") { UseShellExecute = false });
+            {
+                psi.FileName = "open";
+            }
+            else
+            {
+                psi.FileName = "xdg-open";
+            }
+            psi.ArgumentList.Add(path);
+            Process.Start(psi);
         }
         catch { /* best-effort: ignore if no file manager is available */ }
     }
