@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:PcVolumeControllerDashboard.App"
         mc:Ignorable="d"
         x:Class="PcVolumeControllerDashboard.App.MainWindow"
         Title="PC Volume Controller Dashboard"
@@ -39,6 +40,73 @@
     </Window.Styles>
 
     <TabControl x:Name="MainTabs">
+        <TabItem Header="Audio">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="12">
+
+                    <!-- ── Connection status ────────────────────────────────── -->
+                    <Border Classes="card">
+                        <StackPanel>
+                            <TextBlock Classes="h2" Text="Controller" />
+                            <TextBlock x:Name="ConnectionStatusText" Text="Disconnected" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ── Channel mapping (live) ───────────────────────────── -->
+                    <Border Classes="card">
+                        <StackPanel>
+                            <TextBlock Classes="h2" Text="Channel Mapping" />
+                            <TextBlock Classes="muted" Margin="0,0,0,8"
+                                       Text="Live channel state. Turning an encoder or pressing a knob updates the assigned target here." />
+
+                            <DataGrid x:Name="ChannelGrid"
+                                      x:DataType="local:ChannelRow"
+                                      IsReadOnly="True"
+                                      SelectionMode="Single"
+                                      AutoGenerateColumns="False"
+                                      CanUserResizeColumns="True"
+                                      Height="232"
+                                      GridLinesVisibility="Horizontal">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Ch" Binding="{Binding Channel}" Width="44" />
+                                    <DataGridTextColumn Header="Display Name" Binding="{Binding DisplayName}" Width="160" />
+                                    <DataGridTextColumn Header="Assigned Target" Binding="{Binding AssignedLabel}" Width="180" />
+                                    <DataGridTextColumn Header="Volume" Binding="{Binding VolumeDisplay}" Width="80" />
+                                    <DataGridTextColumn Header="Mute" Binding="{Binding MuteDisplay}" Width="60" />
+                                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="*" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ── Target assignment ────────────────────────────────── -->
+                    <Border Classes="card">
+                        <StackPanel>
+                            <TextBlock Classes="h2" Text="Assign Target" />
+                            <TextBlock Classes="muted" Margin="0,0,0,8"
+                                       Text="Pick a channel row above, choose an available audio target, and assign it." />
+                            <StackPanel Orientation="Horizontal">
+                                <ComboBox x:Name="TargetCombo" Width="300" />
+                                <Button Content="Assign to selected channel" Margin="8,0,0,0" Click="AssignTarget_Click" />
+                                <Button Content="Clear" Margin="8,0,0,0" Click="ClearTarget_Click" />
+                                <Button Content="Refresh targets" Margin="8,0,0,0" Click="RefreshTargets_Click" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ── Not yet ported ───────────────────────────────────── -->
+                    <Border Classes="card">
+                        <StackPanel>
+                            <TextBlock Classes="h2" Text="Coming in later PRs" />
+                            <TextBlock Classes="muted"
+                                       Text="Per-channel detail (button actions, presets, link groups, multi-app pools, volume limits, per-channel OLED/sensitivity), profiles, output-device cycling, and the connect/disconnect controls are ported in follow-up PRs." />
+                        </StackPanel>
+                    </Border>
+
+                </StackPanel>
+            </ScrollViewer>
+        </TabItem>
+
         <TabItem Header="Setup">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="12">
