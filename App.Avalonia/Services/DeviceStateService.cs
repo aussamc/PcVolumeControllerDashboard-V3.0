@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using Avalonia.Threading;
 using PcVolumeControllerDashboard.Core;
 
@@ -29,12 +30,19 @@ public sealed class DeviceStateService : IDisposable
 {
     private const int ExpectedChannelCount = 6;
 
+    // Heartbeat cadence. The firmware drops to a "Disconnected" screen if it sees
+    // no PC traffic for PC_TIMEOUT_MS (3000 ms). Change detection means a stable
+    // idle dashboard would otherwise go silent, so PING on a sub-timeout interval
+    // (matching the WPF host's 1000 ms) keeps the controller's watchdog fresh.
+    private const int HeartbeatMs = 1000;
+
     private readonly SerialConnectionService _connection;
     private readonly SettingsService _settings;
     private readonly LogService _log;
 
     private readonly string?[] _lastChState = new string?[ExpectedChannelCount];
     private string? _lastState;
+    private Timer? _heartbeatTimer;
 
     public DeviceStateService(SerialConnectionService connection, SettingsService settings, LogService log)
     {
@@ -52,7 +60,11 @@ public sealed class DeviceStateService : IDisposable
         // below keeps the ordering: reset → channel states → OLED config.
         ResetChangeTracking();
 
-        if (state != SerialConnectionState.Connected) return;
+        if (state != SerialConnectionState.Connected)
+        {
+            StopHeartbeat();
+            return;
+        }
 
         // Push the device configuration on connect. Channel states follow from the
         // Audio tab's poll (and an immediate refresh the host triggers). Marshal to
@@ -64,6 +76,21 @@ public sealed class DeviceStateService : IDisposable
             PushAllChannelOledModes();
             _connection.SendLine(ProtocolCommands.Ping);
         });
+
+        StartHeartbeat();
+    }
+
+    private void StartHeartbeat()
+    {
+        // SendLine is no-op when not connected, so a late tick is harmless.
+        _heartbeatTimer?.Dispose();
+        _heartbeatTimer = new Timer(_ => _connection.SendLine(ProtocolCommands.Ping), null, HeartbeatMs, HeartbeatMs);
+    }
+
+    private void StopHeartbeat()
+    {
+        _heartbeatTimer?.Dispose();
+        _heartbeatTimer = null;
     }
 
     /// <summary>
@@ -136,5 +163,9 @@ public sealed class DeviceStateService : IDisposable
         _lastState = null;
     }
 
-    public void Dispose() => _connection.StateChanged -= OnConnectionStateChanged;
+    public void Dispose()
+    {
+        StopHeartbeat();
+        _connection.StateChanged -= OnConnectionStateChanged;
+    }
 }
