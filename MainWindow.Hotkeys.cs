@@ -5,7 +5,6 @@
 using System;
 using System.Windows;
 using System.Windows.Interop;
-using NAudio.CoreAudioApi;
 
 namespace PcVolumeControllerDashboard;
 
@@ -88,12 +87,7 @@ public partial class MainWindow
             case HotkeyIdMasterVolumeUp:
                 try
                 {
-                    EnsureAudioDevice();
-                    int cur = GetMasterVolumePercent();
-                    int next = Math.Clamp(cur + GetVolumeStepPercent(), 0, 100);
-                    _defaultRenderDevice!.AudioEndpointVolume.MasterVolumeLevelScalar = next / 100.0f;
-                    if (_defaultRenderDevice.AudioEndpointVolume.Mute && next > 0)
-                        _defaultRenderDevice.AudioEndpointVolume.Mute = false;
+                    _audioBackend?.AdjustVolumeByKey("MASTER", GetVolumeStepPercent(), 0, 100);
                     RefreshAllChannelStates();
                     SendAllChannelStatesToDevice();
                 }
@@ -103,12 +97,7 @@ public partial class MainWindow
             case HotkeyIdMasterVolumeDown:
                 try
                 {
-                    EnsureAudioDevice();
-                    int cur = GetMasterVolumePercent();
-                    int next = Math.Clamp(cur - GetVolumeStepPercent(), 0, 100);
-                    _defaultRenderDevice!.AudioEndpointVolume.MasterVolumeLevelScalar = next / 100.0f;
-                    if (_defaultRenderDevice.AudioEndpointVolume.Mute && next > 0)
-                        _defaultRenderDevice.AudioEndpointVolume.Mute = false;
+                    _audioBackend?.AdjustVolumeByKey("MASTER", -GetVolumeStepPercent(), 0, 100);
                     RefreshAllChannelStates();
                     SendAllChannelStatesToDevice();
                 }
@@ -118,9 +107,7 @@ public partial class MainWindow
             case HotkeyIdToggleMasterMute:
                 try
                 {
-                    EnsureAudioDevice();
-                    AudioEndpointVolume epv = _defaultRenderDevice!.AudioEndpointVolume;
-                    epv.Mute = !epv.Mute;
+                    _audioBackend?.ToggleMuteByKey("MASTER");
                     RefreshAllChannelStates();
                     SendAllChannelStatesToDevice();
                 }

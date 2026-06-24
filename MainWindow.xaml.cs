@@ -78,9 +78,9 @@ public partial class MainWindow : Window
     private const int DbtDeviceRemoveComplete = 0x8004;
     private const int DbtDevNodesChanged = 0x0007;
 
-    private readonly ObservableCollection<AudioTargetItem> _audioTargets = new();
+    private readonly ObservableCollection<AudioTarget> _audioTargets = new();
     private readonly ObservableCollection<ChannelPoolItem> _channelPoolItems = new();
-    private readonly Dictionary<string, AudioTargetItem> _audioTargetCache =
+    private readonly Dictionary<string, AudioTarget> _audioTargetCache =
         new(StringComparer.OrdinalIgnoreCase);
     private readonly System.Collections.ObjectModel.ObservableCollection<OutputDeviceItem> _outputDevices = new();
     private int _audioSessionRefreshInProgress; // used as bool via Interlocked
@@ -89,11 +89,13 @@ public partial class MainWindow : Window
     private readonly object _logFileLock = new();
 
     private readonly SerialService _serialService = new();
-    private readonly AudioService _audioService = new();
-    private VoiceMeeterService? _voiceMeeterService;
+
+    // Active audio backend behind the neutral Core.Audio seam. Rebuilt by
+    // InitAudioBackend() whenever the backend mode (WASAPI / VoiceMeeter) changes.
+    // The backend owns all NAudio / VoiceMeeter handles; the host only ever
+    // addresses targets by key.
+    private IAudioBackend? _audioBackend;
     private bool _voiceMeeterBannerVisible;
-    private MMDevice? _defaultRenderDevice;
-    private MMDevice? _defaultCaptureDevice;
     private System.Threading.Timer? _statePollTimer;
     private System.Threading.Timer? _heartbeatTimer;
     private System.Threading.Timer? _audioSessionRefreshTimer;
@@ -227,18 +229,7 @@ public partial class MainWindow : Window
         // otherwise be lost.  SessionEnding gives us a final chance to flush them.
         SystemEvents.SessionEnding += OnSessionEnding;
 
-        _audioService.DefaultDeviceChanged += () => Dispatcher.InvokeAsync(() =>
-        {
-            Log("Default audio device changed — refreshing audio sessions.");
-            RefreshDefaultAudioDevice();
-            RefreshAudioSessions();
-            RefreshAllChannelStates();
-            SendAllChannelStatesToDevice();
-        });
-        _audioService.AudioDeviceError += msg =>
-            ShowWarning("No audio output device found. Audio control is unavailable. Check your Windows sound settings.");
-        _audioService.Initialise();
-        InitVoiceMeeterIfNeeded();
+        InitAudioBackend();
         RefreshDefaultAudioDevice();
         RefreshOutputDevices();
 
@@ -1236,7 +1227,7 @@ public partial class MainWindow : Window
 
     private void AssignChannelButton_Click(object sender, RoutedEventArgs e)
     {
-        if (ChannelTargetComboBox.SelectedItem is not AudioTargetItem target)
+        if (ChannelTargetComboBox.SelectedItem is not AudioTarget target)
             return;
 
         ChannelMappingItem channel = _channels[_selectedChannelIndex];
@@ -1264,7 +1255,7 @@ public partial class MainWindow : Window
 
     private void AddToPoolButton_Click(object sender, RoutedEventArgs e)
     {
-        if (ChannelTargetComboBox.SelectedItem is not AudioTargetItem target)
+        if (ChannelTargetComboBox.SelectedItem is not AudioTarget target)
             return;
 
         ChannelMappingItem channel = _channels[_selectedChannelIndex];
@@ -1481,7 +1472,7 @@ public partial class MainWindow : Window
         ChannelMappingsListView.ScrollIntoView(_channels[index]);
 
         ChannelMappingItem channel = _channels[index];
-        AudioTargetItem? target = FindTargetByKey(channel.TargetKey);
+        AudioTarget? target = FindTargetByKey(channel.TargetKey);
 
         if (target != null)
         {
@@ -1591,15 +1582,23 @@ public partial class MainWindow : Window
 
     private void RefreshDefaultAudioDevice()
     {
-        _audioService.RefreshDefaultDevice();
-        _defaultRenderDevice  = _audioService.RenderDevice;
-        _defaultCaptureDevice = _audioService.CaptureDevice;
+        // The backend owns device handles and re-queries lazily; just drop its
+        // cached session list so the next read reflects the new default device.
+        _audioBackend?.InvalidateCache();
 
-        if (_defaultRenderDevice != null)
+        // In WASAPI mode, warn when there is no usable render endpoint (master
+        // volume unreadable). VoiceMeeter mode has its own offline banner.
+        bool wasapiMode = _settings.AudioBackendMode != AudioBackendModes.VoiceMeeter;
+        bool renderAvailable = !wasapiMode || (_audioBackend?.GetVolumeByKey("MASTER") ?? -1f) >= 0f;
+
+        if (renderAvailable)
         {
-            Log($"Default output device: {_defaultRenderDevice.FriendlyName}");
-            // Clear any prior audio warning if we now have a device
+            // Clear any prior audio warning now that we have a device.
             Dispatcher.InvokeAsync(() => { if (WarningBanner.Visibility == Visibility.Visible && WarningBannerText.Text.StartsWith("No audio")) WarningBanner.Visibility = Visibility.Collapsed; });
+        }
+        else
+        {
+            ShowWarning("No audio output device found. Audio control is unavailable. Check your Windows sound settings.");
         }
     }
 
@@ -1749,61 +1748,15 @@ public partial class MainWindow : Window
         {
             _audioTargets.Clear();
 
-            if (_settings.AudioBackendMode == AudioBackendModes.VoiceMeeter)
-            {
-                // ── VoiceMeeter mode: populate strips/buses from VM service ──
-                if (_voiceMeeterService != null && _voiceMeeterService.IsAvailable)
-                {
-                    foreach (AudioTargetItem vmTarget in _voiceMeeterService.GetAvailableTargets())
-                        _audioTargets.Add(vmTarget);
-                    Log($"VoiceMeeter: loaded {_audioTargets.Count} target(s).");
-                }
-                else
-                {
-                    Log("VoiceMeeter: not available — target list is empty.");
-                }
-            }
-            else
-            {
-                // ── WASAPI mode: existing enumeration ──────────────────────
-                EnsureAudioDevice();
+            // Both backends enumerate dynamically behind the neutral seam: the
+            // WASAPI backend supplies Master/Mic + per-session targets (with label
+            // disambiguation done internally); the VoiceMeeter backend supplies
+            // strips/buses. The host just consumes the resulting AudioTarget list.
+            foreach (AudioTarget target in _audioBackend?.GetAvailableTargets() ?? (IReadOnlyList<AudioTarget>)Array.Empty<AudioTarget>())
+                _audioTargets.Add(target);
 
-                _audioTargets.Add(AudioTargetItem.CreateMaster());
-                if (_defaultCaptureDevice != null)
-                    _audioTargets.Add(AudioTargetItem.CreateMic());
-
-                List<AudioSessionControl> sessions = _audioService.GetActiveSessions();
-
-                // Collect all enumerable sessions first so we can disambiguate labels
-                // before adding to _audioTargets.  We do NOT deduplicate by process name
-                // here: multiple windows / instances of the same app (e.g. two browser
-                // windows) each get their own row in the dropdown.
-                var sessionTargets = new List<AudioTargetItem>();
-                foreach (AudioSessionControl session in sessions)
-                {
-                    AudioTargetItem? target = TryCreateAudioTargetFromSession(session);
-                    if (target != null)
-                        sessionTargets.Add(target);
-                }
-
-                // Disambiguate labels when the same process produces more than one
-                // audio session: first instance keeps the bare name ("chrome"),
-                // subsequent ones are suffixed ("chrome (2)", "chrome (3)", …).
-                var processNameCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-                foreach (AudioTargetItem t in sessionTargets)
-                {
-                    processNameCounts.TryGetValue(t.ProcessName, out int seen);
-                    processNameCounts[t.ProcessName] = seen + 1;
-                    if (seen > 0)
-                        t.Label = $"{t.ProcessName} ({seen + 1})";
-                }
-
-                foreach (AudioTargetItem t in sessionTargets)
-                    _audioTargets.Add(t);
-
-                EnsureSavedTargetsAppearInTargetList();
-                Log($"WASAPI: loaded {_audioTargets.Count} target(s).");
-            }
+            EnsureSavedTargetsAppearInTargetList();
+            Log($"{_audioBackend?.BackendName ?? "Audio"}: loaded {_audioTargets.Count} target(s).");
 
             RefreshChannelAssignmentLabels();
 
@@ -1817,7 +1770,7 @@ public partial class MainWindow : Window
             // browser windows both map to PROC:chrome), keep the first entry so
             // the cache result is stable across refreshes.
             _audioTargetCache.Clear();
-            foreach (AudioTargetItem cacheTarget in _audioTargets)
+            foreach (AudioTarget cacheTarget in _audioTargets)
             {
                 if (!_audioTargetCache.ContainsKey(cacheTarget.Key))
                     _audioTargetCache[cacheTarget.Key] = cacheTarget;
@@ -1862,13 +1815,13 @@ public partial class MainWindow : Window
             string label = MakeDisplayLabelFromTargetKey(key);
             string processName = MakeProcessNameFromTargetKey(key);
 
-            _audioTargets.Add(new AudioTargetItem
+            _audioTargets.Add(new AudioTarget
             {
                 Key = key,
                 Label = label,
                 ProcessName = processName,
                 ProcessId = 0,
-                Session = null,
+                IsLive = false,
                 Volume = 0,
                 Muted = true,
                 State = "Waiting for app",
@@ -1905,29 +1858,14 @@ public partial class MainWindow : Window
 
     private HashSet<string> GetCurrentAudioSessionSnapshot()
     {
-        EnsureAudioDevice();
+        HashSet<string> keys = new(StringComparer.OrdinalIgnoreCase);
 
-        List<AudioSessionControl> sessions = _audioService.GetActiveSessions();
-
-        HashSet<string> keys = new(StringComparer.OrdinalIgnoreCase) { "MASTER" };
-
-        // Mirror what RefreshAudioSessions() adds to _audioTargets so that
-        // GetAudioSessionSnapshot() and this method produce identical key sets
-        // for the same hardware state.  Without this, MIC_INPUT is always
-        // present in the stored snapshot but absent here, causing the
-        // comparison to report a "change" every 2.5-second poll tick.
-        if (_defaultCaptureDevice != null)
-            keys.Add("MIC_INPUT");
-
-        foreach (AudioSessionControl session in sessions)
-        {
-            AudioTargetItem? target = TryCreateAudioTargetFromSession(session);
-
-            if (target != null)
-            {
-                keys.Add(target.Key);
-            }
-        }
+        // Live targets from the backend (Master/Mic + per-app sessions in WASAPI
+        // mode; strips/buses in VoiceMeeter mode). This mirrors what
+        // RefreshAudioSessions() populates into _audioTargets, so this snapshot
+        // and GetAudioSessionSnapshot() agree for the same hardware state.
+        foreach (AudioTarget target in _audioBackend?.GetAvailableTargets() ?? (IReadOnlyList<AudioTarget>)Array.Empty<AudioTarget>())
+            keys.Add(target.Key);
 
         foreach (ChannelSettings channel in _settings.Channels)
         {
@@ -1965,7 +1903,7 @@ public partial class MainWindow : Window
             if (string.IsNullOrWhiteSpace(key)) continue;
             if (key.Equals("MASTER", StringComparison.OrdinalIgnoreCase)) return key;
             if (key.Equals("MIC_INPUT", StringComparison.OrdinalIgnoreCase)) return key;
-            if (FindSessionsForKey(key).Any()) return key;
+            if (KeyHasLiveTarget(key)) return key;
         }
 
         // None running — return first pool entry so the channel shows "waiting" for it.
@@ -1982,7 +1920,7 @@ public partial class MainWindow : Window
             string effectiveKey = ResolveActiveTargetKey(channel);
             if (channel.TargetKeys.Count > 1)
                 channel.TargetKey = effectiveKey; // keep in sync for volume/mute operations
-            AudioTargetItem? target = FindTargetByKey(effectiveKey);
+            AudioTarget? target = FindTargetByKey(effectiveKey);
 
             if (target == null)
             {
@@ -2016,10 +1954,11 @@ public partial class MainWindow : Window
             }
             else if (target.IsMicInput)
             {
-                if (_defaultCaptureDevice != null)
+                float micVol = _audioBackend?.GetVolumeByKey("MIC_INPUT") ?? -1f;
+                if (micVol >= 0f)
                 {
-                    channel.Volume = Math.Clamp((int)Math.Round(_defaultCaptureDevice.AudioEndpointVolume.MasterVolumeLevelScalar * 100), 0, 100);
-                    channel.Muted = _defaultCaptureDevice.AudioEndpointVolume.Mute;
+                    channel.Volume = Math.Clamp((int)Math.Round(micVol * 100), 0, 100);
+                    channel.Muted = _audioBackend?.GetMuteByKey("MIC_INPUT") ?? false;
                     channel.Status = "Active";
                     channel.IsAppOffline = false;
                 }
@@ -2034,9 +1973,10 @@ public partial class MainWindow : Window
             }
             else
             {
-                var sessions = FindSessionsForKey(target.Key).ToList();
+                // Per-app / VoiceMeeter target: read live volume/mute by key.
+                float vol = _audioBackend?.GetVolumeByKey(target.Key) ?? -1f;
 
-                if (sessions.Count == 0)
+                if (vol < 0f)
                 {
                     channel.Volume = 0;
                     channel.Muted = true;
@@ -2047,9 +1987,14 @@ public partial class MainWindow : Window
                 }
                 else
                 {
-                    channel.Volume = sessions[0].Volume;
-                    channel.Muted = sessions[0].Muted;
-                    channel.Status = sessions.Count == 1 ? "Active" : $"Active x{sessions.Count}";
+                    // "Active xN" reflects how many live streams share this key
+                    // (e.g. multiple browser windows), from the last enumeration.
+                    int liveCount = _audioTargets.Count(t =>
+                        t.IsLive && t.Key.Equals(target.Key, StringComparison.OrdinalIgnoreCase));
+
+                    channel.Volume = Math.Clamp((int)Math.Round(vol * 100), 0, 100);
+                    channel.Muted = _audioBackend?.GetMuteByKey(target.Key) ?? false;
+                    channel.Status = liveCount <= 1 ? "Active" : $"Active x{liveCount}";
                     channel.IsAppOffline = false;
                 }
             }
@@ -2088,7 +2033,7 @@ public partial class MainWindow : Window
         }
 
         ChannelMappingItem channel = _channels[channelIndex];
-        AudioTargetItem? target = FindTargetByKey(channel.TargetKey);
+        AudioTarget? target = FindTargetByKey(channel.TargetKey);
 
         if (target == null)
         {
@@ -2101,80 +2046,20 @@ public partial class MainWindow : Window
         int limMin = (int)Math.Round(limMinNorm * 100);
         int limMax = (int)Math.Round(limMaxNorm * 100);
 
-        if (target.IsMaster)
-        {
-            EnsureAudioDevice();
-            int current = GetMasterVolumePercent();
-            int next = Math.Clamp(current + deltaPercent, limMin, limMax);
+        // The backend applies the delta per underlying target (per-session for
+        // WASAPI), clamps to the channel limits, and returns the representative
+        // new percent (−1 if nothing is assignable / running).
+        int result = _audioBackend?.AdjustVolumeByKey(target.Key, deltaPercent, limMin, limMax) ?? -1;
 
-            _defaultRenderDevice!.AudioEndpointVolume.MasterVolumeLevelScalar = next / 100.0f;
-
-            if (_defaultRenderDevice.AudioEndpointVolume.Mute && next > 0)
-            {
-                _defaultRenderDevice.AudioEndpointVolume.Mute = false;
-            }
-
-            if (IsAdvancedDebugLoggingEnabled())
-            {
-                Log($"Channel {channel.ChannelNumber} / Master: {next}%");
-            }
-            if (propagate)
-            {
-                foreach (int linkedIndex in GetLinkedChannelIndices(channelIndex))
-                    ChangeChannelVolume(linkedIndex, deltaPercent, propagate: false);
-            }
-            return;
-        }
-
-        if (target.IsMicInput)
-        {
-            if (_defaultCaptureDevice == null) return;
-            int current = Math.Clamp((int)Math.Round(_defaultCaptureDevice.AudioEndpointVolume.MasterVolumeLevelScalar * 100), 0, 100);
-            int next = Math.Clamp(current + deltaPercent, limMin, limMax);
-            _defaultCaptureDevice.AudioEndpointVolume.MasterVolumeLevelScalar = next / 100.0f;
-            if (_defaultCaptureDevice.AudioEndpointVolume.Mute && next > 0)
-                _defaultCaptureDevice.AudioEndpointVolume.Mute = false;
-            if (IsAdvancedDebugLoggingEnabled())
-                Log($"Channel {channel.ChannelNumber} / Mic Input: {next}%");
-            if (propagate)
-            {
-                foreach (int linkedIndex in GetLinkedChannelIndices(channelIndex))
-                    ChangeChannelVolume(linkedIndex, deltaPercent, propagate: false);
-            }
-            return;
-        }
-
-        var sessions = FindSessionsForKey(target.Key).ToList();
-
-        if (sessions.Count == 0)
+        if (result < 0)
         {
             Log($"No active audio session for {target.Label}.");
             return;
         }
 
-        foreach (AudioTargetItem sessionTarget in sessions)
-        {
-            if (sessionTarget.Session?.SimpleAudioVolume == null)
-            {
-                continue;
-            }
-
-            SimpleAudioVolume volume = sessionTarget.Session.SimpleAudioVolume;
-
-            int current = Math.Clamp((int)Math.Round(volume.Volume * 100), 0, 100);
-            int next = Math.Clamp(current + deltaPercent, limMin, limMax);
-
-            volume.Volume = next / 100.0f;
-
-            if (volume.Mute && next > 0)
-            {
-                volume.Mute = false;
-            }
-        }
-
         if (IsAdvancedDebugLoggingEnabled())
         {
-            Log($"Channel {channel.ChannelNumber} / {target.Label}: volume changed.");
+            Log($"Channel {channel.ChannelNumber} / {target.Label}: {result}%");
         }
 
         // Propagate the same delta to all channels in the same link group.
@@ -2225,7 +2110,7 @@ public partial class MainWindow : Window
         try
         {
         ChannelMappingItem channel = _channels[channelIndex];
-        AudioTargetItem? target = FindTargetByKey(channel.TargetKey);
+        AudioTarget? target = FindTargetByKey(channel.TargetKey);
 
         if (target == null)
         {
@@ -2233,59 +2118,19 @@ public partial class MainWindow : Window
             return;
         }
 
-        // ── VoiceMeeter path ──────────────────────────────────────────────
-        if (target.IsVoiceMeeter)
-        {
-            if (_voiceMeeterService == null || !_voiceMeeterService.IsAvailable) return;
-            bool? current = _voiceMeeterService.GetMuteByKey(target.Key);
-            bool next = !(current ?? false);
-            _voiceMeeterService.SetMuteByKey(target.Key, next);
-            Log(next ? $"{target.Label} muted (VoiceMeeter)" : $"{target.Label} unmuted (VoiceMeeter)");
-            ShowMuteOverlay(channelIndex, next);
-            return;
-        }
+        // The backend toggles every underlying target for the key (master/mic
+        // endpoint, per-session, or VoiceMeeter) and returns the new mute state,
+        // or null if nothing is assignable / running.
+        bool? next = _audioBackend?.ToggleMuteByKey(target.Key);
 
-        // ── WASAPI path ───────────────────────────────────────────────────
-        if (target.IsMaster)
-        {
-            AudioEndpointVolume endpointVolume = _defaultRenderDevice!.AudioEndpointVolume;
-            endpointVolume.Mute = !endpointVolume.Mute;
-            Log(endpointVolume.Mute ? "Master muted" : "Master unmuted");
-            ShowMuteOverlay(channelIndex, endpointVolume.Mute);
-            return;
-        }
-
-        if (target.IsMicInput)
-        {
-            if (_defaultCaptureDevice == null) return;
-            AudioEndpointVolume epv = _defaultCaptureDevice.AudioEndpointVolume;
-            epv.Mute = !epv.Mute;
-            Log(epv.Mute ? "Mic input muted" : "Mic input unmuted");
-            ShowMuteOverlay(channelIndex, epv.Mute);
-            return;
-        }
-
-        var sessions = FindSessionsForKey(target.Key).ToList();
-
-        if (sessions.Count == 0)
+        if (next == null)
         {
             Log($"No active audio session for {target.Label}.");
             return;
         }
 
-        bool? currentMute = _audioService.GetMute(sessions[0]);
-        bool nextMute = !(currentMute ?? sessions[0].Muted);
-
-        foreach (AudioTargetItem sessionTarget in sessions)
-        {
-            if (sessionTarget.Session?.SimpleAudioVolume != null)
-            {
-                sessionTarget.Session.SimpleAudioVolume.Mute = nextMute;
-            }
-        }
-
-        Log(nextMute ? $"{target.Label} muted" : $"{target.Label} unmuted");
-        ShowMuteOverlay(channelIndex, nextMute);
+        Log(next.Value ? $"{target.Label} muted" : $"{target.Label} unmuted");
+        ShowMuteOverlay(channelIndex, next.Value);
         }
         catch (System.Runtime.InteropServices.COMException comEx)
         {
@@ -2539,7 +2384,7 @@ public partial class MainWindow : Window
         ChannelMappingItem channel = _channels[_selectedChannelIndex];
         foreach (string key in channel.TargetKeys)
         {
-            string label = _audioTargetCache.TryGetValue(key, out AudioTargetItem? cached)
+            string label = _audioTargetCache.TryGetValue(key, out AudioTarget? cached)
                 ? cached.Label
                 : MakeDisplayLabelFromTargetKey(key);
             _channelPoolItems.Add(new ChannelPoolItem { Key = key, Label = label });
@@ -2986,16 +2831,11 @@ public partial class MainWindow : Window
         };
     }
 
-    private AudioTargetItem? FindTargetByKey(string? key)
+    private AudioTarget? FindTargetByKey(string? key)
     {
         if (string.IsNullOrEmpty(key)) return null;
-        _audioTargetCache.TryGetValue(key, out AudioTargetItem? target);
+        _audioTargetCache.TryGetValue(key, out AudioTarget? target);
         return target;
-    }
-
-    private static string MakeProcessKey(string processName)
-    {
-        return $"PROC:{processName}";
     }
 
     private static string MakeDisplayLabelFromTargetKey(string key)
@@ -3015,9 +2855,9 @@ public partial class MainWindow : Window
             return key[5..];
         }
 
-        if (VoiceMeeterService.IsVoiceMeeterKey(key))
+        if (VoiceMeeterBackend.IsVoiceMeeterKey(key))
         {
-            return VoiceMeeterService.MakeDisplayLabel(key);
+            return VoiceMeeterBackend.MakeDisplayLabel(key);
         }
 
         return key;
@@ -3033,70 +2873,8 @@ public partial class MainWindow : Window
         return key;
     }
 
-    private IEnumerable<AudioTargetItem> FindSessionsForKey(string key)
-    {
-        if (key.Equals("MASTER", StringComparison.OrdinalIgnoreCase))
-        {
-            yield return AudioTargetItem.CreateMaster();
-            yield break;
-        }
-
-        string processName = key.StartsWith("PROC:", StringComparison.OrdinalIgnoreCase) ? key[5..] : key;
-
-        EnsureAudioDevice();
-
-        List<AudioSessionControl> sessions = _audioService.GetActiveSessions();
-
-        foreach (AudioSessionControl session in sessions)
-        {
-            AudioTargetItem? item = TryCreateAudioTargetFromSession(session, processName);
-
-            if (item != null)
-            {
-                yield return item;
-            }
-        }
-    }
-
-    private static AudioTargetItem? TryCreateAudioTargetFromSession(
-        AudioSessionControl session,
-        string? requiredProcessName = null)
-    {
-        try
-        {
-            uint pidRaw = session.GetProcessID;
-
-            if (pidRaw == 0 || session.SimpleAudioVolume == null)
-            {
-                return null;
-            }
-
-            using Process process = Process.GetProcessById((int)pidRaw);
-
-            if (!string.IsNullOrWhiteSpace(requiredProcessName) &&
-                !process.ProcessName.Equals(requiredProcessName, StringComparison.OrdinalIgnoreCase))
-            {
-                return null;
-            }
-
-            return new AudioTargetItem
-            {
-                Key = MakeProcessKey(process.ProcessName),
-                Label = process.ProcessName,
-                ProcessName = process.ProcessName,
-                ProcessId = (int)pidRaw,
-                Session = session,
-                Volume = Math.Clamp((int)Math.Round(session.SimpleAudioVolume.Volume * 100), 0, 100),
-                Muted = session.SimpleAudioVolume.Mute,
-                State = session.State.ToString(),
-                IsMaster = false
-            };
-        }
-        catch
-        {
-            return null;
-        }
-    }
+    /// <summary>True if the key currently resolves to at least one live target.</summary>
+    private bool KeyHasLiveTarget(string key) => (_audioBackend?.GetVolumeByKey(key) ?? -1f) >= 0f;
 
     private void RefreshChannelAssignmentLabels()
     {
@@ -3119,8 +2897,8 @@ public partial class MainWindow : Window
             {
                 // Try to show the currently active app.
                 string activeKey = ResolveActiveTargetKey(channel);
-                AudioTargetItem? activeTarget = FindTargetByKey(activeKey);
-                if (activeTarget != null && (activeTarget.IsActiveOrMaster || FindSessionsForKey(activeKey).Any()))
+                AudioTarget? activeTarget = FindTargetByKey(activeKey);
+                if (activeTarget != null && (activeTarget.IsActiveOrMaster || KeyHasLiveTarget(activeKey)))
                 {
                     channel.AssignedLabel = activeTarget.Label;
                 }
@@ -3128,7 +2906,7 @@ public partial class MainWindow : Window
                 {
                     // Show pool summary: first two names + count
                     var labels = channel.TargetKeys
-                        .Select(k => _audioTargetCache.TryGetValue(k, out AudioTargetItem? t) ? t.Label : MakeDisplayLabelFromTargetKey(k))
+                        .Select(k => _audioTargetCache.TryGetValue(k, out AudioTarget? t) ? t.Label : MakeDisplayLabelFromTargetKey(k))
                         .ToList();
                     channel.AssignedLabel = labels.Count <= 2
                         ? string.Join(" / ", labels)
@@ -3137,7 +2915,7 @@ public partial class MainWindow : Window
                 continue;
             }
 
-            AudioTargetItem? target = FindTargetByKey(channel.TargetKey);
+            AudioTarget? target = FindTargetByKey(channel.TargetKey);
 
             if (target != null)
             {
@@ -3157,25 +2935,11 @@ public partial class MainWindow : Window
 
     private int GetMasterVolumePercent()
     {
-        EnsureAudioDevice();
-
-        float scalar = _defaultRenderDevice!.AudioEndpointVolume.MasterVolumeLevelScalar;
-        return Math.Clamp((int)Math.Round(scalar * 100), 0, 100);
+        float scalar = _audioBackend?.GetVolumeByKey("MASTER") ?? -1f;
+        return scalar < 0f ? 0 : Math.Clamp((int)Math.Round(scalar * 100), 0, 100);
     }
 
-    private bool GetMasterMute()
-    {
-        EnsureAudioDevice();
-        return _defaultRenderDevice!.AudioEndpointVolume.Mute;
-    }
-
-    private void EnsureAudioDevice()
-    {
-        if (_defaultRenderDevice == null)
-        {
-            RefreshDefaultAudioDevice();
-        }
-    }
+    private bool GetMasterMute() => _audioBackend?.GetMuteByKey("MASTER") ?? false;
 
     private static string MakeProtocolSafeLabel(string label)
     {
@@ -3920,31 +3684,38 @@ public partial class MainWindow : Window
     // ── VoiceMeeter backend ─────────────────────────────────────────────────────
 
     /// <summary>
-    /// Creates and initialises <see cref="VoiceMeeterService"/> when the current
-    /// audio backend mode is VoiceMeeter.  No-op in WASAPI mode.
-    /// Safe to call multiple times — disposes any existing instance first.
+    /// (Re)builds the active audio backend for the current backend mode and wires
+    /// its events. Safe to call multiple times — disposes any existing instance
+    /// first. WASAPI mode uses <see cref="WasapiAudioBackend"/>; VoiceMeeter mode
+    /// uses <see cref="VoiceMeeterBackend"/>; both implement the neutral seam.
     /// </summary>
-    private void InitVoiceMeeterIfNeeded()
+    private void InitAudioBackend()
     {
-        // Clean up any previous instance.
-        _voiceMeeterService?.Dispose();
-        _voiceMeeterService = null;
+        if (_audioBackend != null)
+        {
+            _audioBackend.AvailabilityChanged -= OnBackendAvailabilityChanged;
+            _audioBackend.TargetsChanged      -= OnBackendTargetsChanged;
+            _audioBackend.Dispose();
+        }
 
-        if (_settings.AudioBackendMode != AudioBackendModes.VoiceMeeter) return;
+        _audioBackend = _settings.AudioBackendMode == AudioBackendModes.VoiceMeeter
+            ? new VoiceMeeterBackend(Log)
+            : new WasapiAudioBackend(Log);
 
-        _voiceMeeterService = new VoiceMeeterService(Log);
-        _voiceMeeterService.AvailabilityChanged += OnVoiceMeeterAvailabilityChanged;
-        _voiceMeeterService.Initialise();
+        _audioBackend.AvailabilityChanged += OnBackendAvailabilityChanged;
+        _audioBackend.TargetsChanged      += OnBackendTargetsChanged;
+        _audioBackend.Initialise();
 
         UpdateVoiceMeeterBanner();
         UpdateVoiceMeeterStatus();
     }
 
     /// <summary>
-    /// Called on any thread when VoiceMeeter transitions online or offline.
-    /// Marshals to the UI thread, updates the banner, and refreshes targets.
+    /// Called on any thread when the backend's availability flips (e.g. VoiceMeeter
+    /// goes online/offline). Marshals to the UI thread, updates the banner, and
+    /// refreshes targets.
     /// </summary>
-    private void OnVoiceMeeterAvailabilityChanged()
+    private void OnBackendAvailabilityChanged()
     {
         Dispatcher.InvokeAsync(() =>
         {
@@ -3956,11 +3727,28 @@ public partial class MainWindow : Window
         });
     }
 
+    /// <summary>
+    /// Called on any thread when the backend's target set may have changed
+    /// (default output device switched, app started/stopped streaming). Marshals
+    /// to the UI thread and refreshes. Replaces the old DefaultDeviceChanged wiring.
+    /// </summary>
+    private void OnBackendTargetsChanged()
+    {
+        Dispatcher.InvokeAsync(() =>
+        {
+            Log("Audio targets changed — refreshing audio sessions.");
+            RefreshDefaultAudioDevice();
+            RefreshAudioSessions();
+            RefreshAllChannelStates();
+            SendAllChannelStatesToDevice();
+        });
+    }
+
     /// <summary>Shows or hides the "VoiceMeeter offline" warning banner.</summary>
     private void UpdateVoiceMeeterBanner()
     {
         bool isVmMode = _settings.AudioBackendMode == AudioBackendModes.VoiceMeeter;
-        bool offline  = isVmMode && (_voiceMeeterService == null || !_voiceMeeterService.IsAvailable);
+        bool offline  = isVmMode && (_audioBackend == null || !_audioBackend.IsAvailable);
         bool show     = offline;
 
         if (_voiceMeeterBannerVisible == show) return;
@@ -3981,13 +3769,13 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (_voiceMeeterService == null)
+        if (_audioBackend == null)
         {
             VoiceMeeterStatusTextBlock.Text = "Not initialised";
             return;
         }
 
-        if (!_voiceMeeterService.IsAvailable)
+        if (!_audioBackend.IsAvailable)
         {
             VoiceMeeterStatusTextBlock.Text = "VoiceMeeter: not running — please start VoiceMeeter.";
             return;
@@ -4059,8 +3847,8 @@ public partial class MainWindow : Window
         _settings.AudioBackendMode = newMode;
         SaveSettings();
 
-        // Reinitialise backend.
-        InitVoiceMeeterIfNeeded();
+        // Reinitialise backend (rebuilds WASAPI or VoiceMeeter for the new mode).
+        InitAudioBackend();
 
         // Rebuild channels and refresh the UI.
         BuildChannels();
@@ -4745,11 +4533,13 @@ public partial class MainWindow : Window
 
         DisconnectSerial();
 
-        _audioService.Dispose();
-        _voiceMeeterService?.Dispose();
-        _voiceMeeterService = null;
-        _defaultRenderDevice  = null;
-        _defaultCaptureDevice = null;
+        if (_audioBackend != null)
+        {
+            _audioBackend.AvailabilityChanged -= OnBackendAvailabilityChanged;
+            _audioBackend.TargetsChanged      -= OnBackendTargetsChanged;
+            _audioBackend.Dispose();
+            _audioBackend = null;
+        }
 
         if (_trayIcon != null)
         {
@@ -4774,63 +4564,6 @@ public sealed class ChannelPoolItem
 {
     public string Key   { get; set; } = string.Empty;
     public string Label { get; set; } = string.Empty;
-}
-
-public sealed class AudioTargetItem
-{
-    public string Key { get; set; } = string.Empty;
-    public string Label { get; set; } = string.Empty;
-    public string ProcessName { get; set; } = string.Empty;
-    public int ProcessId { get; set; }
-    public AudioSessionControl? Session { get; set; }
-    public int Volume { get; set; }
-    public bool Muted { get; set; }
-    public string State { get; set; } = string.Empty;
-    public bool IsMaster { get; set; }
-    public bool IsMicInput { get; set; }
-    public bool IsVoiceMeeter { get; set; }
-
-    public bool IsActiveOrMaster => IsMaster || IsMicInput || Session != null || IsVoiceMeeter;
-
-    public string VolumeDisplay => $"{Volume}%";
-    public string MuteDisplay => Muted ? "Yes" : "No";
-
-    public override string ToString()
-    {
-        return Label;
-    }
-
-    public static AudioTargetItem CreateMaster()
-    {
-        return new AudioTargetItem
-        {
-            Key = "MASTER",
-            Label = "Master",
-            ProcessName = "Windows",
-            ProcessId = 0,
-            Volume = 0,
-            Muted = false,
-            State = "Active",
-            IsMaster = true
-        };
-    }
-
-    public static AudioTargetItem CreateMic()
-    {
-        return new AudioTargetItem
-        {
-            Key = "MIC_INPUT",
-            Label = "Microphone Input",
-            ProcessName = string.Empty,
-            ProcessId = 0,
-            Session = null,
-            Volume = 0,
-            Muted = false,
-            State = "Active",
-            IsMaster = false,
-            IsMicInput = true
-        };
-    }
 }
 
 public sealed class ChannelMappingItem

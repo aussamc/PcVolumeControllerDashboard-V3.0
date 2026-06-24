@@ -5,7 +5,6 @@
 using System;
 using System.Threading;
 using System.Windows.Controls;
-using NAudio.CoreAudioApi;
 using ThreadingTimer = System.Threading.Timer;
 using WpfBrush = System.Windows.Media.Brush;
 using WpfBrushes = System.Windows.Media.Brushes;
@@ -365,45 +364,15 @@ public partial class MainWindow
             return -1f;
 
         ChannelMappingItem channel = _channels[channelIndex];
-        AudioTargetItem? target = FindTargetByKey(channel.TargetKey);
+        AudioTarget? target = FindTargetByKey(channel.TargetKey);
 
         if (target == null)
             return -1f;
 
-        try
-        {
-            // ── VoiceMeeter path ──────────────────────────────────────────
-            if (target.IsVoiceMeeter)
-            {
-                if (_voiceMeeterService == null || !_voiceMeeterService.IsAvailable) return -1f;
-                return _voiceMeeterService.GetVolumeByKey(target.Key);
-            }
-
-            // ── WASAPI path ───────────────────────────────────────────────
-            if (target.IsMaster)
-            {
-                EnsureAudioDevice();
-                return Math.Clamp(_defaultRenderDevice!.AudioEndpointVolume.MasterVolumeLevelScalar, 0f, 1f);
-            }
-
-            if (target.IsMicInput)
-            {
-                if (_defaultCaptureDevice == null) return -1f;
-                return Math.Clamp(_defaultCaptureDevice.AudioEndpointVolume.MasterVolumeLevelScalar, 0f, 1f);
-            }
-
-            var sessions = FindSessionsForKey(target.Key).ToList();
-
-            if (sessions.Count == 0)
-                return -1f;
-
-            SimpleAudioVolume? vol = sessions[0].Session?.SimpleAudioVolume;
-            return vol == null ? -1f : Math.Clamp(vol.Volume, 0f, 1f);
-        }
-        catch
-        {
-            return -1f;
-        }
+        // The backend resolves master/mic/per-session/VoiceMeeter by key and
+        // returns the representative normalized volume (−1 if unavailable).
+        float v = _audioBackend?.GetVolumeByKey(target.Key) ?? -1f;
+        return v < 0f ? -1f : Math.Clamp(v, 0f, 1f);
     }
 
     // Writes a normalized volume directly to the active audio backend, bypassing
@@ -415,70 +384,17 @@ public partial class MainWindow
             return;
 
         ChannelMappingItem channel = _channels[channelIndex];
-        AudioTargetItem? target = FindTargetByKey(channel.TargetKey);
+        AudioTarget? target = FindTargetByKey(channel.TargetKey);
 
         if (target == null)
             return;
 
         float v = Math.Clamp(volumeNormalized, 0f, 1f);
 
-        try
-        {
-            // ── VoiceMeeter path ──────────────────────────────────────────
-            if (target.IsVoiceMeeter)
-            {
-                _voiceMeeterService?.SetVolumeByKey(target.Key, v);
-                return;
-            }
-
-            // ── WASAPI path ───────────────────────────────────────────────
-            if (target.IsMaster)
-            {
-                EnsureAudioDevice();
-                _defaultRenderDevice!.AudioEndpointVolume.MasterVolumeLevelScalar = v;
-
-                if (_defaultRenderDevice.AudioEndpointVolume.Mute && v > 0f)
-                    _defaultRenderDevice.AudioEndpointVolume.Mute = false;
-
-                return;
-            }
-
-            if (target.IsMicInput)
-            {
-                if (_defaultCaptureDevice == null) return;
-                _defaultCaptureDevice.AudioEndpointVolume.MasterVolumeLevelScalar = v;
-                if (_defaultCaptureDevice.AudioEndpointVolume.Mute && v > 0f)
-                    _defaultCaptureDevice.AudioEndpointVolume.Mute = false;
-                return;
-            }
-
-            foreach (AudioTargetItem sessionTarget in FindSessionsForKey(target.Key))
-            {
-                SimpleAudioVolume? vol = sessionTarget.Session?.SimpleAudioVolume;
-
-                if (vol == null)
-                    continue;
-
-                vol.Volume = v;
-
-                if (vol.Mute && v > 0f)
-                    vol.Mute = false;
-            }
-        }
-        catch (System.Runtime.InteropServices.COMException comEx)
-        {
-            Log($"Audio session expired in SetChannelVolumeAbsolute (HRESULT 0x{comEx.HResult:X8}) — scheduling refresh.");
-            Dispatcher.InvokeAsync(() =>
-            {
-                RefreshAudioSessions();
-                RefreshAllChannelStates();
-                SendAllChannelStatesToDevice();
-            });
-        }
-        catch (Exception ex)
-        {
-            Log($"SetChannelVolumeAbsolute error: {ex.Message}");
-        }
+        // Absolute write by key (master/mic endpoint, every matching per-app
+        // session, or VoiceMeeter strip/bus). The backend swallows transient COM
+        // errors from expired sessions; the session-change poll re-enumerates.
+        _audioBackend?.SetVolumeByKey(target.Key, v);
     }
 
     private void EnsureSmoothingTimerRunning()
@@ -506,13 +422,13 @@ public partial class MainWindow
     //
     // Working entirely in normalized float space (0.0–1.0) avoids the quantisation
     // artefacts that appear when intermediate volumes are rounded to integer percent.
-    // SetChannelVolumeAbsolute writes the float directly to WASAPI — no conversion.
+    // SetChannelVolumeAbsolute writes the float straight to the backend — no conversion.
     //
     // IMPORTANT: we do NOT call RefreshAllChannelStates() here.  That method reads
-    // sessions[0].Volume — a cached integer from AudioTargetItem — which is only
-    // refreshed every 500 ms by StatePollTick.  Using it would overwrite the smooth
-    // interpolated value we just computed with a stale snapshot, collapsing the
-    // animation back to a step function on the main page and OLED preview.
+    // the live per-key volume from the backend, which is only sampled every 500 ms
+    // by StatePollTick.  Using it would overwrite the smooth interpolated value we
+    // just computed with a stale snapshot, collapsing the animation back to a step
+    // function on the main page and OLED preview.
     // Instead, _channels[ch].Volume is updated directly from _smoothingCurrentVolumes
     // so both the channel list and the OLED preview animate in lock-step with the audio.
     private void SmoothingTick()
