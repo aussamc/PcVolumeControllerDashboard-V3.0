@@ -6,20 +6,212 @@
         x:Class="PcVolumeControllerDashboard.App.MainWindow"
         Title="PC Volume Controller Dashboard"
         Icon="/Assets/app-icon.ico"
-        Width="980" Height="680"
+        Width="980" Height="720"
         MinWidth="640" MinHeight="480"
         WindowStartupLocation="CenterScreen">
 
-    <!-- Empty shell for PR 1. Tabs (Audio / OLED Setup / Setup / Hardware Test /
-         Debug / First Run) are ported one PR at a time, behind the still-shipping
-         WPF host. The placeholder TabControl mirrors the WPF MainTabs container. -->
+    <Window.Styles>
+        <!-- Card container for each settings group. -->
+        <Style Selector="Border.card">
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="12" />
+            <Setter Property="Margin" Value="0,0,0,12" />
+        </Style>
+        <Style Selector="TextBlock.h1">
+            <Setter Property="FontSize" Value="20" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+        <Style Selector="TextBlock.h2">
+            <Setter Property="FontSize" Value="18" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+        <Style Selector="TextBlock.muted">
+            <Setter Property="Opacity" Value="0.7" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style Selector="CheckBox">
+            <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+    </Window.Styles>
+
     <TabControl x:Name="MainTabs">
-        <TabItem Header="Dashboard">
-            <TextBlock Margin="24"
-                       HorizontalAlignment="Center"
-                       VerticalAlignment="Center"
-                       TextAlignment="Center"
-                       Text="Avalonia shell — tabs are ported incrementally.&#x0a;(Phase 1a faithful port, PR 1: scaffold only.)" />
+        <TabItem Header="Setup">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="12">
+
+                    <!-- ── App info ─────────────────────────────────────────── -->
+                    <Border Classes="card">
+                        <StackPanel>
+                            <TextBlock Classes="h1" Text="PC Volume Controller" />
+                            <TextBlock x:Name="DashboardVersionText" FontWeight="SemiBold" Margin="0,0,0,4" />
+                            <TextBlock x:Name="ExpectedProtocolText" Margin="0,0,0,4" />
+                            <TextBlock x:Name="SettingsPathText" Classes="muted" Margin="0,0,0,8" />
+                            <WrapPanel>
+                                <Button x:Name="OpenLogFolderButton" Content="Open log folder" Margin="0,0,8,0" Click="OpenLogFolderButton_Click" />
+                                <Button x:Name="CopySettingsPathButton" Content="Copy settings path" Click="CopySettingsPathButton_Click" />
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ── Application Setup ────────────────────────────────── -->
+                    <Border Classes="card">
+                        <StackPanel>
+                            <TextBlock Classes="h2" Text="Application Setup" />
+                            <CheckBox x:Name="AutoConnectCheckBox" Content="Auto-connect on launch"
+                                      ToolTip.Tip="Automatically connect to the controller when the dashboard opens"
+                                      IsCheckedChanged="AppSetupCheckBox_Changed" />
+                            <CheckBox x:Name="ScanAllComPortsCheckBox" Content="Scan all COM ports if remembered controller is missing"
+                                      ToolTip.Tip="Scan all COM ports for the controller if the remembered port is not found. Leave off for daily use."
+                                      IsCheckedChanged="AppSetupCheckBox_Changed" />
+                            <CheckBox x:Name="MinimizeToTrayCheckBox" Content="Minimize to system tray"
+                                      IsCheckedChanged="AppSetupCheckBox_Changed" />
+                            <CheckBox x:Name="StartMinimizedToTrayCheckBox" Content="Start minimized to tray"
+                                      IsCheckedChanged="AppSetupCheckBox_Changed" />
+                            <CheckBox x:Name="StartWithWindowsCheckBox" Content="Start program on Windows startup"
+                                      ToolTip.Tip="Windows only; wired in a later PR"
+                                      IsCheckedChanged="AppSetupCheckBox_Changed" />
+                            <CheckBox x:Name="AdvancedDebugLoggingCheckBox" Content="Advanced debug logging"
+                                      IsCheckedChanged="AppSetupCheckBox_Changed" />
+                            <CheckBox x:Name="TrayNotificationsCheckBox" Content="Show tray notifications"
+                                      IsCheckedChanged="AppSetupCheckBox_Changed" />
+
+                            <Separator Margin="0,8,0,8" />
+                            <TextBlock Text="Controller Pairing" FontWeight="SemiBold" Margin="0,0,0,4" />
+                            <TextBlock x:Name="PairedControllerText" Classes="muted" Text="Paired controller: (none)" Margin="0,0,0,8" />
+                            <Button x:Name="ForgetControllerButton" Content="Forget controller"
+                                    HorizontalAlignment="Left"
+                                    ToolTip.Tip="Clear the paired controller chip ID so the next connection auto-pairs with any controller"
+                                    Click="ForgetControllerButton_Click" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ── Encoder Sensitivity ──────────────────────────────── -->
+                    <Border Classes="card">
+                        <StackPanel>
+                            <TextBlock Classes="h2" Text="Encoder Sensitivity" />
+                            <TextBlock Classes="muted" Margin="0,0,0,10"
+                                       Text="Controls how much the volume changes for each encoder click. 50% is the default; higher values allow much faster changes." />
+                            <Slider x:Name="EncoderSensitivitySlider" Minimum="0" Maximum="500" MaxWidth="420" HorizontalAlignment="Left" />
+                            <TextBlock x:Name="EncoderSensitivityValueText" FontWeight="SemiBold" Margin="0,8,0,0" Text="Sensitivity: 50%" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ── Encoder Feel ─────────────────────────────────────── -->
+                    <Border Classes="card">
+                        <StackPanel>
+                            <TextBlock Classes="h2" Text="Encoder Feel" />
+                            <TextBlock Classes="muted" Margin="0,0,0,12"
+                                       Text="Volume acceleration scales the step when you turn the encoder quickly. Volume smoothing eases volume to its target over a short time rather than jumping instantly." />
+
+                            <CheckBox x:Name="AccelerationEnabledCheckBox" Content="Enable volume acceleration"
+                                      IsCheckedChanged="EncoderFeelCheckBox_Changed" />
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                <TextBlock Text="Acceleration preset:" VerticalAlignment="Center" Width="140" />
+                                <ComboBox x:Name="AccelerationPresetComboBox" Width="180" SelectionChanged="AccelerationPresetComboBox_SelectionChanged">
+                                    <ComboBoxItem Content="Light" />
+                                    <ComboBoxItem Content="Medium" />
+                                    <ComboBoxItem Content="Aggressive" />
+                                    <ComboBoxItem Content="Custom" />
+                                </ComboBox>
+                            </StackPanel>
+
+                            <StackPanel x:Name="AccelCustomPanel" IsVisible="False" Margin="0,0,0,8">
+                                <TextBlock Text="Custom acceleration tuning" FontWeight="SemiBold" Margin="0,0,0,8" />
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                    <TextBlock Text="Speed threshold:" VerticalAlignment="Center" Width="150" />
+                                    <Slider x:Name="AccelThresholdSlider" Minimum="20" Maximum="250" TickFrequency="10" IsSnapToTickEnabled="True" Width="220" />
+                                    <TextBlock x:Name="AccelThresholdLabel" VerticalAlignment="Center" Margin="8,0,0,0" Text="150 ms" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                    <TextBlock Text="Max multiplier:" VerticalAlignment="Center" Width="150" />
+                                    <Slider x:Name="AccelMaxMultiplierSlider" Minimum="1.5" Maximum="8.0" TickFrequency="0.5" IsSnapToTickEnabled="True" Width="220" />
+                                    <TextBlock x:Name="AccelMaxMultiplierLabel" VerticalAlignment="Center" Margin="8,0,0,0" Text="8.0x" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                    <TextBlock Text="Curve shape:" VerticalAlignment="Center" Width="150" />
+                                    <Slider x:Name="AccelCurveSlider" Minimum="0.3" Maximum="2.5" TickFrequency="0.1" IsSnapToTickEnabled="True" Width="220" />
+                                    <TextBlock x:Name="AccelCurveLabel" VerticalAlignment="Center" Margin="8,0,0,0" Text="Early" />
+                                </StackPanel>
+                            </StackPanel>
+
+                            <CheckBox x:Name="VolumeSmoothingEnabledCheckBox" Content="Enable volume smoothing"
+                                      IsCheckedChanged="EncoderFeelCheckBox_Changed" />
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Smoothing speed:" VerticalAlignment="Center" Width="140" />
+                                <ComboBox x:Name="VolumeSmoothingSpeedComboBox" Width="180" SelectionChanged="VolumeSmoothingSpeedComboBox_SelectionChanged">
+                                    <ComboBoxItem Content="Fast (~60 ms)" />
+                                    <ComboBoxItem Content="Normal (~100 ms)" />
+                                    <ComboBoxItem Content="Slow (~150 ms)" />
+                                </ComboBox>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ── Style Settings ───────────────────────────────────── -->
+                    <Border Classes="card">
+                        <StackPanel>
+                            <TextBlock Classes="h2" Text="Style Settings" />
+                            <RadioButton x:Name="ThemeFollowSystemRadioButton" GroupName="ThemeMode" Content="Follow System" Margin="0,0,0,8" IsCheckedChanged="ThemeRadioButton_Changed" />
+                            <RadioButton x:Name="ThemeLightRadioButton" GroupName="ThemeMode" Content="Light Mode" Margin="0,0,0,8" IsCheckedChanged="ThemeRadioButton_Changed" />
+                            <RadioButton x:Name="ThemeDarkRadioButton" GroupName="ThemeMode" Content="Dark Mode" Margin="0,0,0,8" IsCheckedChanged="ThemeRadioButton_Changed" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ── Volume Overlay ───────────────────────────────────── -->
+                    <Border Classes="card">
+                        <StackPanel>
+                            <TextBlock Classes="h2" Text="Volume Overlay" />
+                            <TextBlock Classes="muted" Margin="0,0,0,10"
+                                       Text="Shows the channel name and volume level on-screen when you turn an encoder knob. (Overlay window is ported in a later PR; the preference is saved now.)" />
+                            <CheckBox x:Name="OverlayEnabledCheckBox" Content="Show volume overlay when encoder turns"
+                                      IsCheckedChanged="OverlayCheckBox_Changed" />
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <TextBlock Text="Screen position:" VerticalAlignment="Center" Width="130" />
+                                <ComboBox x:Name="OverlayPositionComboBox" Width="200" SelectionChanged="OverlayPositionComboBox_SelectionChanged">
+                                    <ComboBoxItem Content="Top Left" Tag="TopLeft" />
+                                    <ComboBoxItem Content="Top Center" Tag="TopCenter" />
+                                    <ComboBoxItem Content="Top Right" Tag="TopRight" />
+                                    <ComboBoxItem Content="Bottom Left" Tag="BottomLeft" />
+                                    <ComboBoxItem Content="Bottom Center" Tag="BottomCenter" />
+                                    <ComboBoxItem Content="Bottom Right" Tag="BottomRight" />
+                                </ComboBox>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Dismiss after:" VerticalAlignment="Center" Width="130" />
+                                <Slider x:Name="OverlayTimeoutSlider" Minimum="1" Maximum="8" TickFrequency="0.5" IsSnapToTickEnabled="True" Width="200" />
+                                <TextBlock x:Name="OverlayTimeoutValueText" VerticalAlignment="Center" Margin="8,0,0,0" Text="2.5 s" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ── Maintenance ──────────────────────────────────────── -->
+                    <Border Classes="card">
+                        <StackPanel>
+                            <TextBlock Classes="h2" Text="Maintenance" />
+                            <Button x:Name="FactoryResetButton" Content="Factory Reset Setup"
+                                    HorizontalAlignment="Left"
+                                    ToolTip.Tip="Reset all settings to factory defaults (cannot be undone)"
+                                    Click="FactoryResetButton_Click" />
+                            <TextBlock Classes="muted" FontStyle="Italic" Margin="0,8,0,0"
+                                       Text="Settings are saved automatically whenever you make a change." />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ── Not yet ported ───────────────────────────────────── -->
+                    <Border Classes="card">
+                        <StackPanel>
+                            <TextBlock Classes="h2" Text="Coming in later PRs" />
+                            <TextBlock Classes="muted"
+                                       Text="These Setup features depend on subsystems not yet ported to the Avalonia host: audio-backend switching, global hotkey capture, device diagnostics, software updates, setup import/export, diagnostics zip, the first-run wizard, and the About dialog. They are tracked in the v3 roadmap and land alongside their subsystems." />
+                        </StackPanel>
+                    </Border>
+
+                </StackPanel>
+            </ScrollViewer>
         </TabItem>
     </TabControl>
 </Window>

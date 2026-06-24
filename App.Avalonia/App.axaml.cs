@@ -45,6 +45,14 @@ public partial class App : Application
         // Core serial layer — single shared connection for the app lifetime.
         services.AddSingleton<global::PcVolumeControllerDashboard.Core.SerialService>();
 
+        // Settings: loaded once at startup, shared, persisted on change.
+        services.AddSingleton<Services.SettingsService>(_ =>
+        {
+            var settings = new Services.SettingsService();
+            settings.Load();
+            return settings;
+        });
+
         // The shell. Transient so a future "reopen window" can rebuild it.
         services.AddTransient<MainWindow>();
 
