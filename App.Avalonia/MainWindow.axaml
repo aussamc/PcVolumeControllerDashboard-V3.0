@@ -213,5 +213,109 @@
                 </StackPanel>
             </ScrollViewer>
         </TabItem>
+
+        <TabItem Header="OLED Setup">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="12">
+
+                    <!-- ── OLED Display Settings ────────────────────────────── -->
+                    <Border Classes="card">
+                        <StackPanel>
+                            <TextBlock Classes="h2" Text="OLED Display Settings" />
+                            <TextBlock Classes="muted" Margin="0,0,0,10"
+                                       Text="These settings drive the controller preview below and are sent to the ESP32 when connected (serial sync ports in a later PR)." />
+
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                <TextBlock Text="Display mode:" VerticalAlignment="Center" Width="160" />
+                                <ComboBox x:Name="DisplayModeComboBox" Width="260" SelectionChanged="DisplayModeComboBox_SelectionChanged">
+                                    <ComboBoxItem Content="App name + volume" />
+                                    <ComboBoxItem Content="Large volume number" />
+                                    <ComboBoxItem Content="Mute status" />
+                                    <ComboBoxItem Content="App/device name" />
+                                    <ComboBoxItem Content="Simple bar/percentage view" />
+                                </ComboBox>
+                            </StackPanel>
+
+                            <TextBlock x:Name="OledBrightnessValueText" FontWeight="SemiBold" Margin="0,0,0,4" Text="Brightness: 100%" />
+                            <Slider x:Name="OledBrightnessSlider" Minimum="0" Maximum="100" MaxWidth="420" HorizontalAlignment="Left" Margin="0,0,0,10" />
+
+                            <TextBlock x:Name="OledSleepTimeoutValueText" FontWeight="SemiBold" Margin="0,0,0,4" Text="Disconnected sleep timeout: 2 minute(s)" />
+                            <Slider x:Name="OledSleepTimeoutSlider" Minimum="1" Maximum="60" TickFrequency="1" IsSnapToTickEnabled="True" MaxWidth="420" HorizontalAlignment="Left" Margin="0,0,0,14" />
+
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                <TextBlock Text="Connected idle action:" VerticalAlignment="Center" Width="160" />
+                                <ComboBox x:Name="OledConnectedIdleActionComboBox" Width="260" SelectionChanged="OledConnectedIdleActionComboBox_SelectionChanged">
+                                    <ComboBoxItem Content="Turn off display" />
+                                    <ComboBoxItem Content="Dim brightness to 10%" />
+                                    <ComboBoxItem Content="Dim brightness to 20%" />
+                                    <ComboBoxItem Content="Dim brightness to 30%" />
+                                    <ComboBoxItem Content="Dim brightness to 40%" />
+                                    <ComboBoxItem Content="Dim brightness to 50%" />
+                                    <ComboBoxItem Content="Dim brightness to 60%" />
+                                    <ComboBoxItem Content="Dim brightness to 70%" />
+                                </ComboBox>
+                            </StackPanel>
+
+                            <TextBlock x:Name="OledConnectedIdleTimeoutValueText" FontWeight="SemiBold" Margin="0,0,0,4" Text="Connected idle timeout: 10 minute(s)" />
+                            <Slider x:Name="OledConnectedIdleTimeoutSlider" Minimum="1" Maximum="60" TickFrequency="1" IsSnapToTickEnabled="True" MaxWidth="420" HorizontalAlignment="Left" Margin="0,0,0,14" />
+
+                            <CheckBox x:Name="OledAntiBurnInCheckBox" Content="Enable anti-burn-in pixel shifting"
+                                      ToolTip.Tip="Shifts pixels slightly over time to prevent OLED burn-in"
+                                      IsCheckedChanged="OledAntiBurnInCheckBox_Changed" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ── Whole Controller Preview ─────────────────────────── -->
+                    <Border Classes="card">
+                        <StackPanel>
+                            <TextBlock Classes="h1" Text="Whole Controller Preview" />
+                            <TextBlock x:Name="OledPreviewModeText" FontWeight="SemiBold" Margin="0,0,0,4" Text="Preview mode: App name + volume" />
+                            <TextBlock Classes="muted" Margin="0,0,0,12"
+                                       Text="Each OLED renders the same 128x64 canvas the firmware draws, scaled up here. Previews use each channel's saved name with sample volumes (live device data ports with the serial layer)." />
+
+                            <UniformGrid Columns="6" Rows="1">
+                                <StackPanel Margin="6,0">
+                                    <TextBlock x:Name="OledPreview1Title" Text="OLED 1" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
+                                    <Border BorderBrush="#444444" BorderThickness="1" HorizontalAlignment="Center">
+                                        <Image x:Name="OledPreview1Image" Width="160" Height="80" Stretch="Fill" RenderOptions.BitmapInterpolationMode="None" />
+                                    </Border>
+                                </StackPanel>
+                                <StackPanel Margin="6,0">
+                                    <TextBlock x:Name="OledPreview2Title" Text="OLED 2" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
+                                    <Border BorderBrush="#444444" BorderThickness="1" HorizontalAlignment="Center">
+                                        <Image x:Name="OledPreview2Image" Width="160" Height="80" Stretch="Fill" RenderOptions.BitmapInterpolationMode="None" />
+                                    </Border>
+                                </StackPanel>
+                                <StackPanel Margin="6,0">
+                                    <TextBlock x:Name="OledPreview3Title" Text="OLED 3" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
+                                    <Border BorderBrush="#444444" BorderThickness="1" HorizontalAlignment="Center">
+                                        <Image x:Name="OledPreview3Image" Width="160" Height="80" Stretch="Fill" RenderOptions.BitmapInterpolationMode="None" />
+                                    </Border>
+                                </StackPanel>
+                                <StackPanel Margin="6,0">
+                                    <TextBlock x:Name="OledPreview4Title" Text="OLED 4" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
+                                    <Border BorderBrush="#444444" BorderThickness="1" HorizontalAlignment="Center">
+                                        <Image x:Name="OledPreview4Image" Width="160" Height="80" Stretch="Fill" RenderOptions.BitmapInterpolationMode="None" />
+                                    </Border>
+                                </StackPanel>
+                                <StackPanel Margin="6,0">
+                                    <TextBlock x:Name="OledPreview5Title" Text="OLED 5" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
+                                    <Border BorderBrush="#444444" BorderThickness="1" HorizontalAlignment="Center">
+                                        <Image x:Name="OledPreview5Image" Width="160" Height="80" Stretch="Fill" RenderOptions.BitmapInterpolationMode="None" />
+                                    </Border>
+                                </StackPanel>
+                                <StackPanel Margin="6,0">
+                                    <TextBlock x:Name="OledPreview6Title" Text="OLED 6" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
+                                    <Border BorderBrush="#444444" BorderThickness="1" HorizontalAlignment="Center">
+                                        <Image x:Name="OledPreview6Image" Width="160" Height="80" Stretch="Fill" RenderOptions.BitmapInterpolationMode="None" />
+                                    </Border>
+                                </StackPanel>
+                            </UniformGrid>
+                        </StackPanel>
+                    </Border>
+
+                </StackPanel>
+            </ScrollViewer>
+        </TabItem>
     </TabControl>
 </Window>
