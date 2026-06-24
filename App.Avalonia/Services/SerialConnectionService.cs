@@ -137,6 +137,20 @@ public sealed class SerialConnectionService : IDisposable
         _identifyTimer = new Timer(_ => OnIdentifyTimeout(port), null, IdentifyTimeoutMs, Timeout.Infinite);
     }
 
+    /// <summary>
+    /// Sends a protocol line to the controller when connected. No-op (returns
+    /// false) otherwise, so callers can fire state pushes unconditionally. When
+    /// <paramref name="log"/> is set the outgoing line is written to the log
+    /// (reserve this for low-frequency pushes; per-poll spam should stay quiet).
+    /// </summary>
+    public bool SendLine(string line, bool log = false)
+    {
+        if (State != SerialConnectionState.Connected) return false;
+        _serial.SendLine(line);
+        if (log) _log.Log($"PC -> ESP32: {line}");
+        return true;
+    }
+
     public void Disconnect()
     {
         _identifyTimer?.Dispose();
