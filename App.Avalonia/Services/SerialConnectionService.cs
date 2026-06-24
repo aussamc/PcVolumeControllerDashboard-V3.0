@@ -28,12 +28,23 @@ public sealed class SerialConnectionService : IDisposable
     private const string MinProtocol = "2.24";
     private const int BaudRate = 115200;
     private const int IdentifyTimeoutMs = 4000;
+    private const int ReconnectIntervalMs = 3000;
 
     private readonly SerialService _serial;
     private readonly SettingsService _settings;
     private readonly LogService _log;
     private Timer? _identifyTimer;
+    private Timer? _reconnectTimer;
     private readonly Queue<string> _candidates = new();
+
+    // Armed while we should keep (re)connecting automatically. A hardware drop
+    // leaves this true so the watchdog re-establishes the link when the
+    // controller returns; an explicit user Disconnect() clears it.
+    private volatile bool _autoReconnect;
+
+    // Suppresses the verbose per-port scan logging during background reconnect
+    // attempts so a disconnected controller doesn't spam the log every few seconds.
+    private bool _quietScan;
 
     public SerialConnectionState State { get; private set; } = SerialConnectionState.Disconnected;
     public string? ConnectedChipId { get; private set; }
@@ -66,8 +77,30 @@ public sealed class SerialConnectionService : IDisposable
             return;
         }
 
+        _autoReconnect = true;
+        EnsureReconnectWatchdog();
+        StartScan(quiet: false);
+    }
+
+    /// <summary>Explicitly connects to a single port (e.g. from a future UI).</summary>
+    public void Connect(string port)
+    {
+        _autoReconnect = true;
+        EnsureReconnectWatchdog();
+        _quietScan = false;
+        BeginScan(new List<string> { port });
+    }
+
+    /// <summary>
+    /// Builds the candidate port list (remembered first, then the rest when
+    /// scanning is enabled) and begins a connection scan. When <paramref name="quiet"/>
+    /// is set, per-port progress is not logged — used for background reconnect ticks.
+    /// </summary>
+    private void StartScan(bool quiet)
+    {
         string[] ports = SerialService.GetPortNames();
-        _log.Log($"Auto-connect: available ports = {(ports.Length == 0 ? "(none)" : string.Join(", ", ports))}.");
+        if (!quiet)
+            _log.Log($"Auto-connect: available ports = {(ports.Length == 0 ? "(none)" : string.Join(", ", ports))}.");
 
         // Candidate order: remembered port first (fast path), then — when scanning
         // is enabled (or nothing is remembered) — every other port as a fallback.
@@ -85,11 +118,31 @@ public sealed class SerialConnectionService : IDisposable
                     candidates.Add(p);
         }
 
+        if (candidates.Count == 0)
+        {
+            SetState(SerialConnectionState.Disconnected);
+            return;
+        }
+
+        _quietScan = quiet;
         BeginScan(candidates);
     }
 
-    /// <summary>Explicitly connects to a single port (e.g. from a future UI).</summary>
-    public void Connect(string port) => BeginScan(new List<string> { port });
+    private void EnsureReconnectWatchdog() =>
+        _reconnectTimer ??= new Timer(_ => OnReconnectTick(), null, ReconnectIntervalMs, ReconnectIntervalMs);
+
+    /// <summary>
+    /// While armed and disconnected, periodically re-scans for the controller so
+    /// the link comes back on its own after the device is unplugged and replugged.
+    /// Skips while a scan is already in flight (state is Identifying).
+    /// </summary>
+    private void OnReconnectTick()
+    {
+        if (!_autoReconnect) return;
+        if (State != SerialConnectionState.Disconnected) return;
+        if (!_settings.Settings.AutoConnectOnLaunch) return;
+        StartScan(quiet: true);
+    }
 
     private void BeginScan(IEnumerable<string> candidates)
     {
@@ -104,7 +157,7 @@ public sealed class SerialConnectionService : IDisposable
     {
         if (_candidates.Count == 0)
         {
-            _log.Log("No controller found on any candidate port.");
+            if (!_quietScan) _log.Log("No controller found on any candidate port.");
             SetState(SerialConnectionState.Disconnected);
             return;
         }
@@ -114,14 +167,14 @@ public sealed class SerialConnectionService : IDisposable
         {
             if (!_serial.Open(port, BaudRate))
             {
-                _log.Log($"Port {port} already open; skipping.");
+                if (!_quietScan) _log.Log($"Port {port} already open; skipping.");
                 TryNextCandidate();
                 return;
             }
         }
         catch (Exception ex)
         {
-            _log.Log($"Open {port} failed: {ex.Message}; trying next.");
+            if (!_quietScan) _log.Log($"Open {port} failed: {ex.Message}; trying next.");
             TryNextCandidate();
             return;
         }
@@ -129,7 +182,7 @@ public sealed class SerialConnectionService : IDisposable
         ConnectedChipId = null;
         Protocol = null;
         SetState(SerialConnectionState.Identifying);
-        _log.Log($"Opened {port}; requesting identity.");
+        if (!_quietScan) _log.Log($"Opened {port}; requesting identity.");
 
         _serial.SendLine(ProtocolCommands.HelloQuery); // "HELLO?"
 
@@ -151,20 +204,30 @@ public sealed class SerialConnectionService : IDisposable
         return true;
     }
 
+    /// <summary>User-initiated disconnect: closes the port and disarms automatic
+    /// reconnection until the next explicit Connect/AutoConnect.</summary>
     public void Disconnect()
+    {
+        _autoReconnect = false;
+        ClosePort();
+        _log.Log("Disconnected.");
+    }
+
+    /// <summary>Closes the port and marks the link disconnected, leaving the
+    /// auto-reconnect arming untouched (so a hardware drop keeps retrying).</summary>
+    private void ClosePort()
     {
         _identifyTimer?.Dispose();
         _identifyTimer = null;
         _candidates.Clear();
         _serial.Close();
         SetState(SerialConnectionState.Disconnected);
-        _log.Log("Disconnected.");
     }
 
     private void OnIdentifyTimeout(string port)
     {
         if (State != SerialConnectionState.Identifying) return;
-        _log.Log($"No valid controller identity from {port} within {IdentifyTimeoutMs} ms.");
+        if (!_quietScan) _log.Log($"No valid controller identity from {port} within {IdentifyTimeoutMs} ms.");
         _serial.Close();
         TryNextCandidate(); // advance to the next candidate, or stop if none remain
     }
@@ -195,7 +258,7 @@ public sealed class SerialConnectionService : IDisposable
                 _log.Log($"Controller identified on {_serial.PortName}: protocol {msg.Protocol}, " +
                          $"{msg.ChannelCount} channels, chip {(string.IsNullOrEmpty(msg.ChipId) ? "(none)" : msg.ChipId)}.");
             }
-            else if (msg.Kind != DeviceMessageKind.Debug)
+            else if (msg.Kind != DeviceMessageKind.Debug && !_quietScan)
             {
                 _log.Log($"Ignoring pre-identity data: {msg.Raw}");
             }
@@ -220,8 +283,13 @@ public sealed class SerialConnectionService : IDisposable
 
     private void OnSerialError(string error)
     {
-        _log.Log($"Serial error: {error}");
-        Disconnect();
+        // Treat as a connection drop (e.g. the controller was unplugged). Keep
+        // auto-reconnect armed so the watchdog re-establishes the link when it
+        // returns — only an explicit user Disconnect() disarms reconnection.
+        bool wasConnected = State == SerialConnectionState.Connected;
+        ClosePort();
+        if (wasConnected)
+            _log.Log($"Connection lost ({error}); will attempt to reconnect.");
     }
 
     private void SetState(SerialConnectionState state)
@@ -233,6 +301,8 @@ public sealed class SerialConnectionService : IDisposable
 
     public void Dispose()
     {
+        _autoReconnect = false;
+        _reconnectTimer?.Dispose();
         _identifyTimer?.Dispose();
         _serial.LineReceived -= OnLineReceived;
         _serial.ErrorOccurred -= OnSerialError;
