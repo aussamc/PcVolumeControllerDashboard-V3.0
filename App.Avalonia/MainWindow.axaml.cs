@@ -6,6 +6,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Styling;
+using PcVolumeControllerDashboard.App.Oled;
 using PcVolumeControllerDashboard.App.Services;
 using PcVolumeControllerDashboard.Core;
 
@@ -14,7 +15,7 @@ namespace PcVolumeControllerDashboard.App;
 public partial class MainWindow : Window
 {
     // Shipping dashboard version (bumped to 3.2 with this first ported tab).
-    private const string DashboardVersion = "3.2";
+    private const string DashboardVersion = "3.3";
     private const string RequiredProtocolVersion = "2.24";
 
     private readonly SettingsService? _settingsService;
@@ -58,6 +59,9 @@ public partial class MainWindow : Window
         AccelMaxMultiplierSlider.GetObservable(Slider.ValueProperty).Subscribe(new AnonymousObserver(_ => OnAccelMaxMultiplierChanged()));
         AccelCurveSlider.GetObservable(Slider.ValueProperty).Subscribe(new AnonymousObserver(_ => OnAccelCurveChanged()));
         OverlayTimeoutSlider.GetObservable(Slider.ValueProperty).Subscribe(new AnonymousObserver(_ => OnOverlayTimeoutChanged()));
+        OledBrightnessSlider.GetObservable(Slider.ValueProperty).Subscribe(new AnonymousObserver(_ => OnOledBrightnessChanged()));
+        OledSleepTimeoutSlider.GetObservable(Slider.ValueProperty).Subscribe(new AnonymousObserver(_ => OnOledSleepTimeoutChanged()));
+        OledConnectedIdleTimeoutSlider.GetObservable(Slider.ValueProperty).Subscribe(new AnonymousObserver(_ => OnOledConnectedIdleTimeoutChanged()));
     }
 
     /// <summary>Minimal IObserver&lt;double&gt; that forwards OnNext to an action.</summary>
@@ -111,6 +115,18 @@ public partial class MainWindow : Window
         OverlayPositionComboBox.SelectedIndex = PositionToIndex(_settings.OverlayPosition);
         OverlayTimeoutSlider.Value = Math.Clamp(_settings.OverlayTimeoutSeconds, 1, 8);
         UpdateOverlayTimeoutLabel();
+
+        // OLED Setup
+        DisplayModeComboBox.SelectedIndex = DisplayModeToIndex(_settings.OledDisplayMode);
+        OledBrightnessSlider.Value = Math.Clamp(_settings.OledBrightnessPercent, 0, 100);
+        UpdateOledBrightnessLabel();
+        OledSleepTimeoutSlider.Value = Math.Clamp(_settings.OledSleepTimeoutMinutes, 1, 60);
+        UpdateOledSleepTimeoutLabel();
+        OledConnectedIdleActionComboBox.SelectedIndex = IdleActionToIndex(_settings.OledConnectedIdleAction);
+        OledConnectedIdleTimeoutSlider.Value = Math.Clamp(_settings.OledConnectedIdleTimeoutMinutes, 1, 60);
+        UpdateOledConnectedIdleTimeoutLabel();
+        OledAntiBurnInCheckBox.IsChecked = _settings.OledAntiBurnInEnabled;
+        RenderOledPreviews();
     }
 
     // ── Application Setup ─────────────────────────────────────────────────────
@@ -326,6 +342,152 @@ public partial class MainWindow : Window
         }
         catch { /* best-effort: ignore if no file manager is available */ }
     }
+
+    // ── OLED Setup ─────────────────────────────────────────────────────────────
+
+    private void DisplayModeComboBox_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_initializing) return;
+        _settings.OledDisplayMode = IndexToDisplayMode(DisplayModeComboBox.SelectedIndex);
+        Save();
+        RenderOledPreviews();
+    }
+
+    private void OledConnectedIdleActionComboBox_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_initializing) return;
+        _settings.OledConnectedIdleAction = IndexToIdleAction(OledConnectedIdleActionComboBox.SelectedIndex);
+        Save();
+    }
+
+    private void OledAntiBurnInCheckBox_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+        _settings.OledAntiBurnInEnabled = OledAntiBurnInCheckBox.IsChecked == true;
+        Save();
+    }
+
+    private void OnOledBrightnessChanged()
+    {
+        UpdateOledBrightnessLabel();
+        if (_initializing) return;
+        _settings.OledBrightnessPercent = (int)Math.Round(OledBrightnessSlider.Value);
+        Save();
+    }
+
+    private void OnOledSleepTimeoutChanged()
+    {
+        UpdateOledSleepTimeoutLabel();
+        if (_initializing) return;
+        _settings.OledSleepTimeoutMinutes = (int)Math.Round(OledSleepTimeoutSlider.Value);
+        Save();
+    }
+
+    private void OnOledConnectedIdleTimeoutChanged()
+    {
+        UpdateOledConnectedIdleTimeoutLabel();
+        if (_initializing) return;
+        _settings.OledConnectedIdleTimeoutMinutes = (int)Math.Round(OledConnectedIdleTimeoutSlider.Value);
+        Save();
+    }
+
+    private void UpdateOledBrightnessLabel() =>
+        OledBrightnessValueText.Text = $"Brightness: {(int)Math.Round(OledBrightnessSlider.Value)}%";
+
+    private void UpdateOledSleepTimeoutLabel() =>
+        OledSleepTimeoutValueText.Text = $"Disconnected sleep timeout: {(int)Math.Round(OledSleepTimeoutSlider.Value)} minute(s)";
+
+    private void UpdateOledConnectedIdleTimeoutLabel() =>
+        OledConnectedIdleTimeoutValueText.Text = $"Connected idle timeout: {(int)Math.Round(OledConnectedIdleTimeoutSlider.Value)} minute(s)";
+
+    /// <summary>
+    /// Renders the six OLED previews from the Core <see cref="OledRenderer"/> using
+    /// each channel's saved name and sample volumes, driven by the selected display
+    /// mode. Live device/channel data ports with the serial layer.
+    /// </summary>
+    private void RenderOledPreviews()
+    {
+        string mode = _settings.OledDisplayMode;
+        OledPreviewModeText.Text = $"Preview mode: {DisplayModeName(mode)}";
+
+        var images = new[]
+        {
+            OledPreview1Image, OledPreview2Image, OledPreview3Image,
+            OledPreview4Image, OledPreview5Image, OledPreview6Image,
+        };
+        int[] sampleVolumes = { 60, 45, 80, 30, 50, 70 };
+
+        for (int i = 0; i < images.Length; i++)
+        {
+            string label = i < _settings.Channels.Length && !string.IsNullOrWhiteSpace(_settings.Channels[i].FriendlyName)
+                ? _settings.Channels[i].FriendlyName
+                : $"Channel {i + 1}";
+            int vol = sampleVolumes[i];
+
+            var renderer = new OledRenderer();
+            switch (mode)
+            {
+                case DisplayModes.LargeVolume:     renderer.RenderLargeVolume(label, vol, muted: false); break;
+                case DisplayModes.MuteStatus:      renderer.RenderMuteStatus(label, vol, muted: false); break;
+                case DisplayModes.AppOrDeviceName: renderer.RenderAppOrDeviceName(i + 1, label, "Active", vol); break;
+                case DisplayModes.BarPercent:      renderer.RenderBarPercent(label, vol, muted: false); break;
+                default:                           renderer.RenderAppVolume(label, vol, muted: false, "Active"); break;
+            }
+
+            images[i].Source = OledImage.Build(renderer);
+        }
+    }
+
+    private static string DisplayModeName(string mode) => mode switch
+    {
+        DisplayModes.LargeVolume     => "Large volume number",
+        DisplayModes.MuteStatus      => "Mute status",
+        DisplayModes.AppOrDeviceName => "App/device name",
+        DisplayModes.BarPercent      => "Simple bar/percentage view",
+        _                            => "App name + volume",
+    };
+
+    private static int DisplayModeToIndex(string mode) => mode switch
+    {
+        DisplayModes.LargeVolume     => 1,
+        DisplayModes.MuteStatus      => 2,
+        DisplayModes.AppOrDeviceName => 3,
+        DisplayModes.BarPercent      => 4,
+        _                            => 0,
+    };
+
+    private static string IndexToDisplayMode(int index) => index switch
+    {
+        1 => DisplayModes.LargeVolume,
+        2 => DisplayModes.MuteStatus,
+        3 => DisplayModes.AppOrDeviceName,
+        4 => DisplayModes.BarPercent,
+        _ => DisplayModes.AppNameAndVolume,
+    };
+
+    private static int IdleActionToIndex(string action) => action switch
+    {
+        OledIdleActions.DimTo10 => 1,
+        OledIdleActions.DimTo20 => 2,
+        OledIdleActions.DimTo30 => 3,
+        OledIdleActions.DimTo40 => 4,
+        OledIdleActions.DimTo50 => 5,
+        OledIdleActions.DimTo60 => 6,
+        OledIdleActions.DimTo70 => 7,
+        _                       => 0,
+    };
+
+    private static string IndexToIdleAction(int index) => index switch
+    {
+        1 => OledIdleActions.DimTo10,
+        2 => OledIdleActions.DimTo20,
+        3 => OledIdleActions.DimTo30,
+        4 => OledIdleActions.DimTo40,
+        5 => OledIdleActions.DimTo50,
+        6 => OledIdleActions.DimTo60,
+        7 => OledIdleActions.DimTo70,
+        _ => OledIdleActions.Off,
+    };
 
     // ── Index ↔ constant mapping ────────────────────────────────────────────────
 
