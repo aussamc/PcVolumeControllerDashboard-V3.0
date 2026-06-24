@@ -14,7 +14,11 @@
   -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <!-- Multi-targeted so the cross-platform UI builds for any OS (net10.0) while
+         the Windows build (net10.0-windows) can reference the Windows audio
+         platform lib. The audio backend is selected per-TFM by AudioBackendFactory.
+         Run: Windows -> -f net10.0-windows ; Linux/macOS -> -f net10.0. -->
+    <TargetFrameworks>net10.0;net10.0-windows</TargetFrameworks>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
@@ -63,6 +67,13 @@
        OledRenderer, EncoderMath, constants, IKeystrokeSender). -->
   <ItemGroup>
     <ProjectReference Include="..\Core\PcVolumeControllerDashboard.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Windows audio backends (WASAPI + VoiceMeeter) — referenced only by the
+       Windows build. The net10.0 (Linux/macOS) build falls back to Core's
+       NullAudioBackend until those platform layers land. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0-windows'">
+    <ProjectReference Include="..\Platform.Windows\PcVolumeControllerDashboard.Platform.Windows.csproj" />
   </ItemGroup>
 
 </Project>
