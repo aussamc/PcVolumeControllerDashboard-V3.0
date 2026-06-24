@@ -1,11 +1,14 @@
 using System;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Styling;
+using Avalonia.Threading;
 using PcVolumeControllerDashboard.App.Oled;
 using PcVolumeControllerDashboard.App.Services;
 using PcVolumeControllerDashboard.Core;
@@ -15,11 +18,15 @@ namespace PcVolumeControllerDashboard.App;
 
 public partial class MainWindow : Window
 {
-    // Shipping dashboard version (bumped to 3.2 with this first ported tab).
-    private const string DashboardVersion = "3.3";
+    // Shipping dashboard version (bumped per Avalonia-tab milestone).
+    private const string DashboardVersion = "3.4";
     private const string RequiredProtocolVersion = "2.24";
 
     private readonly SettingsService? _settingsService;
+    private IAudioBackend? _audioBackend;
+    private SerialConnectionService? _connection;
+    private readonly ObservableCollection<ChannelRow> _channelRows = new();
+    private DispatcherTimer? _channelPollTimer;
     private DashboardSettings _settings = DashboardSettings.CreateDefault();
 
     // Binding-init-order settings-wipe guard: control-change events fire while
@@ -36,24 +43,144 @@ public partial class MainWindow : Window
         InitializeComponent();
     }
 
-    public MainWindow(SettingsService settingsService, SerialService serial, IAudioBackend audioBackend) : this()
+    public MainWindow(SettingsService settingsService, IAudioBackend audioBackend, SerialConnectionService connection) : this()
     {
         _settingsService = settingsService;
         _settings = settingsService.Settings;
-        _ = serial; // wiring proven in PR 1; serial orchestration ports later
-
-        // Surface the per-OS audio backend so the wiring is provable at a glance.
-        // Real channel orchestration (state polling + encoder handling) ports with
-        // the serial runtime in the next PR.
-        Title = $"PC Volume Controller Dashboard — {audioBackend.BackendName} backend, " +
-                $"{audioBackend.GetAvailableTargets().Count} target(s)";
+        _audioBackend = audioBackend;
+        _connection = connection;
 
         WireSliders();
         ApplySettingsToUi();
         _initializing = false;
+
+        InitAudioTab();
     }
 
     private void Save() => _settingsService?.Save();
+
+    // ── Audio tab ───────────────────────────────────────────────────────────────
+
+    private void InitAudioTab()
+    {
+        for (int i = 0; i < _settings.Channels.Length; i++)
+            _channelRows.Add(new ChannelRow { Channel = i + 1 });
+        ChannelGrid.ItemsSource = _channelRows;
+
+        RefreshTargets();
+        RefreshChannelStates();
+
+        // Connection status, updated live.
+        UpdateConnectionStatus();
+        if (_connection != null)
+            _connection.StateChanged += _ => Dispatcher.UIThread.Post(UpdateConnectionStatus);
+
+        // Poll live channel state (volume/mute/status) ~2x/sec, matching the WPF host.
+        _channelPollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        _channelPollTimer.Tick += (_, _) => RefreshChannelStates();
+        _channelPollTimer.Start();
+    }
+
+    private void UpdateConnectionStatus()
+    {
+        ConnectionStatusText.Text = _connection?.State switch
+        {
+            SerialConnectionState.Connected =>
+                $"Connected — protocol {_connection.Protocol}, chip {(_connection.ConnectedChipId is { Length: > 0 } c ? c : "(none)")}",
+            SerialConnectionState.Identifying => "Identifying controller…",
+            _ => "Disconnected",
+        };
+    }
+
+    private void RefreshTargets()
+    {
+        var targets = (_audioBackend?.GetAvailableTargets() ?? (IReadOnlyList<AudioTarget>)Array.Empty<AudioTarget>()).ToList();
+        object? previous = TargetCombo.SelectedItem;
+        TargetCombo.ItemsSource = targets;
+        // Preserve selection by key where possible.
+        if (previous is AudioTarget prev)
+            TargetCombo.SelectedItem = targets.FirstOrDefault(t => t.Key == prev.Key);
+    }
+
+    private void RefreshChannelStates()
+    {
+        ChannelSettings[] channels = _settings.Channels;
+        for (int i = 0; i < _channelRows.Count && i < channels.Length; i++)
+        {
+            ChannelRow row = _channelRows[i];
+            ChannelSettings ch = channels[i];
+
+            row.DisplayName = string.IsNullOrWhiteSpace(ch.FriendlyName) ? $"Channel {i + 1}" : ch.FriendlyName;
+
+            string key = ch.TargetKey;
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                row.AssignedLabel = "Unassigned";
+                row.VolumeDisplay = "—";
+                row.MuteDisplay = "—";
+                row.Status = "Unassigned";
+                continue;
+            }
+
+            row.AssignedLabel = LabelForKey(key);
+
+            float vol = _audioBackend?.GetVolumeByKey(key) ?? -1f;
+            if (vol < 0f)
+            {
+                row.VolumeDisplay = "—";
+                row.MuteDisplay = "—";
+                row.Status = key.StartsWith("PROC:", StringComparison.OrdinalIgnoreCase) ? "App offline" : "Unavailable";
+            }
+            else
+            {
+                row.VolumeDisplay = $"{Math.Clamp((int)Math.Round(vol * 100), 0, 100)}%";
+                row.MuteDisplay = (_audioBackend?.GetMuteByKey(key) ?? false) ? "Yes" : "No";
+                row.Status = "Active";
+            }
+        }
+    }
+
+    private void AssignTarget_Click(object? sender, RoutedEventArgs e)
+    {
+        int index = ChannelGrid.SelectedIndex;
+        if (index < 0 || index >= _settings.Channels.Length) return;
+        if (TargetCombo.SelectedItem is not AudioTarget target) return;
+
+        ChannelSettings ch = _settings.Channels[index];
+        ch.TargetKey = target.Key;
+        if (string.IsNullOrWhiteSpace(ch.FriendlyName))
+            ch.FriendlyName = LabelForKey(target.Key);
+        Save();
+        RefreshChannelStates();
+    }
+
+    private void ClearTarget_Click(object? sender, RoutedEventArgs e)
+    {
+        int index = ChannelGrid.SelectedIndex;
+        if (index < 0 || index >= _settings.Channels.Length) return;
+
+        _settings.Channels[index].TargetKey = string.Empty;
+        Save();
+        RefreshChannelStates();
+    }
+
+    private void RefreshTargets_Click(object? sender, RoutedEventArgs e)
+    {
+        _audioBackend?.InvalidateCache();
+        RefreshTargets();
+        RefreshChannelStates();
+    }
+
+    /// <summary>Human-readable label for a target key (cross-platform; no Platform.Windows dependency).</summary>
+    private static string LabelForKey(string key)
+    {
+        if (key.Equals("MASTER", StringComparison.OrdinalIgnoreCase)) return "Master";
+        if (key.Equals("MIC_INPUT", StringComparison.OrdinalIgnoreCase)) return "Microphone Input";
+        if (key.StartsWith("PROC:", StringComparison.OrdinalIgnoreCase)) return key[5..];
+        if (key.StartsWith("VM_STRIP:", StringComparison.OrdinalIgnoreCase) && int.TryParse(key[9..], out int s)) return $"Strip {s + 1}";
+        if (key.StartsWith("VM_BUS:", StringComparison.OrdinalIgnoreCase) && int.TryParse(key[7..], out int b)) return $"Bus {b + 1}";
+        return key;
+    }
 
     // ── Slider wiring ───────────────────────────────────────────────────────
     // Subscribe via the property observable (fires once now, guarded by
