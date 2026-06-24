@@ -39,6 +39,10 @@
        from Core (SerialService moved there in the Phase 0 extraction). -->
   <ItemGroup>
     <ProjectReference Include="Core\PcVolumeControllerDashboard.Core.csproj" />
+    <!-- Windows audio platform layer: WASAPI + VoiceMeeter backends behind the
+         neutral Core.Audio.IAudioBackend seam. (NAudio above stays for this
+         host's output-device-cycling feature, which is not part of the seam.) -->
+    <ProjectReference Include="Platform.Windows\PcVolumeControllerDashboard.Platform.Windows.csproj" />
   </ItemGroup>
 
   <!-- App icon — copy to output so LoadAppIcon() can find it at runtime -->

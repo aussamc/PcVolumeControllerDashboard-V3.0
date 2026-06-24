@@ -6,3 +6,5 @@
 // the audio abstraction) without sprinkling per-file usings across the
 // 200 KB+ of host code during the extraction.
 global using PcVolumeControllerDashboard.Core;
+global using PcVolumeControllerDashboard.Core.Audio;
+global using PcVolumeControllerDashboard.Platform.Windows;
