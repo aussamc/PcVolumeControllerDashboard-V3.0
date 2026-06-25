@@ -20,7 +20,7 @@ namespace PcVolumeControllerDashboard.App;
 public partial class MainWindow : Window
 {
     // Shipping dashboard version (bumped per Avalonia-tab milestone).
-    private const string DashboardVersion = "3.5";
+    private const string DashboardVersion = "3.7";
     private const string RequiredProtocolVersion = "2.24";
 
     private readonly SettingsService? _settingsService;
@@ -58,6 +58,7 @@ public partial class MainWindow : Window
         _initializing = false;
 
         InitAudioTab();
+        InitChannelDetail();
     }
 
     private void Save() => _settingsService?.Save();
@@ -268,6 +269,7 @@ public partial class MainWindow : Window
         OledBrightnessSlider.GetObservable(Slider.ValueProperty).Subscribe(new AnonymousObserver(_ => OnOledBrightnessChanged()));
         OledSleepTimeoutSlider.GetObservable(Slider.ValueProperty).Subscribe(new AnonymousObserver(_ => OnOledSleepTimeoutChanged()));
         OledConnectedIdleTimeoutSlider.GetObservable(Slider.ValueProperty).Subscribe(new AnonymousObserver(_ => OnOledConnectedIdleTimeoutChanged()));
+        DetailSensSlider.GetObservable(Slider.ValueProperty).Subscribe(new AnonymousObserver(_ => OnDetailSensChanged()));
     }
 
     /// <summary>Minimal IObserver&lt;double&gt; that forwards OnNext to an action.</summary>

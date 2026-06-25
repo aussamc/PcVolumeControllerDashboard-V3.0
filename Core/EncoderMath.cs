@@ -58,6 +58,20 @@ public static class EncoderMath
     }
 
     /// <summary>
+    /// Translates an encoder sensitivity percentage into the unscaled per-detent
+    /// volume step. 0 % → 1 (minimum); otherwise <c>baseStep × sensitivity/50</c>,
+    /// rounded and clamped to [1, <paramref name="maxStep"/>]. Mirrors the WPF
+    /// host's GetVolumeStepPercentFromSensitivity.
+    /// </summary>
+    public static int StepFromSensitivity(int sensitivityPercent, int baseStep, int maxStep, int maxSensitivity)
+    {
+        int s = Math.Clamp(sensitivityPercent, 0, maxSensitivity);
+        if (s <= 0) return 1;
+        int step = (int)Math.Round(baseStep * (s / 50.0));
+        return Math.Clamp(step, 1, maxStep);
+    }
+
+    /// <summary>
     /// EMA smoothing factor (alpha) per ~16 ms tick for the given speed.
     /// After N ticks the remaining error is (1-alpha)^N.
     /// </summary>
