@@ -30,6 +30,10 @@
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Margin" Value="0,0,0,8" />
         </Style>
+        <Style Selector="TextBlock.h3">
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
         <Style Selector="TextBlock.muted">
             <Setter Property="Opacity" Value="0.7" />
             <Setter Property="TextWrapping" Value="Wrap" />
@@ -66,7 +70,8 @@
                                       AutoGenerateColumns="False"
                                       CanUserResizeColumns="True"
                                       Height="232"
-                                      GridLinesVisibility="Horizontal">
+                                      GridLinesVisibility="Horizontal"
+                                      SelectionChanged="ChannelGrid_SelectionChanged">
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="Ch" Binding="{Binding Channel}" Width="44" />
                                     <DataGridTextColumn Header="Display Name" Binding="{Binding DisplayName}" Width="160" />
@@ -94,12 +99,83 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- ── Not yet ported ───────────────────────────────────── -->
+                    <!-- ── Per-channel detail ───────────────────────────────── -->
+                    <Border Classes="card">
+                        <StackPanel x:Name="ChannelDetailPanel">
+                            <TextBlock Classes="h2" x:Name="DetailHeaderText" Text="Channel Detail" />
+                            <TextBlock Classes="muted" Margin="0,0,0,8"
+                                       Text="Select a channel row above to edit its name, button actions, sensitivity, volume limits, presets, and OLED mode." />
+
+                            <Grid ColumnDefinitions="170,*" RowDefinitions="Auto" Margin="0,0,0,6">
+                                <TextBlock Grid.Column="0" Text="Display name" VerticalAlignment="Center" />
+                                <TextBox Grid.Column="1" x:Name="DetailNameBox" Width="260" HorizontalAlignment="Left"
+                                         LostFocus="DetailName_Committed" KeyDown="DetailName_KeyDown" />
+                            </Grid>
+
+                            <TextBlock Classes="h3" Text="Button actions" Margin="0,8,0,4" />
+                            <Grid ColumnDefinitions="170,*" RowDefinitions="Auto,Auto,Auto">
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Short press" VerticalAlignment="Center" Margin="0,3" />
+                                <ComboBox Grid.Row="0" Grid.Column="1" x:Name="DetailShortActionCombo" Width="260" HorizontalAlignment="Left" Margin="0,3"
+                                          SelectionChanged="DetailShortAction_Changed" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Long press" VerticalAlignment="Center" Margin="0,3" />
+                                <ComboBox Grid.Row="1" Grid.Column="1" x:Name="DetailLongActionCombo" Width="260" HorizontalAlignment="Left" Margin="0,3"
+                                          SelectionChanged="DetailLongAction_Changed" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Double press" VerticalAlignment="Center" Margin="0,3" />
+                                <ComboBox Grid.Row="2" Grid.Column="1" x:Name="DetailDoubleActionCombo" Width="260" HorizontalAlignment="Left" Margin="0,3"
+                                          SelectionChanged="DetailDoubleAction_Changed" />
+                            </Grid>
+
+                            <TextBlock Classes="h3" Text="Encoder sensitivity" Margin="0,12,0,4" />
+                            <CheckBox x:Name="DetailSensOverrideCheck" Content="Override global sensitivity for this channel"
+                                      IsCheckedChanged="DetailSensOverride_Changed" />
+                            <StackPanel Orientation="Horizontal" x:Name="DetailSensRow" Spacing="8">
+                                <Slider x:Name="DetailSensSlider" Width="260" Minimum="0" Maximum="500" />
+                                <TextBlock x:Name="DetailSensValueText" VerticalAlignment="Center" Text="50%" />
+                            </StackPanel>
+
+                            <TextBlock Classes="h3" Text="Volume limits" Margin="0,12,0,4" />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="Min %" VerticalAlignment="Center" />
+                                <NumericUpDown x:Name="DetailMinVol" Width="120" Minimum="0" Maximum="100" Increment="1"
+                                               FormatString="0" ValueChanged="DetailVolumeLimit_Changed" />
+                                <TextBlock Text="Max %" VerticalAlignment="Center" Margin="12,0,0,0" />
+                                <NumericUpDown x:Name="DetailMaxVol" Width="120" Minimum="0" Maximum="100" Increment="1"
+                                               FormatString="0" ValueChanged="DetailVolumeLimit_Changed" />
+                            </StackPanel>
+
+                            <TextBlock Classes="h3" Text="Volume presets" Margin="0,12,0,4" />
+                            <TextBlock Classes="muted" Margin="0,0,0,6"
+                                       Text="Assign a button action to Apply Preset 1/2/3 to jump the channel to these volumes." />
+                            <Grid ColumnDefinitions="80,200,90,*" RowDefinitions="Auto,Auto,Auto">
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Preset 1" VerticalAlignment="Center" Margin="0,3" />
+                                <TextBox    Grid.Row="0" Grid.Column="1" x:Name="DetailPreset1Name" Watermark="Name (optional)" Margin="0,3"
+                                            LostFocus="DetailPreset_Committed" KeyDown="DetailName_KeyDown" />
+                                <NumericUpDown Grid.Row="0" Grid.Column="2" x:Name="DetailPreset1Vol" Minimum="0" Maximum="100" Increment="1" Margin="6,3"
+                                               FormatString="0" ValueChanged="DetailPreset_Changed" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Preset 2" VerticalAlignment="Center" Margin="0,3" />
+                                <TextBox    Grid.Row="1" Grid.Column="1" x:Name="DetailPreset2Name" Watermark="Name (optional)" Margin="0,3"
+                                            LostFocus="DetailPreset_Committed" KeyDown="DetailName_KeyDown" />
+                                <NumericUpDown Grid.Row="1" Grid.Column="2" x:Name="DetailPreset2Vol" Minimum="0" Maximum="100" Increment="1" Margin="6,3"
+                                               FormatString="0" ValueChanged="DetailPreset_Changed" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Preset 3" VerticalAlignment="Center" Margin="0,3" />
+                                <TextBox    Grid.Row="2" Grid.Column="1" x:Name="DetailPreset3Name" Watermark="Name (optional)" Margin="0,3"
+                                            LostFocus="DetailPreset_Committed" KeyDown="DetailName_KeyDown" />
+                                <NumericUpDown Grid.Row="2" Grid.Column="2" x:Name="DetailPreset3Vol" Minimum="0" Maximum="100" Increment="1" Margin="6,3"
+                                               FormatString="0" ValueChanged="DetailPreset_Changed" />
+                            </Grid>
+
+                            <TextBlock Classes="h3" Text="OLED display mode" Margin="0,12,0,4" />
+                            <ComboBox x:Name="DetailOledModeCombo" Width="260" HorizontalAlignment="Left"
+                                      SelectionChanged="DetailOledMode_Changed" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ── Still deferred ───────────────────────────────────── -->
                     <Border Classes="card">
                         <StackPanel>
                             <TextBlock Classes="h2" Text="Coming in later PRs" />
                             <TextBlock Classes="muted"
-                                       Text="Per-channel detail (button actions, presets, link groups, multi-app pools, volume limits, per-channel OLED/sensitivity), profiles, output-device cycling, and the connect/disconnect controls are ported in follow-up PRs." />
+                                       Text="Channel link groups, multi-app pools, named profiles, output-device cycling, and the connect/disconnect controls are ported in follow-up PRs." />
                         </StackPanel>
                     </Border>
 
