@@ -537,6 +537,38 @@ public partial class MainWindow : Window
             await clipboard.SetTextAsync(SettingsService.SettingsPath);
     }
 
+    private void ExportDiagnosticsButton_Click(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            string configDir = Path.GetDirectoryName(SettingsService.SettingsPath) ?? string.Empty;
+            string logsDir = Path.Combine(configDir, "logs");
+            string outDir = Path.Combine(configDir, "diagnostics");
+            string zipPath = Path.Combine(outDir, $"diagnostics-{DateTime.Now:yyyyMMdd-HHmmss}.zip");
+
+            string info =
+                $"PC Volume Controller Dashboard diagnostics\r\n" +
+                $"Generated: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\r\n" +
+                $"Dashboard version: {DashboardVersion} (Avalonia)\r\n" +
+                $"Required protocol: {RequiredProtocolVersion}\r\n" +
+                $"OS: {RuntimeInformation.OSDescription}\r\n" +
+                $"Architecture: {RuntimeInformation.OSArchitecture}\r\n" +
+                $"Connection: {_connection?.State.ToString() ?? "n/a"}\r\n" +
+                $"Controller: protocol {_connection?.Protocol ?? "n/a"}, chip {_connection?.ConnectedChipId ?? "n/a"}\r\n";
+
+            DiagnosticsExporter.Create(zipPath, SettingsService.SettingsPath, logsDir, info);
+
+            DiagnosticsStatusText.Text = $"Saved {Path.GetFileName(zipPath)} — opening folder…";
+            DiagnosticsStatusText.IsVisible = true;
+            OpenInFileManager(outDir);
+        }
+        catch (Exception ex)
+        {
+            DiagnosticsStatusText.Text = $"Diagnostics export failed: {ex.Message}";
+            DiagnosticsStatusText.IsVisible = true;
+        }
+    }
+
     private static void OpenInFileManager(string path)
     {
         try
