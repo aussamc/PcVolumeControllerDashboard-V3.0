@@ -58,6 +58,7 @@ public partial class MainWindow : Window
         _initializing = false;
 
         InitAudioTab();
+        InitDebugTab();
     }
 
     private void Save() => _settingsService?.Save();
