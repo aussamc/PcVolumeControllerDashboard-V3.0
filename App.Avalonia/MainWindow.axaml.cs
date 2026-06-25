@@ -357,8 +357,14 @@ public partial class MainWindow : Window
         Platform.WindowsGlue.ApplyRunOnStartup(_settings.StartWithWindows);
     }
 
-    private void ForgetControllerButton_Click(object? sender, RoutedEventArgs e)
+    private async void ForgetControllerButton_Click(object? sender, RoutedEventArgs e)
     {
+        if (string.IsNullOrEmpty(_settings.LastDeviceChipId)) return; // nothing paired
+
+        bool ok = await Dialogs.ConfirmAsync(this, "Forget controller",
+            "Forget the paired controller? The next controller that connects will be paired automatically.");
+        if (!ok) return;
+
         _settings.LastDeviceChipId = string.Empty;
         Save();
         UpdatePairedControllerLabel();
@@ -498,9 +504,14 @@ public partial class MainWindow : Window
 
     // ── Maintenance ────────────────────────────────────────────────────────────
 
-    private void FactoryResetButton_Click(object? sender, RoutedEventArgs e)
+    private async void FactoryResetButton_Click(object? sender, RoutedEventArgs e)
     {
         if (_settingsService == null) return;
+
+        bool ok = await Dialogs.ConfirmAsync(this, "Factory reset",
+            "Reset all settings to their defaults? This clears your channel assignments, " +
+            "encoder/OLED preferences, and paired controller. This cannot be undone.");
+        if (!ok) return;
 
         _settingsService.Reset();
         _settings = _settingsService.Settings;
@@ -527,6 +538,38 @@ public partial class MainWindow : Window
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         if (clipboard != null)
             await clipboard.SetTextAsync(SettingsService.SettingsPath);
+    }
+
+    private void ExportDiagnosticsButton_Click(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            string configDir = Path.GetDirectoryName(SettingsService.SettingsPath) ?? string.Empty;
+            string logsDir = Path.Combine(configDir, "logs");
+            string outDir = Path.Combine(configDir, "diagnostics");
+            string zipPath = Path.Combine(outDir, $"diagnostics-{DateTime.Now:yyyyMMdd-HHmmss}.zip");
+
+            string info =
+                $"PC Volume Controller Dashboard diagnostics\r\n" +
+                $"Generated: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\r\n" +
+                $"Dashboard version: {DashboardVersion} (Avalonia)\r\n" +
+                $"Required protocol: {RequiredProtocolVersion}\r\n" +
+                $"OS: {RuntimeInformation.OSDescription}\r\n" +
+                $"Architecture: {RuntimeInformation.OSArchitecture}\r\n" +
+                $"Connection: {_connection?.State.ToString() ?? "n/a"}\r\n" +
+                $"Controller: protocol {_connection?.Protocol ?? "n/a"}, chip {_connection?.ConnectedChipId ?? "n/a"}\r\n";
+
+            DiagnosticsExporter.Create(zipPath, SettingsService.SettingsPath, logsDir, info);
+
+            DiagnosticsStatusText.Text = $"Saved {Path.GetFileName(zipPath)} — opening folder…";
+            DiagnosticsStatusText.IsVisible = true;
+            OpenInFileManager(outDir);
+        }
+        catch (Exception ex)
+        {
+            DiagnosticsStatusText.Text = $"Diagnostics export failed: {ex.Message}";
+            DiagnosticsStatusText.IsVisible = true;
+        }
     }
 
     private static void OpenInFileManager(string path)
