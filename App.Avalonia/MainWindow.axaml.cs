@@ -59,6 +59,7 @@ public partial class MainWindow : Window
 
         InitAudioTab();
         InitChannelDetail();
+        InitDebugTab();
     }
 
     private void Save() => _settingsService?.Save();

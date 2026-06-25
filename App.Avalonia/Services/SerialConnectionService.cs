@@ -13,6 +13,9 @@ public enum SerialConnectionState
     Connected,
 }
 
+/// <summary>One raw serial line and its direction, for the Debug console.</summary>
+public readonly record struct SerialTraffic(DateTime Time, bool Outgoing, string Line);
+
 /// <summary>
 /// Drives the serial connection lifecycle for the Avalonia host: opens a port,
 /// performs the identity handshake (validating the HELLO), tracks connection
@@ -68,6 +71,14 @@ public sealed class SerialConnectionService : IDisposable
 
     /// <summary>Fired (on any thread) for each parsed device message while connected.</summary>
     public event Action<DeviceMessage>? MessageReceived;
+
+    /// <summary>
+    /// Fired (on any thread) for every raw line crossing the link in either
+    /// direction — including scan/keepalive traffic and pre-identity device output.
+    /// Drives the Debug tab's live serial console. Subscribers must marshal to the
+    /// UI thread.
+    /// </summary>
+    public event Action<SerialTraffic>? TrafficLogged;
 
     public SerialConnectionService(SerialService serial, SettingsService settings, LogService log)
     {
@@ -164,7 +175,7 @@ public sealed class SerialConnectionService : IDisposable
                     _log.Log("Connection lost (no response from controller); will attempt to reconnect.");
                     return;
                 }
-                _serial.SendLine(ProtocolCommands.Ping); // firmware replies PONG
+                Send(ProtocolCommands.Ping); // firmware replies PONG
                 break;
 
             case SerialConnectionState.Disconnected:
@@ -215,7 +226,7 @@ public sealed class SerialConnectionService : IDisposable
         SetState(SerialConnectionState.Identifying);
         if (!_quietScan) _log.Log($"Opened {port}; requesting identity.");
 
-        _serial.SendLine(ProtocolCommands.HelloQuery); // "HELLO?"
+        Send(ProtocolCommands.HelloQuery); // "HELLO?"
 
         _identifyTimer?.Dispose();
         _identifyTimer = new Timer(_ => OnIdentifyTimeout(port), null, IdentifyTimeoutMs, Timeout.Infinite);
@@ -230,9 +241,21 @@ public sealed class SerialConnectionService : IDisposable
     public bool SendLine(string line, bool log = false)
     {
         if (State != SerialConnectionState.Connected) return false;
-        _serial.SendLine(line);
+        Send(line);
         if (log) _log.Log($"PC -> ESP32: {line}");
         return true;
+    }
+
+    /// <summary>Writes a raw line to the port and mirrors it to the traffic console.</summary>
+    private void Send(string line)
+    {
+        _serial.SendLine(line);
+        RaiseTraffic(outgoing: true, line);
+    }
+
+    private void RaiseTraffic(bool outgoing, string line)
+    {
+        try { TrafficLogged?.Invoke(new SerialTraffic(DateTime.Now, outgoing, line)); } catch { }
     }
 
     /// <summary>User-initiated disconnect: closes the port and disarms automatic
@@ -268,6 +291,7 @@ public sealed class SerialConnectionService : IDisposable
         // Any inbound line proves the controller is alive (PONG replies to our
         // keepalive PING included), refreshing the liveness clock the monitor reads.
         _lastRxTicks = Environment.TickCount64;
+        RaiseTraffic(outgoing: false, line);
 
         DeviceMessage msg = SerialProtocol.Parse(line);
 
