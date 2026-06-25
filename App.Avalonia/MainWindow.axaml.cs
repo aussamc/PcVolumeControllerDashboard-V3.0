@@ -535,6 +535,25 @@ public partial class MainWindow : Window
 
     // ── App info buttons ───────────────────────────────────────────────────────
 
+    private const string ProjectUrl = "https://github.com/aussamc/PcVolumeControllerDashboard-V3.0";
+
+    private async void AboutButton_Click(object? sender, RoutedEventArgs e)
+    {
+        string controller = _connection?.State == SerialConnectionState.Connected
+            ? $"Connected controller: protocol {_connection.Protocol}, chip {(_connection.ConnectedChipId is { Length: > 0 } c ? c : "(none)")}"
+            : "Controller: not connected";
+
+        string info =
+            $"PC Volume Controller Dashboard\n" +
+            $"Version {DashboardVersion} (Avalonia)\n" +
+            $"Required controller protocol: {RequiredProtocolVersion}\n\n" +
+            $"{controller}\n\n" +
+            "A cross-platform dashboard for the PC Volume Controller hardware.\n" +
+            $"{ProjectUrl}";
+
+        await Dialogs.ShowAboutAsync(this, "About", info, ProjectUrl);
+    }
+
     private void OpenLogFolderButton_Click(object? sender, RoutedEventArgs e)
     {
         string dir = Path.GetDirectoryName(SettingsService.SettingsPath) ?? string.Empty;
