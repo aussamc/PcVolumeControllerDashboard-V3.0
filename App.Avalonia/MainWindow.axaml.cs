@@ -354,8 +354,14 @@ public partial class MainWindow : Window
         Platform.WindowsGlue.ApplyRunOnStartup(_settings.StartWithWindows);
     }
 
-    private void ForgetControllerButton_Click(object? sender, RoutedEventArgs e)
+    private async void ForgetControllerButton_Click(object? sender, RoutedEventArgs e)
     {
+        if (string.IsNullOrEmpty(_settings.LastDeviceChipId)) return; // nothing paired
+
+        bool ok = await Dialogs.ConfirmAsync(this, "Forget controller",
+            "Forget the paired controller? The next controller that connects will be paired automatically.");
+        if (!ok) return;
+
         _settings.LastDeviceChipId = string.Empty;
         Save();
         UpdatePairedControllerLabel();
@@ -495,9 +501,14 @@ public partial class MainWindow : Window
 
     // ── Maintenance ────────────────────────────────────────────────────────────
 
-    private void FactoryResetButton_Click(object? sender, RoutedEventArgs e)
+    private async void FactoryResetButton_Click(object? sender, RoutedEventArgs e)
     {
         if (_settingsService == null) return;
+
+        bool ok = await Dialogs.ConfirmAsync(this, "Factory reset",
+            "Reset all settings to their defaults? This clears your channel assignments, " +
+            "encoder/OLED preferences, and paired controller. This cannot be undone.");
+        if (!ok) return;
 
         _settingsService.Reset();
         _settings = _settingsService.Settings;
