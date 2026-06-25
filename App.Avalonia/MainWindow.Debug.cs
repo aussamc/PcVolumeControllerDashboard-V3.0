@@ -80,20 +80,56 @@ public partial class MainWindow : Window
         DebugConsoleText.Text = string.Empty;
     }
 
-    private void DebugSend_Click(object? sender, RoutedEventArgs e) => SendDebugCommand();
+    private void DebugSend_Click(object? sender, RoutedEventArgs e)
+    {
+        string line = (DebugSendBox.Text ?? string.Empty).Trim();
+        if (line.Length > 0 && SendDebugLine(line)) DebugSendBox.Text = string.Empty;
+    }
 
     private void DebugSend_KeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter) SendDebugCommand();
+        if (e.Key != Key.Enter) return;
+        string line = (DebugSendBox.Text ?? string.Empty).Trim();
+        if (line.Length > 0 && SendDebugLine(line)) DebugSendBox.Text = string.Empty;
     }
 
-    private void SendDebugCommand()
+    private void DebugQuick_Click(object? sender, RoutedEventArgs e)
     {
-        string line = (DebugSendBox.Text ?? string.Empty).Trim();
-        if (line.Length == 0) return;
+        if (sender is Button { Tag: string command } && command.Length > 0)
+            SendDebugLine(command);
+    }
 
+    // Commands that hijack the OLEDs and leave them frozen until new state arrives;
+    // we redraw the normal screens a few seconds later by forcing a state re-push.
+    private static readonly string[] ScreenHijackCommands = { "SHOW_IDENT", "TEST_DISPLAY" };
+    private const int IdentRevertMs = 10_000;
+    private DispatcherTimer? _identRevertTimer;
+
+    private bool SendDebugLine(string line)
+    {
         bool sent = _connection?.SendLine(line) ?? false;
         DebugSendStatus.Text = sent ? string.Empty : "Not connected — can't send.";
-        if (sent) DebugSendBox.Text = string.Empty;
+        if (!sent) return false;
+
+        if (Array.Exists(ScreenHijackCommands, c => string.Equals(c, line, StringComparison.OrdinalIgnoreCase)))
+            ScheduleOledRevert();
+        return true;
+    }
+
+    // Restartable one-shot: redraw the OLEDs IdentRevertMs after the last hijack command.
+    private void ScheduleOledRevert()
+    {
+        _identRevertTimer ??= new DispatcherTimer();
+        _identRevertTimer.Stop();
+        _identRevertTimer.Interval = TimeSpan.FromMilliseconds(IdentRevertMs);
+        _identRevertTimer.Tick -= OnIdentRevertTick;
+        _identRevertTimer.Tick += OnIdentRevertTick;
+        _identRevertTimer.Start();
+    }
+
+    private void OnIdentRevertTick(object? sender, EventArgs e)
+    {
+        _identRevertTimer?.Stop();
+        _deviceState?.ForceResend(); // next poll (≤500ms) re-pushes CHSTATE, redrawing the OLEDs
     }
 }

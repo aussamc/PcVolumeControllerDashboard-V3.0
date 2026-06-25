@@ -306,12 +306,21 @@ public sealed class SerialConnectionService : IDisposable
                 ConnectedChipId = msg.ChipId;
                 Protocol = msg.Protocol;
 
-                // Remember the port for next launch's fast reconnect.
+                // Remember the port for next launch's fast reconnect, and auto-pair
+                // the controller's chip ID on first identification so the Setup tab
+                // shows the paired controller (and future mismatch checks have a baseline).
+                bool settingsChanged = false;
                 if (_serial.PortName is { Length: > 0 } p && !string.Equals(_settings.Settings.LastComPort, p, StringComparison.OrdinalIgnoreCase))
                 {
                     _settings.Settings.LastComPort = p;
-                    _settings.Save();
+                    settingsChanged = true;
                 }
+                if (!string.IsNullOrEmpty(msg.ChipId) && string.IsNullOrEmpty(_settings.Settings.LastDeviceChipId))
+                {
+                    _settings.Settings.LastDeviceChipId = msg.ChipId;
+                    settingsChanged = true;
+                }
+                if (settingsChanged) _settings.Save();
 
                 SetState(SerialConnectionState.Connected);
                 _log.Log($"Controller identified on {_serial.PortName}: protocol {msg.Protocol}, " +

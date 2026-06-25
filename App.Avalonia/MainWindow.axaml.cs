@@ -29,6 +29,9 @@ public partial class MainWindow : Window
     private DeviceStateService? _deviceState;
     private readonly ObservableCollection<ChannelRow> _channelRows = new();
     private DispatcherTimer? _channelPollTimer;
+    // Latest live per-channel state from the poll; drives the OLED previews so they
+    // track the hardware instead of showing static samples.
+    private List<ChannelLiveState> _lastLive = new();
     private DashboardSettings _settings = DashboardSettings.CreateDefault();
 
     // Binding-init-order settings-wipe guard: control-change events fire while
@@ -131,7 +134,10 @@ public partial class MainWindow : Window
             {
                 UpdateConnectionStatus();
                 if (s == SerialConnectionState.Connected)
+                {
+                    UpdatePairedControllerLabel(); // chip ID is auto-paired on connect
                     RefreshChannelStates();
+                }
             });
 
         // Poll live channel state (volume/mute/status) ~2x/sec, matching the WPF host.
@@ -212,6 +218,10 @@ public partial class MainWindow : Window
         // Push live state to the controller so the physical OLEDs/display update.
         // The service applies change detection, so calling it every poll is cheap.
         _deviceState?.PushChannelStates(liveStates, ChannelGrid.SelectedIndex);
+
+        // Keep the OLED-tab previews in sync with the live hardware state.
+        _lastLive = liveStates;
+        RenderOledPreviews();
     }
 
     private void AssignTarget_Click(object? sender, RoutedEventArgs e)
@@ -664,36 +674,59 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Renders the six OLED previews from the Core <see cref="OledRenderer"/> using
-    /// each channel's saved name and sample volumes, driven by the selected display
-    /// mode. Live device/channel data ports with the serial layer.
+    /// each channel's live volume/mute/status (from the poll) and its per-channel
+    /// OLED mode override (falling back to the global mode). Refreshed each poll so
+    /// the previews track the hardware.
     /// </summary>
     private void RenderOledPreviews()
     {
-        string mode = _settings.OledDisplayMode;
-        OledPreviewModeText.Text = $"Preview mode: {DisplayModeName(mode)}";
+        string globalMode = _settings.OledDisplayMode;
+        OledPreviewModeText.Text = $"Preview mode: {DisplayModeName(globalMode)}";
 
         var images = new[]
         {
             OledPreview1Image, OledPreview2Image, OledPreview3Image,
             OledPreview4Image, OledPreview5Image, OledPreview6Image,
         };
-        int[] sampleVolumes = { 60, 45, 80, 30, 50, 70 };
 
         for (int i = 0; i < images.Length; i++)
         {
-            string label = i < _settings.Channels.Length && !string.IsNullOrWhiteSpace(_settings.Channels[i].FriendlyName)
-                ? _settings.Channels[i].FriendlyName
-                : $"Channel {i + 1}";
-            int vol = sampleVolumes[i];
+            // Live state from the latest poll, if available; otherwise a sensible idle default.
+            string label;
+            int vol;
+            bool muted;
+            string status;
+            if (i < _lastLive.Count)
+            {
+                ChannelLiveState s = _lastLive[i];
+                label = s.Label;
+                vol = s.Volume;
+                muted = s.Muted;
+                status = s.Status;
+            }
+            else
+            {
+                label = i < _settings.Channels.Length && !string.IsNullOrWhiteSpace(_settings.Channels[i].FriendlyName)
+                    ? _settings.Channels[i].FriendlyName
+                    : $"Channel {i + 1}";
+                vol = 0;
+                muted = false;
+                status = "—";
+            }
+
+            // Per-channel OLED mode override, else the global mode.
+            string mode = i < _settings.Channels.Length && !string.IsNullOrEmpty(_settings.Channels[i].OledDisplayMode)
+                ? _settings.Channels[i].OledDisplayMode
+                : globalMode;
 
             var renderer = new OledRenderer();
             switch (mode)
             {
-                case DisplayModes.LargeVolume:     renderer.RenderLargeVolume(label, vol, muted: false); break;
-                case DisplayModes.MuteStatus:      renderer.RenderMuteStatus(label, vol, muted: false); break;
-                case DisplayModes.AppOrDeviceName: renderer.RenderAppOrDeviceName(i + 1, label, "Active", vol); break;
-                case DisplayModes.BarPercent:      renderer.RenderBarPercent(label, vol, muted: false); break;
-                default:                           renderer.RenderAppVolume(label, vol, muted: false, "Active"); break;
+                case DisplayModes.LargeVolume:     renderer.RenderLargeVolume(label, vol, muted); break;
+                case DisplayModes.MuteStatus:      renderer.RenderMuteStatus(label, vol, muted); break;
+                case DisplayModes.AppOrDeviceName: renderer.RenderAppOrDeviceName(i + 1, label, status, vol); break;
+                case DisplayModes.BarPercent:      renderer.RenderBarPercent(label, vol, muted); break;
+                default:                           renderer.RenderAppVolume(label, vol, muted, status); break;
             }
 
             images[i].Source = OledImage.Build(renderer);
