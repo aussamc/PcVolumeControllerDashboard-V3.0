@@ -338,10 +338,18 @@
                     <Border Classes="card">
                         <StackPanel>
                             <TextBlock Classes="h2" Text="Maintenance" />
-                            <Button x:Name="FactoryResetButton" Content="Factory Reset Setup"
-                                    HorizontalAlignment="Left"
-                                    ToolTip.Tip="Reset all settings to factory defaults (cannot be undone)"
-                                    Click="FactoryResetButton_Click" />
+                            <WrapPanel>
+                                <Button x:Name="ExportSettingsButton" Content="Export settings…" Margin="0,0,8,0"
+                                        ToolTip.Tip="Save a copy of your current settings to a file"
+                                        Click="ExportSettingsButton_Click" />
+                                <Button x:Name="ImportSettingsButton" Content="Import settings…" Margin="0,0,8,0"
+                                        ToolTip.Tip="Replace your current settings with a previously exported file"
+                                        Click="ImportSettingsButton_Click" />
+                                <Button x:Name="FactoryResetButton" Content="Factory Reset Setup"
+                                        ToolTip.Tip="Reset all settings to factory defaults (cannot be undone)"
+                                        Click="FactoryResetButton_Click" />
+                            </WrapPanel>
+                            <TextBlock x:Name="SettingsIoStatusText" Classes="muted" Margin="0,8,0,0" IsVisible="False" />
                             <TextBlock Classes="muted" FontStyle="Italic" Margin="0,8,0,0"
                                        Text="Settings are saved automatically whenever you make a change." />
                         </StackPanel>

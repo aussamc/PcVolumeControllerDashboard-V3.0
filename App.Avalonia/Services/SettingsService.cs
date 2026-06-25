@@ -45,4 +45,23 @@ public sealed class SettingsService
         Settings = DashboardSettings.CreateDefault();
         Save();
     }
+
+    /// <summary>Writes the current settings to an arbitrary file (user export).</summary>
+    public void ExportTo(string path) => SettingsRepository.ExportTo(Settings, path);
+
+    /// <summary>
+    /// Replaces the live settings with a normalised copy read from an arbitrary file
+    /// (user import) and persists it. Returns false (leaving the current settings
+    /// untouched) if the file is missing or unparseable.
+    /// </summary>
+    public bool ImportFrom(string path)
+    {
+        DashboardSettings? imported = SettingsRepository.ImportFrom(path, ChannelCount, MaxEncoderSensitivityPercent);
+        if (imported == null)
+            return false;
+
+        Settings = imported;
+        Save();
+        return true;
+    }
 }
