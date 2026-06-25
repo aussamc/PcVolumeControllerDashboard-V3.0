@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 using Avalonia.Threading;
 using PcVolumeControllerDashboard.Core;
 using PcVolumeControllerDashboard.Core.Audio;
@@ -7,12 +8,17 @@ namespace PcVolumeControllerDashboard.App.Services;
 
 /// <summary>
 /// The audio half of the runtime backbone: maps inbound controller events to
-/// audio operations. An encoder turn adjusts the assigned channel's volume; a
-/// short button press runs the channel's button action (toggle-mute for now).
+/// audio operations. Encoder turns adjust the assigned channel's volume — with
+/// optional acceleration (faster turns take bigger steps) and EMA smoothing
+/// (the volume eases toward its target over ~16 ms ticks) per the Encoder Feel
+/// settings. Button presses (short/long/double) run the channel's configured
+/// action.
 ///
-/// Audio writes are marshalled to the UI thread to match the WPF host's WASAPI
-/// COM affinity. Step sizing mirrors the host's sensitivity formula; encoder
-/// acceleration/smoothing and the non-toggle button actions are later refinements.
+/// Everything runs on the UI thread (events are marshalled there) to match the
+/// WPF host's WASAPI COM affinity, which also means no locking is needed — all
+/// per-channel state below is touched on the UI thread only. The feel math lives
+/// in Core <see cref="EncoderMath"/>; this class supplies live settings and the
+/// audio writes.
 /// </summary>
 public sealed class ChannelRuntime : IDisposable
 {
@@ -20,12 +26,23 @@ public sealed class ChannelRuntime : IDisposable
     private const int BaseVolumeStepPercent = 2;
     private const int MaxVolumeStepPercent = 25;
     private const int MaxEncoderSensitivityPercent = 500;
+    private const int SmoothingTickMs = 16;            // ~60 Hz
+    private const float SmoothingSnapThreshold = 0.002f; // snap when within 0.2 %
     private static readonly int[] EncoderChannelRemap = { 0, 1, 2, 3, 4, 5 };
 
     private readonly SerialConnectionService _connection;
     private readonly IAudioBackend _audio;
     private readonly SettingsService _settings;
     private readonly LogService _log;
+
+    // Per-channel acceleration timing (Environment.TickCount64 of the last apply).
+    private readonly long[] _accelPrevApplyAt = new long[ExpectedChannelCount];
+
+    // Per-channel EMA smoothing state (normalised 0–1).
+    private readonly bool[] _smoothingActive = new bool[ExpectedChannelCount];
+    private readonly float[] _smoothingCurrent = new float[ExpectedChannelCount];
+    private readonly float[] _smoothingTarget = new float[ExpectedChannelCount];
+    private DispatcherTimer? _smoothingTimer;
 
     public ChannelRuntime(SerialConnectionService connection, IAudioBackend audio, SettingsService settings, LogService log)
     {
@@ -36,7 +53,7 @@ public sealed class ChannelRuntime : IDisposable
         _connection.MessageReceived += OnDeviceMessage;
     }
 
-    // MessageReceived fires on a background thread; marshal audio writes to the UI thread.
+    // MessageReceived fires on a background thread; marshal everything to the UI thread.
     private void OnDeviceMessage(DeviceMessage msg)
     {
         switch (msg.Kind)
@@ -45,44 +62,228 @@ public sealed class ChannelRuntime : IDisposable
                 Dispatcher.UIThread.Post(() => HandleEncoder(msg.Channel, msg.Delta));
                 break;
             case DeviceMessageKind.ButtonShort:
-                Dispatcher.UIThread.Post(() => HandleButtonShort(msg.Channel));
+                Dispatcher.UIThread.Post(() => HandleButton(msg.Channel, ButtonPress.Short));
+                break;
+            case DeviceMessageKind.ButtonLong:
+                Dispatcher.UIThread.Post(() => HandleButton(msg.Channel, ButtonPress.Long));
+                break;
+            case DeviceMessageKind.ButtonDouble:
+                Dispatcher.UIThread.Post(() => HandleButton(msg.Channel, ButtonPress.Double));
                 break;
         }
     }
 
+    // ── Encoder ───────────────────────────────────────────────────────────────
+
     private void HandleEncoder(int firmwareChannel, int delta)
     {
-        int direction = Math.Sign(delta);
-        if (direction == 0) return;
+        if (delta == 0) return;
         if (!TryResolveChannel(firmwareChannel, out int index, out ChannelSettings channel)) return;
         if (string.IsNullOrWhiteSpace(channel.TargetKey)) return;
 
-        int sensitivity = channel.SensitivityPercent >= 0
-            ? channel.SensitivityPercent
-            : _settings.Settings.EncoderSensitivityPercent;
-        int step = StepFromSensitivity(sensitivity);
+        DashboardSettings s = _settings.Settings;
 
-        int result = _audio.AdjustVolumeByKey(channel.TargetKey, direction * step, channel.MinVolumePercent, channel.MaxVolumePercent);
-        if (result >= 0 && _settings.Settings.AdvancedDebugLogging)
-            _log.Log($"Ch{index + 1} {channel.TargetKey}: {result}%");
+        // Interval since this channel's previous apply drives acceleration.
+        long now = Environment.TickCount64;
+        double intervalMs = _accelPrevApplyAt[index] == 0 ? double.MaxValue : now - _accelPrevApplyAt[index];
+        _accelPrevApplyAt[index] = now;
+
+        int baseStep = EncoderMath.StepFromSensitivity(
+            EffectiveSensitivity(channel), BaseVolumeStepPercent, MaxVolumeStepPercent, MaxEncoderSensitivityPercent);
+
+        int step = s.AccelerationEnabled
+            ? EncoderMath.GetAcceleratedStep(baseStep, intervalMs, s.AccelerationPreset,
+                s.AccelThresholdMs, s.AccelMaxMultiplier, s.AccelCurveExponent, MaxVolumeStepPercent)
+            : baseStep;
+
+        int deltaPercent = delta * step;
+
+        // Smoothing path: ease the volume toward a target over EMA ticks. Falls
+        // back to a direct write when the channel is currently unavailable so the
+        // encoder is never a silent no-op.
+        if (s.VolumeSmoothingEnabled && TryStartOrExtendSmoothing(index, channel, deltaPercent / 100f))
+        {
+            EnsureSmoothingTimer();
+            SmoothingTick(); // first step inline for immediate response
+            return;
+        }
+
+        // Direct (relative) path.
+        int result = _audio.AdjustVolumeByKey(channel.TargetKey, deltaPercent, channel.MinVolumePercent, channel.MaxVolumePercent);
+        if (result >= 0 && s.AdvancedDebugLogging)
+            _log.Log($"Ch{index + 1} {channel.TargetKey}: {result}% (step {step}%)");
     }
 
-    private void HandleButtonShort(int firmwareChannel)
+    /// <summary>
+    /// Sets/extends the smoothing target for a channel by <paramref name="deltaNorm"/>.
+    /// Returns false (so the caller uses the direct path) when the channel's
+    /// current volume can't be read to seed the interpolation.
+    /// </summary>
+    private bool TryStartOrExtendSmoothing(int index, ChannelSettings channel, float deltaNorm)
+    {
+        (float lo, float hi) = LimitsNormalized(channel);
+
+        if (_smoothingActive[index])
+        {
+            // Extend the in-flight target without re-reading the backend.
+            _smoothingTarget[index] = Math.Clamp(_smoothingTarget[index] + deltaNorm, lo, hi);
+            return true;
+        }
+
+        float current = _audio.GetVolumeByKey(channel.TargetKey);
+        if (current < 0f) return false; // unavailable → caller falls back to direct write
+
+        _smoothingCurrent[index] = Math.Clamp(current, lo, hi);
+        _smoothingTarget[index] = Math.Clamp(current + deltaNorm, lo, hi);
+        _smoothingActive[index] = true;
+        return true;
+    }
+
+    private void EnsureSmoothingTimer()
+    {
+        if (_smoothingTimer != null) return;
+        _smoothingTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(SmoothingTickMs) };
+        _smoothingTimer.Tick += (_, _) => SmoothingTick();
+        _smoothingTimer.Start();
+    }
+
+    private void StopSmoothingTimer()
+    {
+        _smoothingTimer?.Stop();
+        _smoothingTimer = null;
+    }
+
+    // Advances every active channel one EMA step toward its target and writes the
+    // absolute volume, working in normalised float space to avoid integer-percent
+    // quantisation. Stops the timer once nothing is animating.
+    private void SmoothingTick()
+    {
+        float alpha = EncoderMath.GetSmoothingAlpha(_settings.Settings.VolumeSmoothingSpeed);
+        ChannelSettings[] channels = _settings.Settings.Channels;
+        bool anyActive = false;
+
+        for (int ch = 0; ch < ExpectedChannelCount; ch++)
+        {
+            if (!_smoothingActive[ch]) continue;
+
+            float target = _smoothingTarget[ch];
+            float diff = target - _smoothingCurrent[ch];
+            float next;
+
+            if (Math.Abs(diff) < SmoothingSnapThreshold)
+            {
+                next = target;
+                _smoothingActive[ch] = false;
+            }
+            else
+            {
+                next = EncoderMath.EmaStep(_smoothingCurrent[ch], target, alpha);
+                anyActive = true;
+            }
+
+            _smoothingCurrent[ch] = next;
+
+            if (ch < channels.Length && !string.IsNullOrWhiteSpace(channels[ch].TargetKey))
+                _audio.SetVolumeByKey(channels[ch].TargetKey, next);
+        }
+
+        if (!anyActive) StopSmoothingTimer();
+    }
+
+    // ── Buttons ───────────────────────────────────────────────────────────────
+
+    private enum ButtonPress { Short, Long, Double }
+
+    private void HandleButton(int firmwareChannel, ButtonPress press)
     {
         if (!TryResolveChannel(firmwareChannel, out int index, out ChannelSettings channel)) return;
-        if (string.IsNullOrWhiteSpace(channel.TargetKey)) return;
 
-        if (channel.ButtonAction == ChannelButtonActions.ToggleAssignedMute)
+        string action = press switch
         {
-            bool? muted = _audio.ToggleMuteByKey(channel.TargetKey);
-            if (muted != null)
-                _log.Log($"Ch{index + 1} {channel.TargetKey}: {(muted.Value ? "muted" : "unmuted")}");
+            ButtonPress.Long => channel.LongPressButtonAction,
+            ButtonPress.Double => channel.DoublePressButtonAction,
+            _ => channel.ButtonAction,
+        };
+
+        ExecuteButtonAction(index, channel, action, press);
+    }
+
+    private void ExecuteButtonAction(int index, ChannelSettings channel, string action, ButtonPress press)
+    {
+        switch (action)
+        {
+            case ChannelButtonActions.ToggleAssignedMute:
+                if (string.IsNullOrWhiteSpace(channel.TargetKey)) return;
+                bool? muted = _audio.ToggleMuteByKey(channel.TargetKey);
+                if (muted != null)
+                    _log.Log($"Ch{index + 1} {channel.TargetKey}: {(muted.Value ? "muted" : "unmuted")}");
+                break;
+
+            case ChannelButtonActions.ApplyPreset1: ApplyPreset(index, channel, 0); break;
+            case ChannelButtonActions.ApplyPreset2: ApplyPreset(index, channel, 1); break;
+            case ChannelButtonActions.ApplyPreset3: ApplyPreset(index, channel, 2); break;
+
+            case ChannelButtonActions.MediaPlayPause: SendMediaKey(VkMediaPlayPause); break;
+            case ChannelButtonActions.MediaNextTrack: SendMediaKey(VkMediaNextTrack); break;
+            case ChannelButtonActions.MediaPrevTrack: SendMediaKey(VkMediaPrevTrack); break;
+            case ChannelButtonActions.MediaStop:      SendMediaKey(VkMediaStop);      break;
+
+            case ChannelButtonActions.NoAction:
+                if (_settings.Settings.AdvancedDebugLogging)
+                    _log.Log($"Ch{index + 1} {press.ToString().ToLowerInvariant()}-press: No action.");
+                break;
+
+            // Need subsystems not yet ported to Avalonia (profiles, output-device
+            // cycling, channel-selection UI). Logged so the behaviour is visible.
+            case ChannelButtonActions.CycleNextProfile:
+            case ChannelButtonActions.CycleOutputDevice:
+            case ChannelButtonActions.SelectNextChannel:
+                _log.Log($"Ch{index + 1} button action '{action}' not yet ported to Avalonia.");
+                break;
+
+            default:
+                _log.Log($"Ch{index + 1} unknown button action '{action}'.");
+                break;
+        }
+    }
+
+    private void ApplyPreset(int index, ChannelSettings channel, int presetIndex)
+    {
+        if (string.IsNullOrWhiteSpace(channel.TargetKey)) return;
+        VolumePreset[] presets = channel.Presets;
+        if (presets == null || presetIndex < 0 || presetIndex >= presets.Length) return;
+
+        VolumePreset preset = presets[presetIndex];
+        float target = Math.Clamp(preset.VolumePercent / 100f, 0f, 1f);
+
+        if (_settings.Settings.VolumeSmoothingEnabled)
+        {
+            if (!_smoothingActive[index])
+            {
+                float current = _audio.GetVolumeByKey(channel.TargetKey);
+                _smoothingCurrent[index] = current >= 0f ? current : target;
+            }
+            _smoothingTarget[index] = target;
+            _smoothingActive[index] = true;
+            EnsureSmoothingTimer();
+            SmoothingTick();
         }
         else
         {
-            _log.Log($"Ch{index + 1} button action '{channel.ButtonAction}' not yet ported to Avalonia.");
+            _audio.SetVolumeByKey(channel.TargetKey, target);
         }
+
+        string presetName = string.IsNullOrWhiteSpace(preset.Name) ? $"Preset {presetIndex + 1}" : preset.Name;
+        _log.Log($"Ch{index + 1} {channel.TargetKey}: applied {presetName} ({preset.VolumePercent}%).");
     }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private int EffectiveSensitivity(ChannelSettings channel) =>
+        channel.SensitivityPercent >= 0 ? channel.SensitivityPercent : _settings.Settings.EncoderSensitivityPercent;
+
+    private static (float min, float max) LimitsNormalized(ChannelSettings channel) =>
+        (channel.MinVolumePercent / 100f, channel.MaxVolumePercent / 100f);
 
     private bool TryResolveChannel(int firmwareChannel, out int index, out ChannelSettings channel)
     {
@@ -99,13 +300,32 @@ public sealed class ChannelRuntime : IDisposable
         return true;
     }
 
-    private static int StepFromSensitivity(int sensitivityPercent)
-    {
-        int s = Math.Clamp(sensitivityPercent, 0, MaxEncoderSensitivityPercent);
-        if (s <= 0) return 1;
-        int step = (int)Math.Round(BaseVolumeStepPercent * (s / 50.0));
-        return Math.Clamp(step, 1, MaxVolumeStepPercent);
-    }
+    // ── Media keys (Windows; no-op elsewhere) ─────────────────────────────────
 
-    public void Dispose() => _connection.MessageReceived -= OnDeviceMessage;
+    private const byte VkMediaNextTrack = 0xB0;
+    private const byte VkMediaPrevTrack = 0xB1;
+    private const byte VkMediaStop      = 0xB2;
+    private const byte VkMediaPlayPause = 0xB3;
+
+#if WINDOWS
+    [DllImport("user32.dll")]
+    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
+    private const uint KeyEventExtendedKey = 0x0001;
+    private const uint KeyEventKeyUp = 0x0002;
+
+    private static void SendMediaKey(byte vk)
+    {
+        keybd_event(vk, 0, KeyEventExtendedKey, UIntPtr.Zero);
+        keybd_event(vk, 0, KeyEventExtendedKey | KeyEventKeyUp, UIntPtr.Zero);
+    }
+#else
+    private static void SendMediaKey(byte vk) { /* media keys are Windows-only for now */ }
+#endif
+
+    public void Dispose()
+    {
+        _connection.MessageReceived -= OnDeviceMessage;
+        StopSmoothingTimer();
+    }
 }

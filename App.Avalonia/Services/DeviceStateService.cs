@@ -130,6 +130,13 @@ public sealed class DeviceStateService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Clears change tracking so the next channel-state push re-sends every channel.
+    /// Used to redraw the OLEDs after a screen-hijacking command (SHOW_IDENT /
+    /// TEST_DISPLAY), which the firmware leaves frozen until new state arrives.
+    /// </summary>
+    public void ForceResend() => ResetChangeTracking();
+
     private void ResetChangeTracking()
     {
         Array.Clear(_lastChState);

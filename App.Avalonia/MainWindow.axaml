@@ -30,6 +30,10 @@
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Margin" Value="0,0,0,8" />
         </Style>
+        <Style Selector="TextBlock.h3">
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
         <Style Selector="TextBlock.muted">
             <Setter Property="Opacity" Value="0.7" />
             <Setter Property="TextWrapping" Value="Wrap" />
@@ -66,14 +70,15 @@
                                       AutoGenerateColumns="False"
                                       CanUserResizeColumns="True"
                                       Height="232"
-                                      GridLinesVisibility="Horizontal">
+                                      GridLinesVisibility="Horizontal"
+                                      SelectionChanged="ChannelGrid_SelectionChanged">
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="Ch" Binding="{Binding Channel}" Width="44" />
-                                    <DataGridTextColumn Header="Display Name" Binding="{Binding DisplayName}" Width="160" />
-                                    <DataGridTextColumn Header="Assigned Target" Binding="{Binding AssignedLabel}" Width="180" />
-                                    <DataGridTextColumn Header="Volume" Binding="{Binding VolumeDisplay}" Width="80" />
-                                    <DataGridTextColumn Header="Mute" Binding="{Binding MuteDisplay}" Width="60" />
-                                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="*" />
+                                    <DataGridTextColumn Header="Ch" Binding="{Binding Channel}" Width="50" />
+                                    <DataGridTextColumn Header="Display Name" Binding="{Binding DisplayName}" Width="2*" MinWidth="120" />
+                                    <DataGridTextColumn Header="Assigned Target" Binding="{Binding AssignedLabel}" Width="2*" MinWidth="120" />
+                                    <DataGridTextColumn Header="Volume" Binding="{Binding VolumeDisplay}" Width="Auto" MinWidth="80" />
+                                    <DataGridTextColumn Header="Mute" Binding="{Binding MuteDisplay}" Width="Auto" MinWidth="64" />
+                                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="1.5*" MinWidth="100" />
                                 </DataGrid.Columns>
                             </DataGrid>
                         </StackPanel>
@@ -94,12 +99,83 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- ── Not yet ported ───────────────────────────────────── -->
+                    <!-- ── Per-channel detail ───────────────────────────────── -->
+                    <Border Classes="card">
+                        <StackPanel x:Name="ChannelDetailPanel">
+                            <TextBlock Classes="h2" x:Name="DetailHeaderText" Text="Channel Detail" />
+                            <TextBlock Classes="muted" Margin="0,0,0,8"
+                                       Text="Select a channel row above to edit its name, button actions, sensitivity, volume limits, presets, and OLED mode." />
+
+                            <Grid ColumnDefinitions="170,*" RowDefinitions="Auto" Margin="0,0,0,6">
+                                <TextBlock Grid.Column="0" Text="Display name" VerticalAlignment="Center" />
+                                <TextBox Grid.Column="1" x:Name="DetailNameBox" Width="260" HorizontalAlignment="Left"
+                                         LostFocus="DetailName_Committed" KeyDown="DetailName_KeyDown" />
+                            </Grid>
+
+                            <TextBlock Classes="h3" Text="Button actions" Margin="0,8,0,4" />
+                            <Grid ColumnDefinitions="170,*" RowDefinitions="Auto,Auto,Auto">
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Short press" VerticalAlignment="Center" Margin="0,3" />
+                                <ComboBox Grid.Row="0" Grid.Column="1" x:Name="DetailShortActionCombo" Width="260" HorizontalAlignment="Left" Margin="0,3"
+                                          SelectionChanged="DetailShortAction_Changed" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Long press" VerticalAlignment="Center" Margin="0,3" />
+                                <ComboBox Grid.Row="1" Grid.Column="1" x:Name="DetailLongActionCombo" Width="260" HorizontalAlignment="Left" Margin="0,3"
+                                          SelectionChanged="DetailLongAction_Changed" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Double press" VerticalAlignment="Center" Margin="0,3" />
+                                <ComboBox Grid.Row="2" Grid.Column="1" x:Name="DetailDoubleActionCombo" Width="260" HorizontalAlignment="Left" Margin="0,3"
+                                          SelectionChanged="DetailDoubleAction_Changed" />
+                            </Grid>
+
+                            <TextBlock Classes="h3" Text="Encoder sensitivity" Margin="0,12,0,4" />
+                            <CheckBox x:Name="DetailSensOverrideCheck" Content="Override global sensitivity for this channel"
+                                      IsCheckedChanged="DetailSensOverride_Changed" />
+                            <StackPanel Orientation="Horizontal" x:Name="DetailSensRow" Spacing="8">
+                                <Slider x:Name="DetailSensSlider" Width="360" Minimum="0" Maximum="500" TickFrequency="10" IsSnapToTickEnabled="True" />
+                                <TextBlock x:Name="DetailSensValueText" VerticalAlignment="Center" Text="50%" />
+                            </StackPanel>
+
+                            <TextBlock Classes="h3" Text="Volume limits" Margin="0,12,0,4" />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="Min %" VerticalAlignment="Center" />
+                                <NumericUpDown x:Name="DetailMinVol" Width="120" Minimum="0" Maximum="100" Increment="1"
+                                               FormatString="0" ValueChanged="DetailVolumeLimit_Changed" />
+                                <TextBlock Text="Max %" VerticalAlignment="Center" Margin="12,0,0,0" />
+                                <NumericUpDown x:Name="DetailMaxVol" Width="120" Minimum="0" Maximum="100" Increment="1"
+                                               FormatString="0" ValueChanged="DetailVolumeLimit_Changed" />
+                            </StackPanel>
+
+                            <TextBlock Classes="h3" Text="Volume presets" Margin="0,12,0,4" />
+                            <TextBlock Classes="muted" Margin="0,0,0,6"
+                                       Text="Assign a button action to Apply Preset 1/2/3 to jump the channel to these volumes." />
+                            <Grid ColumnDefinitions="80,*,160" RowDefinitions="Auto,Auto,Auto">
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Preset 1" VerticalAlignment="Center" Margin="0,3" />
+                                <TextBox    Grid.Row="0" Grid.Column="1" x:Name="DetailPreset1Name" Watermark="Name (optional)" Margin="0,3"
+                                            LostFocus="DetailPreset_Committed" KeyDown="DetailName_KeyDown" />
+                                <NumericUpDown Grid.Row="0" Grid.Column="2" x:Name="DetailPreset1Vol" Minimum="0" Maximum="100" Increment="1" Margin="6,3"
+                                               FormatString="0" ValueChanged="DetailPreset_Changed" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Preset 2" VerticalAlignment="Center" Margin="0,3" />
+                                <TextBox    Grid.Row="1" Grid.Column="1" x:Name="DetailPreset2Name" Watermark="Name (optional)" Margin="0,3"
+                                            LostFocus="DetailPreset_Committed" KeyDown="DetailName_KeyDown" />
+                                <NumericUpDown Grid.Row="1" Grid.Column="2" x:Name="DetailPreset2Vol" Minimum="0" Maximum="100" Increment="1" Margin="6,3"
+                                               FormatString="0" ValueChanged="DetailPreset_Changed" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Preset 3" VerticalAlignment="Center" Margin="0,3" />
+                                <TextBox    Grid.Row="2" Grid.Column="1" x:Name="DetailPreset3Name" Watermark="Name (optional)" Margin="0,3"
+                                            LostFocus="DetailPreset_Committed" KeyDown="DetailName_KeyDown" />
+                                <NumericUpDown Grid.Row="2" Grid.Column="2" x:Name="DetailPreset3Vol" Minimum="0" Maximum="100" Increment="1" Margin="6,3"
+                                               FormatString="0" ValueChanged="DetailPreset_Changed" />
+                            </Grid>
+
+                            <TextBlock Classes="h3" Text="OLED display mode" Margin="0,12,0,4" />
+                            <ComboBox x:Name="DetailOledModeCombo" Width="260" HorizontalAlignment="Left"
+                                      SelectionChanged="DetailOledMode_Changed" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ── Still deferred ───────────────────────────────────── -->
                     <Border Classes="card">
                         <StackPanel>
                             <TextBlock Classes="h2" Text="Coming in later PRs" />
                             <TextBlock Classes="muted"
-                                       Text="Per-channel detail (button actions, presets, link groups, multi-app pools, volume limits, per-channel OLED/sensitivity), profiles, output-device cycling, and the connect/disconnect controls are ported in follow-up PRs." />
+                                       Text="Channel link groups, multi-app pools, named profiles, output-device cycling, and the connect/disconnect controls are ported in follow-up PRs." />
                         </StackPanel>
                     </Border>
 
@@ -120,8 +196,10 @@
                             <TextBlock x:Name="SettingsPathText" Classes="muted" Margin="0,0,0,8" />
                             <WrapPanel>
                                 <Button x:Name="OpenLogFolderButton" Content="Open log folder" Margin="0,0,8,0" Click="OpenLogFolderButton_Click" />
-                                <Button x:Name="CopySettingsPathButton" Content="Copy settings path" Click="CopySettingsPathButton_Click" />
+                                <Button x:Name="CopySettingsPathButton" Content="Copy settings path" Margin="0,0,8,0" Click="CopySettingsPathButton_Click" />
+                                <Button x:Name="ExportDiagnosticsButton" Content="Export diagnostics" Click="ExportDiagnosticsButton_Click" />
                             </WrapPanel>
+                            <TextBlock x:Name="DiagnosticsStatusText" Classes="muted" Margin="0,8,0,0" IsVisible="False" />
                         </StackPanel>
                     </Border>
 
@@ -163,7 +241,7 @@
                             <TextBlock Classes="h2" Text="Encoder Sensitivity" />
                             <TextBlock Classes="muted" Margin="0,0,0,10"
                                        Text="Controls how much the volume changes for each encoder click. 50% is the default; higher values allow much faster changes." />
-                            <Slider x:Name="EncoderSensitivitySlider" Minimum="0" Maximum="500" MaxWidth="420" HorizontalAlignment="Left" />
+                            <Slider x:Name="EncoderSensitivitySlider" Minimum="0" Maximum="500" TickFrequency="10" IsSnapToTickEnabled="True" MaxWidth="420" HorizontalAlignment="Stretch" />
                             <TextBlock x:Name="EncoderSensitivityValueText" FontWeight="SemiBold" Margin="0,8,0,0" Text="Sensitivity: 50%" />
                         </StackPanel>
                     </Border>
@@ -305,10 +383,10 @@
                             </StackPanel>
 
                             <TextBlock x:Name="OledBrightnessValueText" FontWeight="SemiBold" Margin="0,0,0,4" Text="Brightness: 100%" />
-                            <Slider x:Name="OledBrightnessSlider" Minimum="0" Maximum="100" MaxWidth="420" HorizontalAlignment="Left" Margin="0,0,0,10" />
+                            <Slider x:Name="OledBrightnessSlider" Minimum="0" Maximum="100" MaxWidth="420" HorizontalAlignment="Stretch" Margin="0,0,0,10" />
 
                             <TextBlock x:Name="OledSleepTimeoutValueText" FontWeight="SemiBold" Margin="0,0,0,4" Text="Disconnected sleep timeout: 2 minute(s)" />
-                            <Slider x:Name="OledSleepTimeoutSlider" Minimum="1" Maximum="60" TickFrequency="1" IsSnapToTickEnabled="True" MaxWidth="420" HorizontalAlignment="Left" Margin="0,0,0,14" />
+                            <Slider x:Name="OledSleepTimeoutSlider" Minimum="1" Maximum="60" TickFrequency="1" IsSnapToTickEnabled="True" MaxWidth="420" HorizontalAlignment="Stretch" Margin="0,0,0,14" />
 
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                                 <TextBlock Text="Connected idle action:" VerticalAlignment="Center" Width="160" />
@@ -325,7 +403,7 @@
                             </StackPanel>
 
                             <TextBlock x:Name="OledConnectedIdleTimeoutValueText" FontWeight="SemiBold" Margin="0,0,0,4" Text="Connected idle timeout: 10 minute(s)" />
-                            <Slider x:Name="OledConnectedIdleTimeoutSlider" Minimum="1" Maximum="60" TickFrequency="1" IsSnapToTickEnabled="True" MaxWidth="420" HorizontalAlignment="Left" Margin="0,0,0,14" />
+                            <Slider x:Name="OledConnectedIdleTimeoutSlider" Minimum="1" Maximum="60" TickFrequency="1" IsSnapToTickEnabled="True" MaxWidth="420" HorizontalAlignment="Stretch" Margin="0,0,0,14" />
 
                             <CheckBox x:Name="OledAntiBurnInCheckBox" Content="Enable anti-burn-in pixel shifting"
                                       ToolTip.Tip="Shifts pixels slightly over time to prevent OLED burn-in"
@@ -384,6 +462,47 @@
 
                 </StackPanel>
             </ScrollViewer>
+        </TabItem>
+
+        <TabItem Header="Debug">
+            <DockPanel Margin="12">
+
+                <!-- ── Controls (top) ───────────────────────────────────────── -->
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
+                    <TextBlock Text="Serial console" Classes="h2" VerticalAlignment="Center" Margin="0" />
+                    <CheckBox x:Name="DebugAutoScrollCheck" Content="Auto-scroll" IsChecked="True" Margin="16,0,0,0" VerticalAlignment="Center" />
+                    <CheckBox x:Name="DebugPauseCheck" Content="Pause" Margin="0" VerticalAlignment="Center"
+                              IsCheckedChanged="DebugPause_Changed" />
+                    <Button Content="Clear" Click="DebugClear_Click" />
+                </StackPanel>
+
+                <!-- ── Manual send + quick commands (bottom) ────────────────── -->
+                <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBox x:Name="DebugSendBox" Width="320" Watermark="Type a command (e.g. PING) and press Enter"
+                                 KeyDown="DebugSend_KeyDown" />
+                        <Button Content="Send" Click="DebugSend_Click" />
+                        <TextBlock x:Name="DebugSendStatus" Classes="muted" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
+                        <TextBlock Text="Quick:" Classes="muted" VerticalAlignment="Center" />
+                        <Button Content="Ping" Tag="PING" Click="DebugQuick_Click" />
+                        <Button Content="Show ident" Tag="SHOW_IDENT" Click="DebugQuick_Click" />
+                        <Button Content="Scan I2C" Tag="SCAN_I2C" Click="DebugQuick_Click" />
+                        <Button Content="Test display" Tag="TEST_DISPLAY" Click="DebugQuick_Click" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- ── Live traffic ─────────────────────────────────────────── -->
+                <Border BorderThickness="1" CornerRadius="4"
+                        BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                    <ScrollViewer x:Name="DebugScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+                        <SelectableTextBlock x:Name="DebugConsoleText" FontFamily="Cascadia Mono,Consolas,monospace"
+                                             FontSize="12" Padding="8" TextWrapping="NoWrap" />
+                    </ScrollViewer>
+                </Border>
+
+            </DockPanel>
         </TabItem>
     </TabControl>
 </Window>
