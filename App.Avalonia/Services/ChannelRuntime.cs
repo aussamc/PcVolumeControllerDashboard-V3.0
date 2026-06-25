@@ -6,6 +6,9 @@ using PcVolumeControllerDashboard.Core.Audio;
 
 namespace PcVolumeControllerDashboard.App.Services;
 
+/// <summary>A volume/mute change for a channel, for the on-screen volume overlay.</summary>
+public readonly record struct VolumeOverlayInfo(int ChannelIndex, string Label, int VolumePercent, bool Muted);
+
 /// <summary>
 /// The audio half of the runtime backbone: maps inbound controller events to
 /// audio operations. Encoder turns adjust the assigned channel's volume — with
@@ -44,6 +47,13 @@ public sealed class ChannelRuntime : IDisposable
     private readonly float[] _smoothingTarget = new float[ExpectedChannelCount];
     private DispatcherTimer? _smoothingTimer;
 
+    /// <summary>
+    /// Raised on the UI thread when a channel's volume or mute changes from the
+    /// controller (encoder turn, preset, mute toggle). Drives the on-screen volume
+    /// overlay.
+    /// </summary>
+    public event Action<VolumeOverlayInfo>? VolumeChanged;
+
     public ChannelRuntime(SerialConnectionService connection, IAudioBackend audio, SettingsService settings, LogService log)
     {
         _connection = connection;
@@ -51,6 +61,13 @@ public sealed class ChannelRuntime : IDisposable
         _settings = settings;
         _log = log;
         _connection.MessageReceived += OnDeviceMessage;
+    }
+
+    private void RaiseVolume(int index, ChannelSettings channel, int percent, bool muted)
+    {
+        string label = string.IsNullOrWhiteSpace(channel.FriendlyName) ? $"Channel {index + 1}" : channel.FriendlyName;
+        try { VolumeChanged?.Invoke(new VolumeOverlayInfo(index, label, Math.Clamp(percent, 0, 100), muted)); }
+        catch { /* overlay is best-effort */ }
     }
 
     // MessageReceived fires on a background thread; marshal everything to the UI thread.
@@ -105,13 +122,19 @@ public sealed class ChannelRuntime : IDisposable
         {
             EnsureSmoothingTimer();
             SmoothingTick(); // first step inline for immediate response
+            RaiseVolume(index, channel, (int)Math.Round(_smoothingTarget[index] * 100),
+                _audio.GetMuteByKey(channel.TargetKey) ?? false);
             return;
         }
 
         // Direct (relative) path.
         int result = _audio.AdjustVolumeByKey(channel.TargetKey, deltaPercent, channel.MinVolumePercent, channel.MaxVolumePercent);
-        if (result >= 0 && s.AdvancedDebugLogging)
-            _log.Log($"Ch{index + 1} {channel.TargetKey}: {result}% (step {step}%)");
+        if (result >= 0)
+        {
+            RaiseVolume(index, channel, result, _audio.GetMuteByKey(channel.TargetKey) ?? false);
+            if (s.AdvancedDebugLogging)
+                _log.Log($"Ch{index + 1} {channel.TargetKey}: {result}% (step {step}%)");
+        }
     }
 
     /// <summary>
@@ -216,7 +239,11 @@ public sealed class ChannelRuntime : IDisposable
                 if (string.IsNullOrWhiteSpace(channel.TargetKey)) return;
                 bool? muted = _audio.ToggleMuteByKey(channel.TargetKey);
                 if (muted != null)
+                {
                     _log.Log($"Ch{index + 1} {channel.TargetKey}: {(muted.Value ? "muted" : "unmuted")}");
+                    float v = _audio.GetVolumeByKey(channel.TargetKey);
+                    RaiseVolume(index, channel, v < 0f ? 0 : (int)Math.Round(v * 100), muted.Value);
+                }
                 break;
 
             case ChannelButtonActions.ApplyPreset1: ApplyPreset(index, channel, 0); break;
@@ -275,6 +302,7 @@ public sealed class ChannelRuntime : IDisposable
 
         string presetName = string.IsNullOrWhiteSpace(preset.Name) ? $"Preset {presetIndex + 1}" : preset.Name;
         _log.Log($"Ch{index + 1} {channel.TargetKey}: applied {presetName} ({preset.VolumePercent}%).");
+        RaiseVolume(index, channel, preset.VolumePercent, _audio.GetMuteByKey(channel.TargetKey) ?? false);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

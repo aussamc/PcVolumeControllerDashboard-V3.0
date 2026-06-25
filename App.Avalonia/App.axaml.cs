@@ -57,6 +57,7 @@ public partial class App : Application
             // producing them, then auto-connect to the remembered controller.
             Services.GetRequiredService<Services.ChannelRuntime>();
             Services.GetRequiredService<Services.DeviceStateService>();
+            Services.GetRequiredService<Services.VolumeOverlayController>();
             Services.GetRequiredService<Services.SerialConnectionService>().AutoConnect();
         }
 
@@ -87,6 +88,9 @@ public partial class App : Application
         // Device state push: PC → ESP32 STATE/CHSTATE + OLED config so the
         // physical OLEDs/display reflect live audio.
         services.AddSingleton<Services.DeviceStateService>();
+
+        // On-screen volume overlay: transient popup on knob/preset/mute changes.
+        services.AddSingleton<Services.VolumeOverlayController>();
 
         // Settings: loaded once at startup, shared, persisted on change.
         services.AddSingleton<Services.SettingsService>(_ =>
