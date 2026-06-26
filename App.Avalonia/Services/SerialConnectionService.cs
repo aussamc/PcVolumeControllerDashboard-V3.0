@@ -106,6 +106,18 @@ public sealed class SerialConnectionService : IDisposable
         StartScan(quiet: false);
     }
 
+    /// <summary>
+    /// Manual (re)connect from the UI: arms auto-reconnect and scans for the
+    /// controller now, regardless of the auto-connect-on-launch preference. Clears
+    /// any prior user Disconnect().
+    /// </summary>
+    public void Reconnect()
+    {
+        _autoReconnect = true;
+        EnsureMonitor();
+        StartScan(quiet: false);
+    }
+
     /// <summary>Explicitly connects to a single port (e.g. from a future UI).</summary>
     public void Connect(string port)
     {

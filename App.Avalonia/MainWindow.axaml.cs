@@ -149,14 +149,24 @@ public partial class MainWindow : Window
 
     private void UpdateConnectionStatus()
     {
-        ConnectionStatusText.Text = _connection?.State switch
+        SerialConnectionState state = _connection?.State ?? SerialConnectionState.Disconnected;
+
+        ConnectionStatusText.Text = state switch
         {
             SerialConnectionState.Connected =>
-                $"Connected — protocol {_connection.Protocol}, chip {(_connection.ConnectedChipId is { Length: > 0 } c ? c : "(none)")}",
+                $"Connected — protocol {_connection!.Protocol}, chip {(_connection.ConnectedChipId is { Length: > 0 } c ? c : "(none)")}",
             SerialConnectionState.Identifying => "Identifying controller…",
             _ => "Disconnected",
         };
+
+        // Reconnect only makes sense while disconnected; Disconnect while linked/scanning.
+        ReconnectButton.IsEnabled = _connection != null && state == SerialConnectionState.Disconnected;
+        DisconnectButton.IsEnabled = _connection != null && state != SerialConnectionState.Disconnected;
     }
+
+    private void ReconnectButton_Click(object? sender, RoutedEventArgs e) => _connection?.Reconnect();
+
+    private void DisconnectButton_Click(object? sender, RoutedEventArgs e) => _connection?.Disconnect();
 
     private void RefreshTargets()
     {
