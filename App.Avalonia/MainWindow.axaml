@@ -347,12 +347,26 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- ── Audio backend ────────────────────────────────────── -->
+                    <Border Classes="card">
+                        <StackPanel>
+                            <TextBlock Classes="h2" Text="Audio Backend" />
+                            <TextBlock Classes="muted" Margin="0,0,0,8"
+                                       Text="WASAPI controls Windows app/session volumes directly. VoiceMeeter routes through the VoiceMeeter Remote API (Windows only; requires VoiceMeeter installed and running)." />
+                            <RadioButton x:Name="WasapiRadioButton" GroupName="AudioBackend" Content="WASAPI (Windows audio sessions)"
+                                         IsCheckedChanged="AudioBackendRadioButton_Changed" />
+                            <RadioButton x:Name="VoiceMeeterRadioButton" GroupName="AudioBackend" Content="VoiceMeeter"
+                                         IsCheckedChanged="AudioBackendRadioButton_Changed" />
+                            <TextBlock x:Name="AudioBackendStatusText" Classes="muted" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+
                     <!-- ── Not yet ported ───────────────────────────────────── -->
                     <Border Classes="card">
                         <StackPanel>
                             <TextBlock Classes="h2" Text="Coming in later PRs" />
                             <TextBlock Classes="muted"
-                                       Text="These Setup features depend on subsystems not yet ported to the Avalonia host: audio-backend switching, global hotkey capture, device diagnostics, software updates, setup import/export, diagnostics zip, the first-run wizard, and the About dialog. They are tracked in the v3 roadmap and land alongside their subsystems." />
+                                       Text="These Setup features depend on subsystems not yet ported to the Avalonia host: global hotkey capture, software updates, and the first-run wizard. They are tracked in the v3 roadmap and land alongside their subsystems." />
                         </StackPanel>
                     </Border>
 
