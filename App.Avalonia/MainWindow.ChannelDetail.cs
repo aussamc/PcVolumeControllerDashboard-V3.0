@@ -114,6 +114,7 @@ public partial class MainWindow : Window
         DetailPreset3Name.Text = ch.Presets[2].Name; DetailPreset3Vol.Value = ch.Presets[2].VolumePercent;
 
         SelectByKey(DetailOledModeCombo, ch.OledDisplayMode);
+        DetailLinkGroupBox.Text = ch.LinkedGroupId;
 
         _detailLoading = false;
     }
@@ -251,6 +252,21 @@ public partial class MainWindow : Window
         ch.OledDisplayMode = SelectedKey(DetailOledModeCombo, string.Empty);
         Save();
         _deviceState?.PushAllChannelOledModes(); // apply DISPMODE to the device live
+    }
+
+    // ── Link group ────────────────────────────────────────────────────────────
+
+    private void DetailLinkGroup_Committed(object? sender, RoutedEventArgs e)
+    {
+        ChannelSettings? ch = CurrentDetailChannel();
+        if (ch == null) return;
+        ch.LinkedGroupId = (DetailLinkGroupBox.Text ?? string.Empty).Trim();
+        Save();
+    }
+
+    private void DetailLinkGroup_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) DetailLinkGroup_Committed(sender, e);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

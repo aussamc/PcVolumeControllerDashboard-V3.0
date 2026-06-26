@@ -115,26 +115,65 @@ public sealed class ChannelRuntime : IDisposable
 
         int deltaPercent = delta * step;
 
-        // Smoothing path: ease the volume toward a target over EMA ticks. Falls
-        // back to a direct write when the channel is currently unavailable so the
-        // encoder is never a silent no-op.
+        // Apply to the turned channel (shows the overlay), then propagate the same
+        // delta to any channels sharing its link group (ganged-pot behaviour) —
+        // those don't pop their own overlay.
+        ApplyVolumeDelta(index, channel, deltaPercent, step, showOverlay: true);
+
+        foreach (int linked in GetLinkedChannelIndices(index))
+        {
+            ChannelSettings lc = _settings.Settings.Channels[linked];
+            if (string.IsNullOrWhiteSpace(lc.TargetKey)) continue;
+            ApplyVolumeDelta(linked, lc, deltaPercent, step, showOverlay: false);
+        }
+    }
+
+    // Applies a (signed) percentage delta to one channel via the smoothing path
+    // (when enabled and the channel is available) or a direct relative write.
+    private void ApplyVolumeDelta(int index, ChannelSettings channel, int deltaPercent, int step, bool showOverlay)
+    {
+        DashboardSettings s = _settings.Settings;
+
         if (s.VolumeSmoothingEnabled && TryStartOrExtendSmoothing(index, channel, deltaPercent / 100f))
         {
             EnsureSmoothingTimer();
-            SmoothingTick(); // first step inline for immediate response
-            RaiseVolume(index, channel, (int)Math.Round(_smoothingTarget[index] * 100),
-                _audio.GetMuteByKey(channel.TargetKey) ?? false);
+            if (showOverlay)
+            {
+                // The source channel's inline tick advances every active channel
+                // (linked ones included) one step for immediate response; linked
+                // channels otherwise start on the next timer tick.
+                SmoothingTick();
+                RaiseVolume(index, channel, (int)Math.Round(_smoothingTarget[index] * 100),
+                    _audio.GetMuteByKey(channel.TargetKey) ?? false);
+            }
             return;
         }
 
-        // Direct (relative) path.
         int result = _audio.AdjustVolumeByKey(channel.TargetKey, deltaPercent, channel.MinVolumePercent, channel.MaxVolumePercent);
         if (result >= 0)
         {
-            RaiseVolume(index, channel, result, _audio.GetMuteByKey(channel.TargetKey) ?? false);
+            if (showOverlay)
+                RaiseVolume(index, channel, result, _audio.GetMuteByKey(channel.TargetKey) ?? false);
             if (s.AdvancedDebugLogging)
                 _log.Log($"Ch{index + 1} {channel.TargetKey}: {result}% (step {step}%)");
         }
+    }
+
+    /// <summary>
+    /// Indices of the other channels sharing <paramref name="sourceIndex"/>'s
+    /// non-empty link group (ganged volume). Empty group = not linked.
+    /// </summary>
+    private IEnumerable<int> GetLinkedChannelIndices(int sourceIndex)
+    {
+        ChannelSettings[] channels = _settings.Settings.Channels;
+        if (sourceIndex < 0 || sourceIndex >= channels.Length) yield break;
+
+        string group = channels[sourceIndex].LinkedGroupId;
+        if (string.IsNullOrEmpty(group)) yield break;
+
+        for (int i = 0; i < channels.Length; i++)
+            if (i != sourceIndex && string.Equals(channels[i].LinkedGroupId, group, StringComparison.Ordinal))
+                yield return i;
     }
 
     /// <summary>

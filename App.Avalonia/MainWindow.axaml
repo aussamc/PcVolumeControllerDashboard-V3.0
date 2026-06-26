@@ -173,6 +173,12 @@
                             <TextBlock Classes="h3" Text="OLED display mode" Margin="0,12,0,4" />
                             <ComboBox x:Name="DetailOledModeCombo" Width="260" HorizontalAlignment="Left"
                                       SelectionChanged="DetailOledMode_Changed" />
+
+                            <TextBlock Classes="h3" Text="Link group" Margin="0,12,0,4" />
+                            <TextBlock Classes="muted" Margin="0,0,0,4"
+                                       Text="Channels sharing the same link group name move together when you turn any one of them (ganged volume). Leave blank for none." />
+                            <TextBox x:Name="DetailLinkGroupBox" Width="260" HorizontalAlignment="Left" Watermark="e.g. headset"
+                                     LostFocus="DetailLinkGroup_Committed" KeyDown="DetailLinkGroup_KeyDown" />
                         </StackPanel>
                     </Border>
 
