@@ -22,6 +22,8 @@ public sealed class VolumeOverlay : Window
     private const double OverlayWidth = 320;
     private const double OverlayHeight = 84;
     private const int ScreenMarginDip = 28;
+    private const int FadeStepMs = 16;        // ~60 fps
+    private const double FadeStep = 0.06;     // ~17 steps ≈ 270 ms fade-out
 
     private static readonly IBrush PanelBrush = new SolidColorBrush(Color.FromArgb(0xE6, 0x1E, 0x1E, 0x1E));
     private static readonly IBrush TrackBrush = new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF));
@@ -33,6 +35,7 @@ public sealed class VolumeOverlay : Window
     private readonly Border _fill;
     private readonly Border _track;
     private readonly DispatcherTimer _hideTimer;
+    private readonly DispatcherTimer _fadeTimer;
 
     public VolumeOverlay()
     {
@@ -74,8 +77,25 @@ public sealed class VolumeOverlay : Window
             Child = new StackPanel { Children = { header, _track } },
         };
 
+        // After the visible timeout, fade the window out rather than cutting it off.
         _hideTimer = new DispatcherTimer();
-        _hideTimer.Tick += (_, _) => { _hideTimer.Stop(); Hide(); };
+        _hideTimer.Tick += (_, _) => { _hideTimer.Stop(); _fadeTimer.Start(); };
+
+        _fadeTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(FadeStepMs) };
+        _fadeTimer.Tick += OnFadeTick;
+    }
+
+    private void OnFadeTick(object? sender, EventArgs e)
+    {
+        double next = Opacity - FadeStep;
+        if (next <= 0)
+        {
+            _fadeTimer.Stop();
+            Hide();
+            Opacity = 1; // ready for the next show
+            return;
+        }
+        Opacity = next;
     }
 
     /// <summary>Shows/refreshes the overlay for a change and (re)starts the auto-hide timer.</summary>
@@ -89,6 +109,10 @@ public sealed class VolumeOverlay : Window
         double trackWidth = OverlayWidth - 36; // panel padding (18 each side)
         _fill.Width = Math.Max(0, trackWidth * Math.Clamp(info.VolumePercent, 0, 100) / 100.0);
         _fill.Height = 10;
+
+        // Cancel any in-flight fade-out and restore full opacity for this update.
+        _fadeTimer.Stop();
+        Opacity = 1;
 
         if (!IsVisible) Show();
         PositionOnScreen(position);
