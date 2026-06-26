@@ -131,6 +131,46 @@ public static class SettingsRepository
         }
     }
 
+    // ── Import / export (arbitrary paths) ─────────────────────────────────────────
+
+    /// <summary>
+    /// Serialises <paramref name="settings"/> to an arbitrary file (user "export
+    /// settings"). Creates the parent directory; propagates I/O errors to the caller.
+    /// </summary>
+    public static void ExportTo(DashboardSettings settings, string path)
+    {
+        string? directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrWhiteSpace(directory))
+            Directory.CreateDirectory(directory);
+        File.WriteAllText(path, JsonSerializer.Serialize(settings, _writeOptions));
+    }
+
+    /// <summary>
+    /// Reads and normalises settings from an arbitrary file (user "import settings").
+    /// Returns null if the file is missing or cannot be parsed — never throws.
+    /// </summary>
+    public static DashboardSettings? ImportFrom(string path, int channelCount, int maxEncoderSensitivityPercent)
+    {
+        if (!File.Exists(path))
+            return null;
+
+        DashboardSettings? parsed;
+        try
+        {
+            parsed = JsonSerializer.Deserialize<DashboardSettings>(File.ReadAllText(path));
+        }
+        catch
+        {
+            return null;
+        }
+
+        if (parsed == null)
+            return null;
+
+        Normalize(parsed, channelCount, maxEncoderSensitivityPercent);
+        return parsed;
+    }
+
     // ── Backup ───────────────────────────────────────────────────────────────────
 
     /// <summary>

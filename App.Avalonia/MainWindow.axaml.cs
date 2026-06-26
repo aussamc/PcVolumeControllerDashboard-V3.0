@@ -8,6 +8,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using PcVolumeControllerDashboard.App.Oled;
@@ -531,6 +532,80 @@ public partial class MainWindow : Window
         _initializing = true;
         ApplySettingsToUi();
         _initializing = false;
+        LoadChannelDetail(0);
+    }
+
+    private static readonly FilePickerFileType JsonSettingsType =
+        new("Dashboard settings (JSON)") { Patterns = new[] { "*.json" } };
+
+    private async void ExportSettingsButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_settingsService == null) return;
+        TopLevel? top = TopLevel.GetTopLevel(this);
+        if (top is null) return;
+
+        IStorageFile? file = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Export settings",
+            SuggestedFileName = $"pcvc-settings-{DateTime.Now:yyyyMMdd-HHmmss}.json",
+            DefaultExtension = "json",
+            FileTypeChoices = new[] { JsonSettingsType },
+        });
+        if (file is null) return;
+
+        try
+        {
+            _settingsService.ExportTo(file.Path.LocalPath);
+            ShowSettingsIoStatus($"Exported to {file.Name}.");
+        }
+        catch (Exception ex)
+        {
+            ShowSettingsIoStatus($"Export failed: {ex.Message}");
+        }
+    }
+
+    private async void ImportSettingsButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_settingsService == null) return;
+        TopLevel? top = TopLevel.GetTopLevel(this);
+        if (top is null) return;
+
+        IReadOnlyList<IStorageFile> files = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Import settings",
+            AllowMultiple = false,
+            FileTypeFilter = new[] { JsonSettingsType },
+        });
+        if (files.Count == 0) return;
+
+        bool ok = await Dialogs.ConfirmAsync(this, "Import settings",
+            "Replace your current settings with the imported file? Your current settings will be overwritten.");
+        if (!ok) return;
+
+        if (_settingsService.ImportFrom(files[0].Path.LocalPath))
+        {
+            _settings = _settingsService.Settings;
+            _initializing = true;
+            ApplySettingsToUi();
+            _initializing = false;
+            RefreshTargets();
+            RefreshChannelStates();
+            LoadChannelDetail(ChannelGrid.SelectedIndex >= 0 ? ChannelGrid.SelectedIndex : 0);
+            _deviceState?.PushOledConfig();
+            _deviceState?.PushAllChannelOledModes();
+            ShowSettingsIoStatus("Settings imported.");
+        }
+        else
+        {
+            await Dialogs.ShowAsync(this, "Import failed",
+                "That file could not be read as a valid settings file.");
+        }
+    }
+
+    private void ShowSettingsIoStatus(string message)
+    {
+        SettingsIoStatusText.Text = message;
+        SettingsIoStatusText.IsVisible = true;
     }
 
     // ── App info buttons ───────────────────────────────────────────────────────
