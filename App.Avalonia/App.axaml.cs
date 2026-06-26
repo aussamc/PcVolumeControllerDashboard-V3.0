@@ -106,7 +106,13 @@ public partial class App : Application
         services.AddSingleton<global::PcVolumeControllerDashboard.Core.Audio.IAudioBackend>(sp =>
         {
             var settings = sp.GetRequiredService<Services.SettingsService>();
-            var backend = Audio.AudioBackendFactory.Create(settings.Settings.AudioBackendMode);
+            var log = sp.GetRequiredService<Services.LogService>();
+            // Wrap in a switchable backend so WASAPI ↔ VoiceMeeter can change at
+            // runtime without rebuilding the DI graph.
+            var backend = new Audio.SwitchableAudioBackend(
+                mode => Audio.AudioBackendFactory.Create(mode, log.Log),
+                settings.Settings.AudioBackendMode,
+                log.Log);
             backend.Initialise();
             return backend;
         });

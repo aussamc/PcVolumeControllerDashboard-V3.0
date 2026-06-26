@@ -322,6 +322,10 @@ public partial class MainWindow : Window
 
         UpdatePairedControllerLabel();
 
+        WasapiRadioButton.IsChecked      = _settings.AudioBackendMode != AudioBackendModes.VoiceMeeter;
+        VoiceMeeterRadioButton.IsChecked = _settings.AudioBackendMode == AudioBackendModes.VoiceMeeter;
+        UpdateAudioBackendStatus();
+
         EncoderSensitivitySlider.Value = Math.Clamp(_settings.EncoderSensitivityPercent, 0, 500);
         UpdateSensitivityLabel();
 
@@ -389,6 +393,33 @@ public partial class MainWindow : Window
         _settings.LastDeviceChipId = string.Empty;
         Save();
         UpdatePairedControllerLabel();
+    }
+
+    // ── Audio backend ─────────────────────────────────────────────────────────
+
+    private void AudioBackendRadioButton_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+
+        string mode = VoiceMeeterRadioButton.IsChecked == true
+            ? AudioBackendModes.VoiceMeeter
+            : AudioBackendModes.Wasapi;
+        if (mode == _settings.AudioBackendMode) return; // dedupe the paired check/uncheck events
+
+        _settings.AudioBackendMode = mode;
+        Save();
+
+        (_audioBackend as Audio.SwitchableAudioBackend)?.SwitchTo(mode);
+        RefreshTargets();
+        RefreshChannelStates();
+        UpdateAudioBackendStatus();
+    }
+
+    private void UpdateAudioBackendStatus()
+    {
+        int targets = _audioBackend?.GetAvailableTargets().Count ?? 0;
+        string name = _audioBackend?.BackendName ?? "None";
+        AudioBackendStatusText.Text = $"Active: {name} — {targets} target(s).";
     }
 
     private void UpdatePairedControllerLabel() =>
