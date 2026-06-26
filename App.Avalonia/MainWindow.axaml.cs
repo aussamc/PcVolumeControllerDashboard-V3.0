@@ -141,11 +141,12 @@ public partial class MainWindow : Window
                 }
             });
 
-        // Poll live channel state ~16x/sec so the physical OLEDs track a volume-
+        // Poll live channel state ~20x/sec so the physical OLEDs track a volume-
         // smoothing ramp smoothly (CHSTATE change-detection keeps it quiet when
         // idle). The OLED-tab preview render is gated to the OLED tab so the faster
-        // poll stays cheap. (The firmware's I2C OLED redraw is the real ceiling.)
-        _channelPollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(60) };
+        // poll stays cheap. 50ms sits just under the firmware's single-channel I2C
+        // OLED redraw ceiling (~30Hz at 400kHz); pushing faster only queues CHSTATE.
+        _channelPollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
         _channelPollTimer.Tick += (_, _) => RefreshChannelStates();
         _channelPollTimer.Start();
     }
