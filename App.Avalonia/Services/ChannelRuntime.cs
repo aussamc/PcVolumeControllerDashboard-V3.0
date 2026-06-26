@@ -260,9 +260,14 @@ public sealed class ChannelRuntime : IDisposable
                     _log.Log($"Ch{index + 1} {press.ToString().ToLowerInvariant()}-press: No action.");
                 break;
 
-            // Need subsystems not yet ported to Avalonia (profiles, output-device
-            // cycling, channel-selection UI). Logged so the behaviour is visible.
+            // Named profiles are descoped from the Avalonia port; a legacy settings
+            // file might still carry this action, so handle it as a no-op.
             case ChannelButtonActions.CycleNextProfile:
+                _log.Log($"Ch{index + 1}: 'Cycle profile' is not supported (named profiles are not part of this app).");
+                break;
+
+            // Need subsystems not yet ported to Avalonia (output-device cycling,
+            // channel-selection UI). Logged so the behaviour is visible.
             case ChannelButtonActions.CycleOutputDevice:
             case ChannelButtonActions.SelectNextChannel:
                 _log.Log($"Ch{index + 1} button action '{action}' not yet ported to Avalonia.");
