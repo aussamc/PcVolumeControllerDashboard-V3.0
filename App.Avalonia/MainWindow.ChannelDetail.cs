@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using PcVolumeControllerDashboard.Core;
+using PcVolumeControllerDashboard.Core.Audio;
 
 namespace PcVolumeControllerDashboard.App;
 
@@ -115,6 +116,7 @@ public partial class MainWindow : Window
 
         SelectByKey(DetailOledModeCombo, ch.OledDisplayMode);
         DetailLinkGroupBox.Text = ch.LinkedGroupId;
+        ReloadPoolList(ch);
 
         _detailLoading = false;
     }
@@ -267,6 +269,46 @@ public partial class MainWindow : Window
     private void DetailLinkGroup_KeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key == Key.Enter) DetailLinkGroup_Committed(sender, e);
+    }
+
+    // ── Multi-app pool ────────────────────────────────────────────────────────
+
+    private void ReloadPoolList(ChannelSettings ch) =>
+        DetailPoolList.ItemsSource = ch.TargetKeys.Select(k => new Option(k, LabelForKey(k))).ToList();
+
+    private void DetailPoolAdd_Click(object? sender, RoutedEventArgs e)
+    {
+        ChannelSettings? ch = CurrentDetailChannel();
+        if (ch == null) return;
+        if (DetailPoolCombo.SelectedItem is not AudioTarget target || string.IsNullOrWhiteSpace(target.Key)) return;
+        if (ch.TargetKeys.Contains(target.Key)) return; // no duplicates
+
+        ch.TargetKeys.Add(target.Key);
+        Save();
+        ReloadPoolList(ch);
+        RefreshChannelStates();
+    }
+
+    private void DetailPoolRemove_Click(object? sender, RoutedEventArgs e)
+    {
+        ChannelSettings? ch = CurrentDetailChannel();
+        if (ch == null) return;
+        if (DetailPoolList.SelectedItem is not Option o) return;
+
+        ch.TargetKeys.Remove(o.Key);
+        Save();
+        ReloadPoolList(ch);
+        RefreshChannelStates();
+    }
+
+    private void DetailPoolClear_Click(object? sender, RoutedEventArgs e)
+    {
+        ChannelSettings? ch = CurrentDetailChannel();
+        if (ch == null) return;
+        ch.TargetKeys.Clear();
+        Save();
+        ReloadPoolList(ch);
+        RefreshChannelStates();
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
