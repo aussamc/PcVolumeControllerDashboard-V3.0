@@ -141,8 +141,11 @@ public partial class MainWindow : Window
                 }
             });
 
-        // Poll live channel state (volume/mute/status) ~2x/sec, matching the WPF host.
-        _channelPollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        // Poll live channel state ~10x/sec so the physical OLEDs track a volume-
+        // smoothing ramp smoothly (CHSTATE change-detection keeps it quiet when
+        // idle). The OLED-tab preview render is gated to the OLED tab so the faster
+        // poll stays cheap.
+        _channelPollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
         _channelPollTimer.Tick += (_, _) => RefreshChannelStates();
         _channelPollTimer.Start();
     }
@@ -230,10 +233,15 @@ public partial class MainWindow : Window
         // The service applies change detection, so calling it every poll is cheap.
         _deviceState?.PushChannelStates(liveStates, ChannelGrid.SelectedIndex);
 
-        // Keep the OLED-tab previews in sync with the live hardware state.
+        // Keep the OLED-tab previews in sync with the live hardware state, but only
+        // render them while the OLED tab is actually showing (the poll runs ~10x/sec).
         _lastLive = liveStates;
-        RenderOledPreviews();
+        if (IsOledTabSelected())
+            RenderOledPreviews();
     }
+
+    private bool IsOledTabSelected() =>
+        (MainTabs.SelectedItem as TabItem)?.Header as string == "OLED Setup";
 
     private void AssignTarget_Click(object? sender, RoutedEventArgs e)
     {
