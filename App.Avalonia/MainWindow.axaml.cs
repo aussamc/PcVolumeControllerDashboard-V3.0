@@ -8,6 +8,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using PcVolumeControllerDashboard.App.Oled;
@@ -20,7 +21,7 @@ namespace PcVolumeControllerDashboard.App;
 public partial class MainWindow : Window
 {
     // Shipping dashboard version (bumped per Avalonia-tab milestone).
-    private const string DashboardVersion = "3.7";
+    private const string DashboardVersion = "3.8";
     private const string RequiredProtocolVersion = "2.24";
 
     private readonly SettingsService? _settingsService;
@@ -140,22 +141,36 @@ public partial class MainWindow : Window
                 }
             });
 
-        // Poll live channel state (volume/mute/status) ~2x/sec, matching the WPF host.
-        _channelPollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        // Poll live channel state ~20x/sec so the physical OLEDs track a volume-
+        // smoothing ramp smoothly (CHSTATE change-detection keeps it quiet when
+        // idle). The OLED-tab preview render is gated to the OLED tab so the faster
+        // poll stays cheap. 50ms sits just under the firmware's single-channel I2C
+        // OLED redraw ceiling (~30Hz at 400kHz); pushing faster only queues CHSTATE.
+        _channelPollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
         _channelPollTimer.Tick += (_, _) => RefreshChannelStates();
         _channelPollTimer.Start();
     }
 
     private void UpdateConnectionStatus()
     {
-        ConnectionStatusText.Text = _connection?.State switch
+        SerialConnectionState state = _connection?.State ?? SerialConnectionState.Disconnected;
+
+        ConnectionStatusText.Text = state switch
         {
             SerialConnectionState.Connected =>
-                $"Connected — protocol {_connection.Protocol}, chip {(_connection.ConnectedChipId is { Length: > 0 } c ? c : "(none)")}",
+                $"Connected — protocol {_connection!.Protocol}, chip {(_connection.ConnectedChipId is { Length: > 0 } c ? c : "(none)")}",
             SerialConnectionState.Identifying => "Identifying controller…",
             _ => "Disconnected",
         };
+
+        // Reconnect only makes sense while disconnected; Disconnect while linked/scanning.
+        ReconnectButton.IsEnabled = _connection != null && state == SerialConnectionState.Disconnected;
+        DisconnectButton.IsEnabled = _connection != null && state != SerialConnectionState.Disconnected;
     }
+
+    private void ReconnectButton_Click(object? sender, RoutedEventArgs e) => _connection?.Reconnect();
+
+    private void DisconnectButton_Click(object? sender, RoutedEventArgs e) => _connection?.Disconnect();
 
     private void RefreshTargets()
     {
@@ -219,10 +234,15 @@ public partial class MainWindow : Window
         // The service applies change detection, so calling it every poll is cheap.
         _deviceState?.PushChannelStates(liveStates, ChannelGrid.SelectedIndex);
 
-        // Keep the OLED-tab previews in sync with the live hardware state.
+        // Keep the OLED-tab previews in sync with the live hardware state, but only
+        // render them while the OLED tab is actually showing (the poll runs ~10x/sec).
         _lastLive = liveStates;
-        RenderOledPreviews();
+        if (IsOledTabSelected())
+            RenderOledPreviews();
     }
+
+    private bool IsOledTabSelected() =>
+        (MainTabs.SelectedItem as TabItem)?.Header as string == "OLED Setup";
 
     private void AssignTarget_Click(object? sender, RoutedEventArgs e)
     {
@@ -311,6 +331,10 @@ public partial class MainWindow : Window
 
         UpdatePairedControllerLabel();
 
+        WasapiRadioButton.IsChecked      = _settings.AudioBackendMode != AudioBackendModes.VoiceMeeter;
+        VoiceMeeterRadioButton.IsChecked = _settings.AudioBackendMode == AudioBackendModes.VoiceMeeter;
+        UpdateAudioBackendStatus();
+
         EncoderSensitivitySlider.Value = Math.Clamp(_settings.EncoderSensitivityPercent, 0, 500);
         UpdateSensitivityLabel();
 
@@ -378,6 +402,33 @@ public partial class MainWindow : Window
         _settings.LastDeviceChipId = string.Empty;
         Save();
         UpdatePairedControllerLabel();
+    }
+
+    // ── Audio backend ─────────────────────────────────────────────────────────
+
+    private void AudioBackendRadioButton_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+
+        string mode = VoiceMeeterRadioButton.IsChecked == true
+            ? AudioBackendModes.VoiceMeeter
+            : AudioBackendModes.Wasapi;
+        if (mode == _settings.AudioBackendMode) return; // dedupe the paired check/uncheck events
+
+        _settings.AudioBackendMode = mode;
+        Save();
+
+        (_audioBackend as Audio.SwitchableAudioBackend)?.SwitchTo(mode);
+        RefreshTargets();
+        RefreshChannelStates();
+        UpdateAudioBackendStatus();
+    }
+
+    private void UpdateAudioBackendStatus()
+    {
+        int targets = _audioBackend?.GetAvailableTargets().Count ?? 0;
+        string name = _audioBackend?.BackendName ?? "None";
+        AudioBackendStatusText.Text = $"Active: {name} — {targets} target(s).";
     }
 
     private void UpdatePairedControllerLabel() =>
@@ -531,9 +582,102 @@ public partial class MainWindow : Window
         _initializing = true;
         ApplySettingsToUi();
         _initializing = false;
+        LoadChannelDetail(0);
+    }
+
+    private static readonly FilePickerFileType JsonSettingsType =
+        new("Dashboard settings (JSON)") { Patterns = new[] { "*.json" } };
+
+    private async void ExportSettingsButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_settingsService == null) return;
+        TopLevel? top = TopLevel.GetTopLevel(this);
+        if (top is null) return;
+
+        IStorageFile? file = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Export settings",
+            SuggestedFileName = $"pcvc-settings-{DateTime.Now:yyyyMMdd-HHmmss}.json",
+            DefaultExtension = "json",
+            FileTypeChoices = new[] { JsonSettingsType },
+        });
+        if (file is null) return;
+
+        try
+        {
+            _settingsService.ExportTo(file.Path.LocalPath);
+            ShowSettingsIoStatus($"Exported to {file.Name}.");
+        }
+        catch (Exception ex)
+        {
+            ShowSettingsIoStatus($"Export failed: {ex.Message}");
+        }
+    }
+
+    private async void ImportSettingsButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_settingsService == null) return;
+        TopLevel? top = TopLevel.GetTopLevel(this);
+        if (top is null) return;
+
+        IReadOnlyList<IStorageFile> files = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Import settings",
+            AllowMultiple = false,
+            FileTypeFilter = new[] { JsonSettingsType },
+        });
+        if (files.Count == 0) return;
+
+        bool ok = await Dialogs.ConfirmAsync(this, "Import settings",
+            "Replace your current settings with the imported file? Your current settings will be overwritten.");
+        if (!ok) return;
+
+        if (_settingsService.ImportFrom(files[0].Path.LocalPath))
+        {
+            _settings = _settingsService.Settings;
+            _initializing = true;
+            ApplySettingsToUi();
+            _initializing = false;
+            RefreshTargets();
+            RefreshChannelStates();
+            LoadChannelDetail(ChannelGrid.SelectedIndex >= 0 ? ChannelGrid.SelectedIndex : 0);
+            _deviceState?.PushOledConfig();
+            _deviceState?.PushAllChannelOledModes();
+            ShowSettingsIoStatus("Settings imported.");
+        }
+        else
+        {
+            await Dialogs.ShowAsync(this, "Import failed",
+                "That file could not be read as a valid settings file.");
+        }
+    }
+
+    private void ShowSettingsIoStatus(string message)
+    {
+        SettingsIoStatusText.Text = message;
+        SettingsIoStatusText.IsVisible = true;
     }
 
     // ── App info buttons ───────────────────────────────────────────────────────
+
+    private const string ProjectUrl = "https://github.com/aussamc/PcVolumeControllerDashboard-V3.0";
+
+    private async void AboutButton_Click(object? sender, RoutedEventArgs e)
+    {
+        string controller = _connection?.State == SerialConnectionState.Connected
+            ? $"Connected controller: protocol {_connection.Protocol}, chip {(_connection.ConnectedChipId is { Length: > 0 } c ? c : "(none)")}"
+            : "Controller: not connected";
+
+        string info =
+            $"PC Volume Controller Dashboard\n" +
+            $"Version {DashboardVersion} (Avalonia)\n" +
+            $"Required controller protocol: {RequiredProtocolVersion}\n\n" +
+            $"{controller}\n\n" +
+            "A cross-platform dashboard for the PC Volume Controller hardware.\n" +
+            $"{ProjectUrl}";
+
+        await Dialogs.ShowAboutAsync(this, "About", info, ProjectUrl);
+    }
 
     private void OpenLogFolderButton_Click(object? sender, RoutedEventArgs e)
     {

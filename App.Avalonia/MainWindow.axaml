@@ -52,7 +52,13 @@
                     <Border Classes="card">
                         <StackPanel>
                             <TextBlock Classes="h2" Text="Controller" />
-                            <TextBlock x:Name="ConnectionStatusText" Text="Disconnected" />
+                            <TextBlock x:Name="ConnectionStatusText" Text="Disconnected" Margin="0,0,0,8" />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button x:Name="ReconnectButton" Content="Reconnect" Click="ReconnectButton_Click"
+                                        ToolTip.Tip="Scan the COM ports and connect to the controller" />
+                                <Button x:Name="DisconnectButton" Content="Disconnect" Click="DisconnectButton_Click"
+                                        ToolTip.Tip="Close the connection and stop auto-reconnecting until you reconnect" />
+                            </StackPanel>
                         </StackPanel>
                     </Border>
 
@@ -195,6 +201,7 @@
                             <TextBlock x:Name="ExpectedProtocolText" Margin="0,0,0,4" />
                             <TextBlock x:Name="SettingsPathText" Classes="muted" Margin="0,0,0,8" />
                             <WrapPanel>
+                                <Button x:Name="AboutButton" Content="About" Margin="0,0,8,0" Click="AboutButton_Click" />
                                 <Button x:Name="OpenLogFolderButton" Content="Open log folder" Margin="0,0,8,0" Click="OpenLogFolderButton_Click" />
                                 <Button x:Name="CopySettingsPathButton" Content="Copy settings path" Margin="0,0,8,0" Click="CopySettingsPathButton_Click" />
                                 <Button x:Name="ExportDiagnosticsButton" Content="Export diagnostics" Click="ExportDiagnosticsButton_Click" />
@@ -338,12 +345,34 @@
                     <Border Classes="card">
                         <StackPanel>
                             <TextBlock Classes="h2" Text="Maintenance" />
-                            <Button x:Name="FactoryResetButton" Content="Factory Reset Setup"
-                                    HorizontalAlignment="Left"
-                                    ToolTip.Tip="Reset all settings to factory defaults (cannot be undone)"
-                                    Click="FactoryResetButton_Click" />
+                            <WrapPanel>
+                                <Button x:Name="ExportSettingsButton" Content="Export settings…" Margin="0,0,8,0"
+                                        ToolTip.Tip="Save a copy of your current settings to a file"
+                                        Click="ExportSettingsButton_Click" />
+                                <Button x:Name="ImportSettingsButton" Content="Import settings…" Margin="0,0,8,0"
+                                        ToolTip.Tip="Replace your current settings with a previously exported file"
+                                        Click="ImportSettingsButton_Click" />
+                                <Button x:Name="FactoryResetButton" Content="Factory Reset Setup"
+                                        ToolTip.Tip="Reset all settings to factory defaults (cannot be undone)"
+                                        Click="FactoryResetButton_Click" />
+                            </WrapPanel>
+                            <TextBlock x:Name="SettingsIoStatusText" Classes="muted" Margin="0,8,0,0" IsVisible="False" />
                             <TextBlock Classes="muted" FontStyle="Italic" Margin="0,8,0,0"
                                        Text="Settings are saved automatically whenever you make a change." />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ── Audio backend ────────────────────────────────────── -->
+                    <Border Classes="card">
+                        <StackPanel>
+                            <TextBlock Classes="h2" Text="Audio Backend" />
+                            <TextBlock Classes="muted" Margin="0,0,0,8"
+                                       Text="WASAPI controls Windows app/session volumes directly. VoiceMeeter routes through the VoiceMeeter Remote API (Windows only; requires VoiceMeeter installed and running)." />
+                            <RadioButton x:Name="WasapiRadioButton" GroupName="AudioBackend" Content="WASAPI (Windows audio sessions)"
+                                         IsCheckedChanged="AudioBackendRadioButton_Changed" />
+                            <RadioButton x:Name="VoiceMeeterRadioButton" GroupName="AudioBackend" Content="VoiceMeeter"
+                                         IsCheckedChanged="AudioBackendRadioButton_Changed" />
+                            <TextBlock x:Name="AudioBackendStatusText" Classes="muted" Margin="0,4,0,0" />
                         </StackPanel>
                     </Border>
 
@@ -352,7 +381,7 @@
                         <StackPanel>
                             <TextBlock Classes="h2" Text="Coming in later PRs" />
                             <TextBlock Classes="muted"
-                                       Text="These Setup features depend on subsystems not yet ported to the Avalonia host: audio-backend switching, global hotkey capture, device diagnostics, software updates, setup import/export, diagnostics zip, the first-run wizard, and the About dialog. They are tracked in the v3 roadmap and land alongside their subsystems." />
+                                       Text="These Setup features depend on subsystems not yet ported to the Avalonia host: global hotkey capture, software updates, and the first-run wizard. They are tracked in the v3 roadmap and land alongside their subsystems." />
                         </StackPanel>
                     </Border>
 

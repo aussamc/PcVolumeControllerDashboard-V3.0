@@ -57,6 +57,7 @@ public partial class App : Application
             // producing them, then auto-connect to the remembered controller.
             Services.GetRequiredService<Services.ChannelRuntime>();
             Services.GetRequiredService<Services.DeviceStateService>();
+            Services.GetRequiredService<Services.VolumeOverlayController>();
             Services.GetRequiredService<Services.SerialConnectionService>().AutoConnect();
         }
 
@@ -88,6 +89,9 @@ public partial class App : Application
         // physical OLEDs/display reflect live audio.
         services.AddSingleton<Services.DeviceStateService>();
 
+        // On-screen volume overlay: transient popup on knob/preset/mute changes.
+        services.AddSingleton<Services.VolumeOverlayController>();
+
         // Settings: loaded once at startup, shared, persisted on change.
         services.AddSingleton<Services.SettingsService>(_ =>
         {
@@ -102,7 +106,13 @@ public partial class App : Application
         services.AddSingleton<global::PcVolumeControllerDashboard.Core.Audio.IAudioBackend>(sp =>
         {
             var settings = sp.GetRequiredService<Services.SettingsService>();
-            var backend = Audio.AudioBackendFactory.Create(settings.Settings.AudioBackendMode);
+            var log = sp.GetRequiredService<Services.LogService>();
+            // Wrap in a switchable backend so WASAPI ↔ VoiceMeeter can change at
+            // runtime without rebuilding the DI graph.
+            var backend = new Audio.SwitchableAudioBackend(
+                mode => Audio.AudioBackendFactory.Create(mode, log.Log),
+                settings.Settings.AudioBackendMode,
+                log.Log);
             backend.Initialise();
             return backend;
         });
