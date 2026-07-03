@@ -29,9 +29,9 @@ public partial class MainWindow : Window
     }
 
     // Button actions offered for each press. The runtime implements mute / presets
-    // / media now; output-device + select-next are accepted for parity and logged
-    // as not-yet-ported when triggered. (Named profiles are descoped from the
-    // Avalonia port, so CycleNextProfile is intentionally not offered.)
+    // / media now; select-next is accepted for parity and logged as not-yet-ported.
+    // Named profiles and output-device cycling are descoped from the Avalonia port
+    // (the latter kept in the roadmap), so they're intentionally not offered.
     private static readonly Option[] ButtonActionOptions =
     {
         new(ChannelButtonActions.ToggleAssignedMute, "Toggle mute"),
@@ -43,7 +43,6 @@ public partial class MainWindow : Window
         new(ChannelButtonActions.MediaNextTrack,     "Media: next track"),
         new(ChannelButtonActions.MediaPrevTrack,     "Media: previous track"),
         new(ChannelButtonActions.MediaStop,          "Media: stop"),
-        new(ChannelButtonActions.CycleOutputDevice,  "Cycle output device (coming soon)"),
         new(ChannelButtonActions.SelectNextChannel,  "Select next channel (coming soon)"),
     };
 
