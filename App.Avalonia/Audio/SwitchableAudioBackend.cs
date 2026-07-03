@@ -89,6 +89,7 @@ public sealed class SwitchableAudioBackend : IAudioBackend
     // ── Delegated operations ─────────────────────────────────────────────────
     public IReadOnlyList<AudioTarget> GetAvailableTargets() => _inner.GetAvailableTargets();
     public float GetVolumeByKey(string key) => _inner.GetVolumeByKey(key);
+    public bool IsKeyActive(string key) => _inner.IsKeyActive(key);
     public bool SetVolumeByKey(string key, float normalizedVolume) => _inner.SetVolumeByKey(key, normalizedVolume);
     public int AdjustVolumeByKey(string key, int deltaPercent, int minPercent, int maxPercent) =>
         _inner.AdjustVolumeByKey(key, deltaPercent, minPercent, maxPercent);

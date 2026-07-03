@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using PcVolumeControllerDashboard.Core;
+using PcVolumeControllerDashboard.Core.Audio;
 
 namespace PcVolumeControllerDashboard.App;
 
@@ -29,8 +30,9 @@ public partial class MainWindow : Window
     }
 
     // Button actions offered for each press. The runtime implements mute / presets
-    // / media now; profile + output-device + select-next are accepted for parity
-    // and logged as not-yet-ported when triggered.
+    // / media now; select-next is accepted for parity and logged as not-yet-ported.
+    // Named profiles and output-device cycling are descoped from the Avalonia port
+    // (the latter kept in the roadmap), so they're intentionally not offered.
     private static readonly Option[] ButtonActionOptions =
     {
         new(ChannelButtonActions.ToggleAssignedMute, "Toggle mute"),
@@ -42,8 +44,6 @@ public partial class MainWindow : Window
         new(ChannelButtonActions.MediaNextTrack,     "Media: next track"),
         new(ChannelButtonActions.MediaPrevTrack,     "Media: previous track"),
         new(ChannelButtonActions.MediaStop,          "Media: stop"),
-        new(ChannelButtonActions.CycleNextProfile,   "Cycle profile (coming soon)"),
-        new(ChannelButtonActions.CycleOutputDevice,  "Cycle output device (coming soon)"),
         new(ChannelButtonActions.SelectNextChannel,  "Select next channel (coming soon)"),
     };
 
@@ -114,6 +114,8 @@ public partial class MainWindow : Window
         DetailPreset3Name.Text = ch.Presets[2].Name; DetailPreset3Vol.Value = ch.Presets[2].VolumePercent;
 
         SelectByKey(DetailOledModeCombo, ch.OledDisplayMode);
+        DetailLinkGroupBox.Text = ch.LinkedGroupId;
+        ReloadPoolList(ch);
 
         _detailLoading = false;
     }
@@ -251,6 +253,61 @@ public partial class MainWindow : Window
         ch.OledDisplayMode = SelectedKey(DetailOledModeCombo, string.Empty);
         Save();
         _deviceState?.PushAllChannelOledModes(); // apply DISPMODE to the device live
+    }
+
+    // ── Link group ────────────────────────────────────────────────────────────
+
+    private void DetailLinkGroup_Committed(object? sender, RoutedEventArgs e)
+    {
+        ChannelSettings? ch = CurrentDetailChannel();
+        if (ch == null) return;
+        ch.LinkedGroupId = (DetailLinkGroupBox.Text ?? string.Empty).Trim();
+        Save();
+    }
+
+    private void DetailLinkGroup_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) DetailLinkGroup_Committed(sender, e);
+    }
+
+    // ── Multi-app pool ────────────────────────────────────────────────────────
+
+    private void ReloadPoolList(ChannelSettings ch) =>
+        DetailPoolList.ItemsSource = ch.TargetKeys.Select(k => new Option(k, LabelForKey(k))).ToList();
+
+    private void DetailPoolAdd_Click(object? sender, RoutedEventArgs e)
+    {
+        ChannelSettings? ch = CurrentDetailChannel();
+        if (ch == null) return;
+        if (DetailPoolCombo.SelectedItem is not AudioTarget target || string.IsNullOrWhiteSpace(target.Key)) return;
+        if (ch.TargetKeys.Contains(target.Key)) return; // no duplicates
+
+        ch.TargetKeys.Add(target.Key);
+        Save();
+        ReloadPoolList(ch);
+        RefreshChannelStates();
+    }
+
+    private void DetailPoolRemove_Click(object? sender, RoutedEventArgs e)
+    {
+        ChannelSettings? ch = CurrentDetailChannel();
+        if (ch == null) return;
+        if (DetailPoolList.SelectedItem is not Option o) return;
+
+        ch.TargetKeys.Remove(o.Key);
+        Save();
+        ReloadPoolList(ch);
+        RefreshChannelStates();
+    }
+
+    private void DetailPoolClear_Click(object? sender, RoutedEventArgs e)
+    {
+        ChannelSettings? ch = CurrentDetailChannel();
+        if (ch == null) return;
+        ch.TargetKeys.Clear();
+        Save();
+        ReloadPoolList(ch);
+        RefreshChannelStates();
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

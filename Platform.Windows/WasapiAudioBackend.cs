@@ -316,6 +316,31 @@ public sealed class WasapiAudioBackend : IAudioBackend
         catch { return -1f; }
     }
 
+    // Peak above this counts as "making sound". Well clear of silence's 0.0 while
+    // still catching quiet playback.
+    private const float ActivePeakThreshold = 0.005f;
+
+    public bool IsKeyActive(string key)
+    {
+        try
+        {
+            // Endpoints are always a valid live target.
+            if (IsMasterKey(key) || IsMicKey(key)) return true;
+
+            foreach (AudioSessionControl session in ResolveSessions(key))
+            {
+                try
+                {
+                    if (session.AudioMeterInformation?.MasterPeakValue > ActivePeakThreshold)
+                        return true;
+                }
+                catch { /* metering may be unavailable for a session; try the next */ }
+            }
+            return false;
+        }
+        catch { return false; }
+    }
+
     public bool SetVolumeByKey(string key, float normalizedVolume)
     {
         float v = Math.Clamp(normalizedVolume, 0f, 1f);

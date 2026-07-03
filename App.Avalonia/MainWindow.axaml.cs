@@ -21,7 +21,7 @@ namespace PcVolumeControllerDashboard.App;
 public partial class MainWindow : Window
 {
     // Shipping dashboard version (bumped per Avalonia-tab milestone).
-    private const string DashboardVersion = "3.8";
+    private const string DashboardVersion = "3.9";
     private const string RequiredProtocolVersion = "2.24";
 
     private readonly SettingsService? _settingsService;
@@ -180,6 +180,12 @@ public partial class MainWindow : Window
         // Preserve selection by key where possible.
         if (previous is AudioTarget prev)
             TargetCombo.SelectedItem = targets.FirstOrDefault(t => t.Key == prev.Key);
+
+        // The per-channel-detail pool picker draws from the same target list.
+        object? prevPool = DetailPoolCombo.SelectedItem;
+        DetailPoolCombo.ItemsSource = targets;
+        if (prevPool is AudioTarget pp)
+            DetailPoolCombo.SelectedItem = targets.FirstOrDefault(t => t.Key == pp.Key);
     }
 
     private void RefreshChannelStates()
@@ -198,8 +204,9 @@ public partial class MainWindow : Window
             bool muted = false;
             string status;
 
-            string key = ch.TargetKey;
-            if (string.IsNullOrWhiteSpace(key))
+            // Effective target key (a pool resolves to its first live entry).
+            string key = _audioBackend != null ? Audio.ChannelTargets.ResolveActiveKey(ch, _audioBackend) : ch.TargetKey;
+            if (!Audio.ChannelTargets.HasTarget(ch) || string.IsNullOrWhiteSpace(key))
             {
                 row.AssignedLabel = "Unassigned";
                 row.VolumeDisplay = "—";
@@ -208,7 +215,7 @@ public partial class MainWindow : Window
             }
             else
             {
-                row.AssignedLabel = LabelForKey(key);
+                row.AssignedLabel = Audio.ChannelTargets.UsesPool(ch) ? $"{LabelForKey(key)}  (pool)" : LabelForKey(key);
 
                 float vol = _audioBackend?.GetVolumeByKey(key) ?? -1f;
                 if (vol < 0f)

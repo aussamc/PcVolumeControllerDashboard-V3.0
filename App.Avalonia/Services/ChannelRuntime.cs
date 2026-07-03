@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 using Avalonia.Threading;
+using PcVolumeControllerDashboard.App.Audio;
 using PcVolumeControllerDashboard.Core;
 using PcVolumeControllerDashboard.Core.Audio;
 
@@ -45,6 +46,9 @@ public sealed class ChannelRuntime : IDisposable
     private readonly bool[] _smoothingActive = new bool[ExpectedChannelCount];
     private readonly float[] _smoothingCurrent = new float[ExpectedChannelCount];
     private readonly float[] _smoothingTarget = new float[ExpectedChannelCount];
+    // The resolved target key each channel is smoothing toward (the pool entry that
+    // was live when smoothing started) — stable for the duration of the ramp.
+    private readonly string[] _smoothingKey = new string[ExpectedChannelCount];
     private DispatcherTimer? _smoothingTimer;
 
     /// <summary>
@@ -96,7 +100,9 @@ public sealed class ChannelRuntime : IDisposable
     {
         if (delta == 0) return;
         if (!TryResolveChannel(firmwareChannel, out int index, out ChannelSettings channel)) return;
-        if (string.IsNullOrWhiteSpace(channel.TargetKey)) return;
+
+        string key = ChannelTargets.ResolveActiveKey(channel, _audio);
+        if (string.IsNullOrWhiteSpace(key)) return;
 
         DashboardSettings s = _settings.Settings;
 
@@ -115,26 +121,66 @@ public sealed class ChannelRuntime : IDisposable
 
         int deltaPercent = delta * step;
 
-        // Smoothing path: ease the volume toward a target over EMA ticks. Falls
-        // back to a direct write when the channel is currently unavailable so the
-        // encoder is never a silent no-op.
-        if (s.VolumeSmoothingEnabled && TryStartOrExtendSmoothing(index, channel, deltaPercent / 100f))
+        // Apply to the turned channel (shows the overlay), then propagate the same
+        // delta to any channels sharing its link group (ganged-pot behaviour) —
+        // those don't pop their own overlay. Each channel resolves its own pool key.
+        ApplyVolumeDelta(index, channel, key, deltaPercent, step, showOverlay: true);
+
+        foreach (int linked in GetLinkedChannelIndices(index))
+        {
+            ChannelSettings lc = _settings.Settings.Channels[linked];
+            string lkey = ChannelTargets.ResolveActiveKey(lc, _audio);
+            if (string.IsNullOrWhiteSpace(lkey)) continue;
+            ApplyVolumeDelta(linked, lc, lkey, deltaPercent, step, showOverlay: false);
+        }
+    }
+
+    // Applies a (signed) percentage delta to one channel's resolved target key via
+    // the smoothing path (when enabled and the key is available) or a direct write.
+    private void ApplyVolumeDelta(int index, ChannelSettings channel, string key, int deltaPercent, int step, bool showOverlay)
+    {
+        DashboardSettings s = _settings.Settings;
+
+        if (s.VolumeSmoothingEnabled && TryStartOrExtendSmoothing(index, channel, key, deltaPercent / 100f))
         {
             EnsureSmoothingTimer();
-            SmoothingTick(); // first step inline for immediate response
-            RaiseVolume(index, channel, (int)Math.Round(_smoothingTarget[index] * 100),
-                _audio.GetMuteByKey(channel.TargetKey) ?? false);
+            if (showOverlay)
+            {
+                // The source channel's inline tick advances every active channel
+                // (linked ones included) one step for immediate response; linked
+                // channels otherwise start on the next timer tick.
+                SmoothingTick();
+                RaiseVolume(index, channel, (int)Math.Round(_smoothingTarget[index] * 100),
+                    _audio.GetMuteByKey(key) ?? false);
+            }
             return;
         }
 
-        // Direct (relative) path.
-        int result = _audio.AdjustVolumeByKey(channel.TargetKey, deltaPercent, channel.MinVolumePercent, channel.MaxVolumePercent);
+        int result = _audio.AdjustVolumeByKey(key, deltaPercent, channel.MinVolumePercent, channel.MaxVolumePercent);
         if (result >= 0)
         {
-            RaiseVolume(index, channel, result, _audio.GetMuteByKey(channel.TargetKey) ?? false);
+            if (showOverlay)
+                RaiseVolume(index, channel, result, _audio.GetMuteByKey(key) ?? false);
             if (s.AdvancedDebugLogging)
-                _log.Log($"Ch{index + 1} {channel.TargetKey}: {result}% (step {step}%)");
+                _log.Log($"Ch{index + 1} {key}: {result}% (step {step}%)");
         }
+    }
+
+    /// <summary>
+    /// Indices of the other channels sharing <paramref name="sourceIndex"/>'s
+    /// non-empty link group (ganged volume). Empty group = not linked.
+    /// </summary>
+    private IEnumerable<int> GetLinkedChannelIndices(int sourceIndex)
+    {
+        ChannelSettings[] channels = _settings.Settings.Channels;
+        if (sourceIndex < 0 || sourceIndex >= channels.Length) yield break;
+
+        string group = channels[sourceIndex].LinkedGroupId;
+        if (string.IsNullOrEmpty(group)) yield break;
+
+        for (int i = 0; i < channels.Length; i++)
+            if (i != sourceIndex && string.Equals(channels[i].LinkedGroupId, group, StringComparison.Ordinal))
+                yield return i;
     }
 
     /// <summary>
@@ -142,7 +188,7 @@ public sealed class ChannelRuntime : IDisposable
     /// Returns false (so the caller uses the direct path) when the channel's
     /// current volume can't be read to seed the interpolation.
     /// </summary>
-    private bool TryStartOrExtendSmoothing(int index, ChannelSettings channel, float deltaNorm)
+    private bool TryStartOrExtendSmoothing(int index, ChannelSettings channel, string key, float deltaNorm)
     {
         (float lo, float hi) = LimitsNormalized(channel);
 
@@ -153,11 +199,12 @@ public sealed class ChannelRuntime : IDisposable
             return true;
         }
 
-        float current = _audio.GetVolumeByKey(channel.TargetKey);
+        float current = _audio.GetVolumeByKey(key);
         if (current < 0f) return false; // unavailable → caller falls back to direct write
 
         _smoothingCurrent[index] = Math.Clamp(current, lo, hi);
         _smoothingTarget[index] = Math.Clamp(current + deltaNorm, lo, hi);
+        _smoothingKey[index] = key;
         _smoothingActive[index] = true;
         return true;
     }
@@ -182,7 +229,6 @@ public sealed class ChannelRuntime : IDisposable
     private void SmoothingTick()
     {
         float alpha = EncoderMath.GetSmoothingAlpha(_settings.Settings.VolumeSmoothingSpeed);
-        ChannelSettings[] channels = _settings.Settings.Channels;
         bool anyActive = false;
 
         for (int ch = 0; ch < ExpectedChannelCount; ch++)
@@ -206,8 +252,9 @@ public sealed class ChannelRuntime : IDisposable
 
             _smoothingCurrent[ch] = next;
 
-            if (ch < channels.Length && !string.IsNullOrWhiteSpace(channels[ch].TargetKey))
-                _audio.SetVolumeByKey(channels[ch].TargetKey, next);
+            // Write to the key captured when this channel's ramp started (honours pools).
+            if (!string.IsNullOrWhiteSpace(_smoothingKey[ch]))
+                _audio.SetVolumeByKey(_smoothingKey[ch], next);
         }
 
         if (!anyActive) StopSmoothingTimer();
@@ -236,15 +283,18 @@ public sealed class ChannelRuntime : IDisposable
         switch (action)
         {
             case ChannelButtonActions.ToggleAssignedMute:
-                if (string.IsNullOrWhiteSpace(channel.TargetKey)) return;
-                bool? muted = _audio.ToggleMuteByKey(channel.TargetKey);
+            {
+                string muteKey = ChannelTargets.ResolveActiveKey(channel, _audio);
+                if (string.IsNullOrWhiteSpace(muteKey)) return;
+                bool? muted = _audio.ToggleMuteByKey(muteKey);
                 if (muted != null)
                 {
-                    _log.Log($"Ch{index + 1} {channel.TargetKey}: {(muted.Value ? "muted" : "unmuted")}");
-                    float v = _audio.GetVolumeByKey(channel.TargetKey);
+                    _log.Log($"Ch{index + 1} {muteKey}: {(muted.Value ? "muted" : "unmuted")}");
+                    float v = _audio.GetVolumeByKey(muteKey);
                     RaiseVolume(index, channel, v < 0f ? 0 : (int)Math.Round(v * 100), muted.Value);
                 }
                 break;
+            }
 
             case ChannelButtonActions.ApplyPreset1: ApplyPreset(index, channel, 0); break;
             case ChannelButtonActions.ApplyPreset2: ApplyPreset(index, channel, 1); break;
@@ -260,9 +310,14 @@ public sealed class ChannelRuntime : IDisposable
                     _log.Log($"Ch{index + 1} {press.ToString().ToLowerInvariant()}-press: No action.");
                 break;
 
-            // Need subsystems not yet ported to Avalonia (profiles, output-device
-            // cycling, channel-selection UI). Logged so the behaviour is visible.
+            // Named profiles are descoped from the Avalonia port; a legacy settings
+            // file might still carry this action, so handle it as a no-op.
             case ChannelButtonActions.CycleNextProfile:
+                _log.Log($"Ch{index + 1}: 'Cycle profile' is not supported (named profiles are not part of this app).");
+                break;
+
+            // Need subsystems not yet ported to Avalonia (output-device cycling,
+            // channel-selection UI). Logged so the behaviour is visible.
             case ChannelButtonActions.CycleOutputDevice:
             case ChannelButtonActions.SelectNextChannel:
                 _log.Log($"Ch{index + 1} button action '{action}' not yet ported to Avalonia.");
@@ -276,7 +331,8 @@ public sealed class ChannelRuntime : IDisposable
 
     private void ApplyPreset(int index, ChannelSettings channel, int presetIndex)
     {
-        if (string.IsNullOrWhiteSpace(channel.TargetKey)) return;
+        string key = ChannelTargets.ResolveActiveKey(channel, _audio);
+        if (string.IsNullOrWhiteSpace(key)) return;
         VolumePreset[] presets = channel.Presets;
         if (presets == null || presetIndex < 0 || presetIndex >= presets.Length) return;
 
@@ -287,22 +343,23 @@ public sealed class ChannelRuntime : IDisposable
         {
             if (!_smoothingActive[index])
             {
-                float current = _audio.GetVolumeByKey(channel.TargetKey);
+                float current = _audio.GetVolumeByKey(key);
                 _smoothingCurrent[index] = current >= 0f ? current : target;
             }
             _smoothingTarget[index] = target;
+            _smoothingKey[index] = key;
             _smoothingActive[index] = true;
             EnsureSmoothingTimer();
             SmoothingTick();
         }
         else
         {
-            _audio.SetVolumeByKey(channel.TargetKey, target);
+            _audio.SetVolumeByKey(key, target);
         }
 
         string presetName = string.IsNullOrWhiteSpace(preset.Name) ? $"Preset {presetIndex + 1}" : preset.Name;
-        _log.Log($"Ch{index + 1} {channel.TargetKey}: applied {presetName} ({preset.VolumePercent}%).");
-        RaiseVolume(index, channel, preset.VolumePercent, _audio.GetMuteByKey(channel.TargetKey) ?? false);
+        _log.Log($"Ch{index + 1} {key}: applied {presetName} ({preset.VolumePercent}%).");
+        RaiseVolume(index, channel, preset.VolumePercent, _audio.GetMuteByKey(key) ?? false);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
