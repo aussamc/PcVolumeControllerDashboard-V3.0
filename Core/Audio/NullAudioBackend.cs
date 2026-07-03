@@ -20,6 +20,7 @@ public sealed class NullAudioBackend : IAudioBackend
     public IReadOnlyList<AudioTarget> GetAvailableTargets() => Array.Empty<AudioTarget>();
 
     public float GetVolumeByKey(string key) => -1f;
+    public bool IsKeyActive(string key) => false;
     public bool SetVolumeByKey(string key, float normalizedVolume) => false;
     public int AdjustVolumeByKey(string key, int deltaPercent, int minPercent, int maxPercent) => -1;
     public bool? GetMuteByKey(string key) => null;

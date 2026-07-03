@@ -404,6 +404,10 @@ public sealed class VoiceMeeterBackend : IAudioBackend
         catch { return -1f; }
     }
 
+    // VoiceMeeter strips/buses are always-present mixer channels (no per-app
+    // playing/idle notion), so an available key counts as active.
+    public bool IsKeyActive(string targetKey) => GetVolumeByKey(targetKey) >= 0f;
+
     public bool SetVolumeByKey(string targetKey, float normalizedVolume)
     {
         if (!_isAvailable || _setFloat == null) return false;

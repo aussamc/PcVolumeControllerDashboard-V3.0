@@ -47,6 +47,13 @@ public interface IAudioBackend : IDisposable
     /// <summary>Current normalised volume (0–1) for the key, or −1 on failure.</summary>
     float GetVolumeByKey(string key);
 
+    /// <summary>
+    /// True if the key is currently producing audible sound (e.g. a WASAPI session
+    /// with a non-trivial peak level). Used to resolve multi-app pools to whichever
+    /// member is actually playing. Endpoints (master/mic) count as active.
+    /// </summary>
+    bool IsKeyActive(string key);
+
     /// <summary>Sets the absolute normalised volume (0–1) for the key. False on failure.</summary>
     bool SetVolumeByKey(string key, float normalizedVolume);
 

@@ -24,13 +24,23 @@ public static class ChannelTargets
             return ch.TargetKey;
 
         string? firstNonEmpty = null;
+        string? firstAvailable = null;
         foreach (string k in pool)
         {
             if (string.IsNullOrWhiteSpace(k)) continue;
             firstNonEmpty ??= k;
-            if (audio.GetVolumeByKey(k) >= 0f) return k; // first live session wins
+
+            bool available = audio.GetVolumeByKey(k) >= 0f;
+            if (available)
+            {
+                firstAvailable ??= k;
+                if (audio.IsKeyActive(k)) return k; // the one currently making sound wins
+            }
         }
-        return firstNonEmpty ?? ch.TargetKey;
+
+        // Nothing actively playing → fall back to the first running app, else the
+        // first entry, so the knob still targets something meaningful.
+        return firstAvailable ?? firstNonEmpty ?? ch.TargetKey;
     }
 
     /// <summary>True if the channel has any assigned target (single or a non-empty pool).</summary>
