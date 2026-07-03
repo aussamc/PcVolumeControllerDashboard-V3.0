@@ -11,6 +11,7 @@ using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using Microsoft.Extensions.DependencyInjection;
 using PcVolumeControllerDashboard.App.Oled;
 using PcVolumeControllerDashboard.App.Services;
 using PcVolumeControllerDashboard.Core;
@@ -684,6 +685,54 @@ public partial class MainWindow : Window
             $"{ProjectUrl}";
 
         await Dialogs.ShowAboutAsync(this, "About", info, ProjectUrl);
+    }
+
+    // ── Software updates ─────────────────────────────────────────────────────────
+
+    private string? _latestReleaseUrl;
+
+    private async void CheckUpdatesButton_Click(object? sender, RoutedEventArgs e)
+    {
+        var service = App.Services.GetService<UpdateCheckService>();
+        if (service == null) return;
+
+        CheckUpdatesButton.IsEnabled = false;
+        ViewReleaseButton.IsVisible = false;
+        ShowUpdateStatus("Checking for updates…");
+
+        UpdateCheckResult result = await service.CheckAsync(DashboardVersion);
+
+        if (result.ErrorMessage != null)
+        {
+            ShowUpdateStatus($"Couldn't check for updates: {result.ErrorMessage}");
+        }
+        else if (result.NoReleasesPublished)
+        {
+            ShowUpdateStatus("No releases have been published yet.");
+        }
+        else if (result.UpdateAvailable)
+        {
+            _latestReleaseUrl = result.ReleaseUrl;
+            ViewReleaseButton.IsVisible = true;
+            ShowUpdateStatus($"Update available: version {result.LatestVersion} (you have {DashboardVersion}).");
+        }
+        else
+        {
+            ShowUpdateStatus($"You're up to date (version {DashboardVersion}).");
+        }
+
+        CheckUpdatesButton.IsEnabled = true;
+    }
+
+    private void ViewReleaseButton_Click(object? sender, RoutedEventArgs e)
+    {
+        Dialogs.OpenUrl(_latestReleaseUrl ?? ProjectUrl);
+    }
+
+    private void ShowUpdateStatus(string message)
+    {
+        UpdateStatusText.Text = message;
+        UpdateStatusText.IsVisible = true;
     }
 
     private void OpenLogFolderButton_Click(object? sender, RoutedEventArgs e)

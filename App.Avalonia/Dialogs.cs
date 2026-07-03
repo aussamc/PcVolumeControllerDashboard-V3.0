@@ -143,7 +143,8 @@ public static class Dialogs
         return tcs.Task;
     }
 
-    private static void OpenUrl(string url)
+    /// <summary>Opens a URL in the user's default browser (best-effort; never throws).</summary>
+    public static void OpenUrl(string url)
     {
         try { Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true }); }
         catch { /* best-effort: no browser / blocked */ }

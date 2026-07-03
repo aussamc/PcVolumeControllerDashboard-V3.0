@@ -92,6 +92,9 @@ public partial class App : Application
         // On-screen volume overlay: transient popup on knob/preset/mute changes.
         services.AddSingleton<Services.VolumeOverlayController>();
 
+        // Software update check (queries GitHub Releases; manual/user-triggered).
+        services.AddSingleton<Services.UpdateCheckService>();
+
         // Settings: loaded once at startup, shared, persisted on change.
         services.AddSingleton<Services.SettingsService>(_ =>
         {
