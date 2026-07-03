@@ -256,6 +256,15 @@
                                     HorizontalAlignment="Left"
                                     ToolTip.Tip="Clear the paired controller chip ID so the next connection auto-pairs with any controller"
                                     Click="ForgetControllerButton_Click" />
+
+                            <Separator Margin="0,8,0,8" />
+                            <TextBlock Text="Setup Wizard" FontWeight="SemiBold" Margin="0,0,0,4" />
+                            <TextBlock Classes="muted" Margin="0,0,0,8"
+                                       Text="Re-run the guided setup to reconnect, check the displays, and re-map your channels." />
+                            <Button x:Name="RunSetupWizardButton" Content="Run setup wizard again"
+                                    HorizontalAlignment="Left"
+                                    ToolTip.Tip="Open the first-run setup wizard again"
+                                    Click="RunSetupWizardButton_Click" />
                         </StackPanel>
                     </Border>
 

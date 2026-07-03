@@ -11,6 +11,7 @@ using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using Microsoft.Extensions.DependencyInjection;
 using PcVolumeControllerDashboard.App.Oled;
 using PcVolumeControllerDashboard.App.Services;
 using PcVolumeControllerDashboard.Core;
@@ -409,6 +410,29 @@ public partial class MainWindow : Window
         _settings.LastDeviceChipId = string.Empty;
         Save();
         UpdatePairedControllerLabel();
+    }
+
+    private async void RunSetupWizardButton_Click(object? sender, RoutedEventArgs e)
+    {
+        var wizard = App.Services.GetService<FirstRunWizard>();
+        if (wizard == null) return;
+
+        // Pause the channel-state poll while the wizard is open so its OLED identify
+        // screens aren't immediately overwritten by CHSTATE pushes; resume on close.
+        _channelPollTimer?.Stop();
+        try
+        {
+            await wizard.ShowDialog(this);
+        }
+        finally
+        {
+            _channelPollTimer?.Start();
+            _deviceState?.ForceResend(); // redraw the OLEDs from live state after identify
+
+            // Reflect any channel assignments the wizard made.
+            RefreshChannelStates();
+            LoadChannelDetail(ChannelGrid.SelectedIndex >= 0 ? ChannelGrid.SelectedIndex : 0);
+        }
     }
 
     // ── Audio backend ─────────────────────────────────────────────────────────

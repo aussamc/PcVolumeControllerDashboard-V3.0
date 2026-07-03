@@ -78,11 +78,13 @@ public sealed class VolumeOverlay : Window
         };
 
         // After the visible timeout, fade the window out rather than cutting it off.
-        _hideTimer = new DispatcherTimer();
-        _hideTimer.Tick += (_, _) => { _hideTimer.Stop(); _fadeTimer.Start(); };
-
+        // Construct the fade timer before wiring the hide timer's Tick so the lambda
+        // captures an already-assigned field (avoids a spurious nullable warning).
         _fadeTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(FadeStepMs) };
         _fadeTimer.Tick += OnFadeTick;
+
+        _hideTimer = new DispatcherTimer();
+        _hideTimer.Tick += (_, _) => { _hideTimer.Stop(); _fadeTimer.Start(); };
     }
 
     private void OnFadeTick(object? sender, EventArgs e)

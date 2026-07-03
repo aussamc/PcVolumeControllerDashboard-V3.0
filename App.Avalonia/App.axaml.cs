@@ -38,30 +38,71 @@ public partial class App : Application
             var log = Services.GetRequiredService<Services.LogService>();
             DashboardSettings settings = settingsService.Settings;
 
-            _mainWindow = Services.GetRequiredService<MainWindow>();
-
             // Keep the HKCU Run entry in sync with the saved preference each launch
             // (covers the exe being moved/reinstalled). Windows-only; no-op elsewhere.
             Platform.WindowsGlue.ApplyRunOnStartup(settings.StartWithWindows, log.Log);
 
-            // Start hidden in the tray when requested; otherwise show the window.
-            // Leaving desktop.MainWindow unset keeps the framework from auto-showing
-            // it — the tray icon holds the app open and "Show Dashboard" reveals it.
-            if (settings.StartMinimizedToTray && settings.MinimizeToTray)
-                log.Log("Started minimized to tray.");
-            else
-                desktop.MainWindow = _mainWindow;
-
             // Activate the channel runtime and device-state push first so both are
             // subscribed to connection/device events before the connection starts
-            // producing them, then auto-connect to the remembered controller.
+            // producing them, then auto-connect to the remembered controller. Done
+            // before showing any window so the first-run wizard's connect and identify
+            // steps operate on the same live connection the dashboard uses.
             Services.GetRequiredService<Services.ChannelRuntime>();
             Services.GetRequiredService<Services.DeviceStateService>();
             Services.GetRequiredService<Services.VolumeOverlayController>();
             Services.GetRequiredService<Services.SerialConnectionService>().AutoConnect();
+
+            if (settingsService.IsFirstRun)
+            {
+                // Brand-new install: run the setup wizard first. The MainWindow is
+                // deliberately NOT built yet — its channel-state poll would start
+                // pushing CHSTATE and overwrite the wizard's OLED identify screens.
+                // ShutdownMode.OnExplicitShutdown + the tray icon keep the app alive
+                // while only the wizard is shown.
+                log.Log("First run detected — showing the setup wizard.");
+                var wizard = Services.GetRequiredService<FirstRunWizard>();
+                wizard.Completed += () => ShowDashboardAfterSetup(desktop, log);
+                wizard.Show();
+            }
+            else
+            {
+                ShowDashboardOnLaunch(desktop, settingsService, log);
+            }
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    /// <summary>
+    /// Normal-launch window handling: build the dashboard and either show it or
+    /// start hidden in the tray per the saved preference. Leaving desktop.MainWindow
+    /// unset (when starting hidden) keeps the framework from auto-showing it — the
+    /// tray icon holds the app open and "Show Dashboard" reveals it.
+    /// </summary>
+    private void ShowDashboardOnLaunch(IClassicDesktopStyleApplicationLifetime desktop,
+                                       Services.SettingsService settingsService, Services.LogService log)
+    {
+        DashboardSettings settings = settingsService.Settings;
+        _mainWindow = Services.GetRequiredService<MainWindow>();
+
+        if (settings.StartMinimizedToTray && settings.MinimizeToTray)
+            log.Log("Started minimized to tray.");
+        else
+            desktop.MainWindow = _mainWindow;
+    }
+
+    /// <summary>
+    /// Called when the first-run wizard finishes (or is skipped): build and show the
+    /// dashboard so the user lands on it right after setup, regardless of the
+    /// start-minimized preference.
+    /// </summary>
+    private void ShowDashboardAfterSetup(IClassicDesktopStyleApplicationLifetime desktop, Services.LogService log)
+    {
+        _mainWindow ??= Services.GetRequiredService<MainWindow>();
+        desktop.MainWindow = _mainWindow;
+        _mainWindow.Show();
+        _mainWindow.Activate();
+        log.Log("Setup complete — dashboard opened.");
     }
 
     /// <summary>
@@ -119,6 +160,9 @@ public partial class App : Application
 
         // The shell. Transient so a future "reopen window" can rebuild it.
         services.AddTransient<MainWindow>();
+
+        // First-run setup wizard (shown once on a fresh install; re-launchable later).
+        services.AddTransient<FirstRunWizard>();
 
         return services.BuildServiceProvider();
     }
