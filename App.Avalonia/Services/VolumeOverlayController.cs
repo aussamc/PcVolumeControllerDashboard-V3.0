@@ -11,14 +11,19 @@ namespace PcVolumeControllerDashboard.App.Services;
 public sealed class VolumeOverlayController : IDisposable
 {
     private readonly ChannelRuntime _runtime;
+    private readonly GlobalHotkeyManager _hotkeys;
     private readonly SettingsService _settings;
     private VolumeOverlay? _overlay;
 
-    public VolumeOverlayController(ChannelRuntime runtime, SettingsService settings)
+    public VolumeOverlayController(ChannelRuntime runtime, GlobalHotkeyManager hotkeys, SettingsService settings)
     {
         _runtime = runtime;
+        _hotkeys = hotkeys;
         _settings = settings;
+        // Both the controller (encoder/preset/mute) and the global master hotkeys
+        // funnel through the same overlay so any volume change the app makes shows it.
         _runtime.VolumeChanged += OnVolumeChanged;
+        _hotkeys.VolumeChanged += OnVolumeChanged;
     }
 
     // Raised on the UI thread by ChannelRuntime, so it's safe to touch the window here.
@@ -31,5 +36,9 @@ public sealed class VolumeOverlayController : IDisposable
         _overlay.ShowVolume(info, s.OverlayPosition, s.OverlayTimeoutSeconds);
     }
 
-    public void Dispose() => _runtime.VolumeChanged -= OnVolumeChanged;
+    public void Dispose()
+    {
+        _runtime.VolumeChanged -= OnVolumeChanged;
+        _hotkeys.VolumeChanged -= OnVolumeChanged;
+    }
 }

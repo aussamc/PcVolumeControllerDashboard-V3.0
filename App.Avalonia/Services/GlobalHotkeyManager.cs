@@ -38,6 +38,12 @@ public sealed class GlobalHotkeyManager : IDisposable
     /// <summary>Raised (on the UI thread) when the "show dashboard" hotkey fires.</summary>
     public event Action? ShowDashboardRequested;
 
+    /// <summary>
+    /// Raised (on the UI thread) after a master volume/mute hotkey changes the audio,
+    /// so the on-screen volume overlay reflects hotkey changes just like the encoder.
+    /// </summary>
+    public event Action<VolumeOverlayInfo>? VolumeChanged;
+
     public GlobalHotkeyManager(IAudioBackend audio, SettingsService settings, LogService log)
     {
         _audio = audio;
@@ -88,12 +94,15 @@ public sealed class GlobalHotkeyManager : IDisposable
                 {
                     case IdMasterVolumeUp:
                         _audio.AdjustVolumeByKey("MASTER", MasterStep(), 0, 100);
+                        RaiseMasterOverlay();
                         break;
                     case IdMasterVolumeDown:
                         _audio.AdjustVolumeByKey("MASTER", -MasterStep(), 0, 100);
+                        RaiseMasterOverlay();
                         break;
                     case IdToggleMasterMute:
                         _audio.ToggleMuteByKey("MASTER");
+                        RaiseMasterOverlay();
                         break;
                     case IdShowDashboard:
                         ShowDashboardRequested?.Invoke();
@@ -110,6 +119,16 @@ public sealed class GlobalHotkeyManager : IDisposable
     private int MasterStep() =>
         EncoderMath.StepFromSensitivity(_settings.Settings.EncoderSensitivityPercent,
             BaseVolumeStepPercent, MaxVolumeStepPercent, MaxEncoderSensitivityPercent);
+
+    /// <summary>Pops the overlay for the current master volume/mute after a hotkey change.</summary>
+    private void RaiseMasterOverlay()
+    {
+        float v = _audio.GetVolumeByKey("MASTER");
+        bool muted = _audio.GetMuteByKey("MASTER") ?? false;
+        int percent = v < 0f ? 0 : (int)Math.Round(v * 100);
+        try { VolumeChanged?.Invoke(new VolumeOverlayInfo(-1, "Master", percent, muted)); }
+        catch { /* overlay is best-effort */ }
+    }
 
     public void Dispose()
     {
