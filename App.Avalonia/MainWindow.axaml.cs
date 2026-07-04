@@ -413,6 +413,29 @@ public partial class MainWindow : Window
         UpdatePairedControllerLabel();
     }
 
+    private async void RunSetupWizardButton_Click(object? sender, RoutedEventArgs e)
+    {
+        var wizard = App.Services.GetService<FirstRunWizard>();
+        if (wizard == null) return;
+
+        // Pause the channel-state poll while the wizard is open so its OLED identify
+        // screens aren't immediately overwritten by CHSTATE pushes; resume on close.
+        _channelPollTimer?.Stop();
+        try
+        {
+            await wizard.ShowDialog(this);
+        }
+        finally
+        {
+            _channelPollTimer?.Start();
+            _deviceState?.ForceResend(); // redraw the OLEDs from live state after identify
+
+            // Reflect any channel assignments the wizard made.
+            RefreshChannelStates();
+            LoadChannelDetail(ChannelGrid.SelectedIndex >= 0 ? ChannelGrid.SelectedIndex : 0);
+        }
+    }
+
     // ── Audio backend ─────────────────────────────────────────────────────────
 
     private void AudioBackendRadioButton_Changed(object? sender, RoutedEventArgs e)
