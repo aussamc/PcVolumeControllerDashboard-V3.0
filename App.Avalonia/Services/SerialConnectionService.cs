@@ -115,6 +115,13 @@ public sealed class SerialConnectionService : IDisposable
     {
         _autoReconnect = true;
         EnsureMonitor();
+        // If a controller is already connected (or mid-identify), close the port
+        // first. Otherwise the rescan tries to Open() a port that's already open,
+        // skips every candidate, and gets stuck "searching" until the device is
+        // unplugged — this is what the wizard's "Scan again" hit. Closing lets the
+        // rescan reopen and re-identify cleanly.
+        if (State != SerialConnectionState.Disconnected)
+            ClosePort();
         StartScan(quiet: false);
     }
 

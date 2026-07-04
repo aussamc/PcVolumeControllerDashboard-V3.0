@@ -11,6 +11,7 @@ using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using Microsoft.Extensions.DependencyInjection;
 using PcVolumeControllerDashboard.App.Oled;
 using PcVolumeControllerDashboard.App.Services;
 using PcVolumeControllerDashboard.Core;
@@ -21,7 +22,7 @@ namespace PcVolumeControllerDashboard.App;
 public partial class MainWindow : Window
 {
     // Shipping dashboard version (bumped per Avalonia-tab milestone).
-    private const string DashboardVersion = "3.9";
+    private const string DashboardVersion = "3.10";
     private const string RequiredProtocolVersion = "2.24";
 
     private readonly SettingsService? _settingsService;
@@ -337,6 +338,7 @@ public partial class MainWindow : Window
         TrayNotificationsCheckBox.IsChecked    = _settings.TrayNotificationsEnabled;
 
         UpdatePairedControllerLabel();
+        UpdateHotkeyLabels();
 
         WasapiRadioButton.IsChecked      = _settings.AudioBackendMode != AudioBackendModes.VoiceMeeter;
         VoiceMeeterRadioButton.IsChecked = _settings.AudioBackendMode == AudioBackendModes.VoiceMeeter;
@@ -409,6 +411,29 @@ public partial class MainWindow : Window
         _settings.LastDeviceChipId = string.Empty;
         Save();
         UpdatePairedControllerLabel();
+    }
+
+    private async void RunSetupWizardButton_Click(object? sender, RoutedEventArgs e)
+    {
+        var wizard = App.Services.GetService<FirstRunWizard>();
+        if (wizard == null) return;
+
+        // Pause the channel-state poll while the wizard is open so its OLED identify
+        // screens aren't immediately overwritten by CHSTATE pushes; resume on close.
+        _channelPollTimer?.Stop();
+        try
+        {
+            await wizard.ShowDialog(this);
+        }
+        finally
+        {
+            _channelPollTimer?.Start();
+            _deviceState?.ForceResend(); // redraw the OLEDs from live state after identify
+
+            // Reflect any channel assignments the wizard made.
+            RefreshChannelStates();
+            LoadChannelDetail(ChannelGrid.SelectedIndex >= 0 ? ChannelGrid.SelectedIndex : 0);
+        }
     }
 
     // ── Audio backend ─────────────────────────────────────────────────────────
@@ -590,6 +615,9 @@ public partial class MainWindow : Window
         ApplySettingsToUi();
         _initializing = false;
         LoadChannelDetail(0);
+
+        // Bindings were wiped — drop the registered global hotkeys to match.
+        App.Services.GetService<GlobalHotkeyManager>()?.SyncFromSettings();
     }
 
     private static readonly FilePickerFileType JsonSettingsType =
@@ -650,6 +678,7 @@ public partial class MainWindow : Window
             LoadChannelDetail(ChannelGrid.SelectedIndex >= 0 ? ChannelGrid.SelectedIndex : 0);
             _deviceState?.PushOledConfig();
             _deviceState?.PushAllChannelOledModes();
+            App.Services.GetService<GlobalHotkeyManager>()?.SyncFromSettings();
             ShowSettingsIoStatus("Settings imported.");
         }
         else
@@ -684,6 +713,54 @@ public partial class MainWindow : Window
             $"{ProjectUrl}";
 
         await Dialogs.ShowAboutAsync(this, "About", info, ProjectUrl);
+    }
+
+    // ── Software updates ─────────────────────────────────────────────────────────
+
+    private string? _latestReleaseUrl;
+
+    private async void CheckUpdatesButton_Click(object? sender, RoutedEventArgs e)
+    {
+        var service = App.Services.GetService<UpdateCheckService>();
+        if (service == null) return;
+
+        CheckUpdatesButton.IsEnabled = false;
+        ViewReleaseButton.IsVisible = false;
+        ShowUpdateStatus("Checking for updates…");
+
+        UpdateCheckResult result = await service.CheckAsync(DashboardVersion);
+
+        if (result.ErrorMessage != null)
+        {
+            ShowUpdateStatus($"Couldn't check for updates: {result.ErrorMessage}");
+        }
+        else if (result.NoReleasesPublished)
+        {
+            ShowUpdateStatus("No releases have been published yet.");
+        }
+        else if (result.UpdateAvailable)
+        {
+            _latestReleaseUrl = result.ReleaseUrl;
+            ViewReleaseButton.IsVisible = true;
+            ShowUpdateStatus($"Update available: version {result.LatestVersion} (you have {DashboardVersion}).");
+        }
+        else
+        {
+            ShowUpdateStatus($"You're up to date (version {DashboardVersion}).");
+        }
+
+        CheckUpdatesButton.IsEnabled = true;
+    }
+
+    private void ViewReleaseButton_Click(object? sender, RoutedEventArgs e)
+    {
+        Dialogs.OpenUrl(_latestReleaseUrl ?? ProjectUrl);
+    }
+
+    private void ShowUpdateStatus(string message)
+    {
+        UpdateStatusText.Text = message;
+        UpdateStatusText.IsVisible = true;
     }
 
     private void OpenLogFolderButton_Click(object? sender, RoutedEventArgs e)

@@ -224,6 +224,18 @@
                                 <Button x:Name="ExportDiagnosticsButton" Content="Export diagnostics" Click="ExportDiagnosticsButton_Click" />
                             </WrapPanel>
                             <TextBlock x:Name="DiagnosticsStatusText" Classes="muted" Margin="0,8,0,0" IsVisible="False" />
+
+                            <Separator Margin="0,10,0,8" />
+                            <TextBlock Text="Software Updates" FontWeight="SemiBold" Margin="0,0,0,6" />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button x:Name="CheckUpdatesButton" Content="Check for updates"
+                                        Click="CheckUpdatesButton_Click"
+                                        ToolTip.Tip="Query GitHub for a newer release of the dashboard" />
+                                <Button x:Name="ViewReleaseButton" Content="View release" IsVisible="False"
+                                        Click="ViewReleaseButton_Click"
+                                        ToolTip.Tip="Open the release page in your browser" />
+                            </StackPanel>
+                            <TextBlock x:Name="UpdateStatusText" Classes="muted" Margin="0,8,0,0" IsVisible="False" />
                         </StackPanel>
                     </Border>
 
@@ -256,6 +268,52 @@
                                     HorizontalAlignment="Left"
                                     ToolTip.Tip="Clear the paired controller chip ID so the next connection auto-pairs with any controller"
                                     Click="ForgetControllerButton_Click" />
+
+                            <Separator Margin="0,8,0,8" />
+                            <TextBlock Text="Setup Wizard" FontWeight="SemiBold" Margin="0,0,0,4" />
+                            <TextBlock Classes="muted" Margin="0,0,0,8"
+                                       Text="Re-run the guided setup to reconnect, check the displays, and re-map your channels." />
+                            <Button x:Name="RunSetupWizardButton" Content="Run setup wizard again"
+                                    HorizontalAlignment="Left"
+                                    ToolTip.Tip="Open the first-run setup wizard again"
+                                    Click="RunSetupWizardButton_Click" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ── Global Hotkeys ───────────────────────────────────── -->
+                    <Border Classes="card">
+                        <StackPanel>
+                            <TextBlock Classes="h2" Text="Global Hotkeys" />
+                            <TextBlock Classes="muted" Margin="0,0,0,8"
+                                       Text="System-wide shortcuts that work even when the dashboard is in the background. Click Set, then press a key combination." />
+
+                            <Grid ColumnDefinitions="190,*,Auto,Auto" Margin="0,0,0,6">
+                                <TextBlock Grid.Column="0" Text="Master volume up" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" x:Name="HotkeyMasterUpText" Text="(unassigned)" VerticalAlignment="Center" Opacity="0.8" />
+                                <Button Grid.Column="2" Content="Set…" Margin="0,0,6,0" Click="HotkeyMasterUpSet_Click" />
+                                <Button Grid.Column="3" Content="Clear" Click="HotkeyMasterUpClear_Click" />
+                            </Grid>
+
+                            <Grid ColumnDefinitions="190,*,Auto,Auto" Margin="0,0,0,6">
+                                <TextBlock Grid.Column="0" Text="Master volume down" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" x:Name="HotkeyMasterDownText" Text="(unassigned)" VerticalAlignment="Center" Opacity="0.8" />
+                                <Button Grid.Column="2" Content="Set…" Margin="0,0,6,0" Click="HotkeyMasterDownSet_Click" />
+                                <Button Grid.Column="3" Content="Clear" Click="HotkeyMasterDownClear_Click" />
+                            </Grid>
+
+                            <Grid ColumnDefinitions="190,*,Auto,Auto" Margin="0,0,0,6">
+                                <TextBlock Grid.Column="0" Text="Toggle master mute" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" x:Name="HotkeyMasterMuteText" Text="(unassigned)" VerticalAlignment="Center" Opacity="0.8" />
+                                <Button Grid.Column="2" Content="Set…" Margin="0,0,6,0" Click="HotkeyMasterMuteSet_Click" />
+                                <Button Grid.Column="3" Content="Clear" Click="HotkeyMasterMuteClear_Click" />
+                            </Grid>
+
+                            <Grid ColumnDefinitions="190,*,Auto,Auto">
+                                <TextBlock Grid.Column="0" Text="Show dashboard" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" x:Name="HotkeyShowDashboardText" Text="(unassigned)" VerticalAlignment="Center" Opacity="0.8" />
+                                <Button Grid.Column="2" Content="Set…" Margin="0,0,6,0" Click="HotkeyShowDashboardSet_Click" />
+                                <Button Grid.Column="3" Content="Clear" Click="HotkeyShowDashboardClear_Click" />
+                            </Grid>
                         </StackPanel>
                     </Border>
 
