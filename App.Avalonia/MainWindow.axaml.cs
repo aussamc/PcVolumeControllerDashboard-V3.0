@@ -338,6 +338,7 @@ public partial class MainWindow : Window
         TrayNotificationsCheckBox.IsChecked    = _settings.TrayNotificationsEnabled;
 
         UpdatePairedControllerLabel();
+        UpdateHotkeyLabels();
 
         WasapiRadioButton.IsChecked      = _settings.AudioBackendMode != AudioBackendModes.VoiceMeeter;
         VoiceMeeterRadioButton.IsChecked = _settings.AudioBackendMode == AudioBackendModes.VoiceMeeter;
@@ -591,6 +592,9 @@ public partial class MainWindow : Window
         ApplySettingsToUi();
         _initializing = false;
         LoadChannelDetail(0);
+
+        // Bindings were wiped — drop the registered global hotkeys to match.
+        App.Services.GetService<GlobalHotkeyManager>()?.SyncFromSettings();
     }
 
     private static readonly FilePickerFileType JsonSettingsType =
@@ -651,6 +655,7 @@ public partial class MainWindow : Window
             LoadChannelDetail(ChannelGrid.SelectedIndex >= 0 ? ChannelGrid.SelectedIndex : 0);
             _deviceState?.PushOledConfig();
             _deviceState?.PushAllChannelOledModes();
+            App.Services.GetService<GlobalHotkeyManager>()?.SyncFromSettings();
             ShowSettingsIoStatus("Settings imported.");
         }
         else

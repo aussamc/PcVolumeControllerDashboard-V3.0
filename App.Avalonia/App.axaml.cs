@@ -59,6 +59,11 @@ public partial class App : Application
             Services.GetRequiredService<Services.DeviceStateService>();
             Services.GetRequiredService<Services.VolumeOverlayController>();
             Services.GetRequiredService<Services.SerialConnectionService>().AutoConnect();
+
+            // Global hotkeys: constructing the manager registers the assigned bindings;
+            // its "show dashboard" action reveals the window from the tray/background.
+            var hotkeys = Services.GetRequiredService<Services.GlobalHotkeyManager>();
+            hotkeys.ShowDashboardRequested += ShowMainWindow;
         }
 
         base.OnFrameworkInitializationCompleted();
@@ -94,6 +99,9 @@ public partial class App : Application
 
         // Software update check (queries GitHub Releases; manual/user-triggered).
         services.AddSingleton<Services.UpdateCheckService>();
+
+        // Global (system-wide) hotkeys: master volume up/down/mute + show dashboard.
+        services.AddSingleton<Services.GlobalHotkeyManager>();
 
         // Settings: loaded once at startup, shared, persisted on change.
         services.AddSingleton<Services.SettingsService>(_ =>

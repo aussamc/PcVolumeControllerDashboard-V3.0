@@ -271,6 +271,43 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- ── Global Hotkeys ───────────────────────────────────── -->
+                    <Border Classes="card">
+                        <StackPanel>
+                            <TextBlock Classes="h2" Text="Global Hotkeys" />
+                            <TextBlock Classes="muted" Margin="0,0,0,8"
+                                       Text="System-wide shortcuts that work even when the dashboard is in the background. Click Set, then press a key combination." />
+
+                            <Grid ColumnDefinitions="190,*,Auto,Auto" Margin="0,0,0,6">
+                                <TextBlock Grid.Column="0" Text="Master volume up" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" x:Name="HotkeyMasterUpText" Text="(unassigned)" VerticalAlignment="Center" Opacity="0.8" />
+                                <Button Grid.Column="2" Content="Set…" Margin="0,0,6,0" Click="HotkeyMasterUpSet_Click" />
+                                <Button Grid.Column="3" Content="Clear" Click="HotkeyMasterUpClear_Click" />
+                            </Grid>
+
+                            <Grid ColumnDefinitions="190,*,Auto,Auto" Margin="0,0,0,6">
+                                <TextBlock Grid.Column="0" Text="Master volume down" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" x:Name="HotkeyMasterDownText" Text="(unassigned)" VerticalAlignment="Center" Opacity="0.8" />
+                                <Button Grid.Column="2" Content="Set…" Margin="0,0,6,0" Click="HotkeyMasterDownSet_Click" />
+                                <Button Grid.Column="3" Content="Clear" Click="HotkeyMasterDownClear_Click" />
+                            </Grid>
+
+                            <Grid ColumnDefinitions="190,*,Auto,Auto" Margin="0,0,0,6">
+                                <TextBlock Grid.Column="0" Text="Toggle master mute" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" x:Name="HotkeyMasterMuteText" Text="(unassigned)" VerticalAlignment="Center" Opacity="0.8" />
+                                <Button Grid.Column="2" Content="Set…" Margin="0,0,6,0" Click="HotkeyMasterMuteSet_Click" />
+                                <Button Grid.Column="3" Content="Clear" Click="HotkeyMasterMuteClear_Click" />
+                            </Grid>
+
+                            <Grid ColumnDefinitions="190,*,Auto,Auto">
+                                <TextBlock Grid.Column="0" Text="Show dashboard" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" x:Name="HotkeyShowDashboardText" Text="(unassigned)" VerticalAlignment="Center" Opacity="0.8" />
+                                <Button Grid.Column="2" Content="Set…" Margin="0,0,6,0" Click="HotkeyShowDashboardSet_Click" />
+                                <Button Grid.Column="3" Content="Clear" Click="HotkeyShowDashboardClear_Click" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
                     <!-- ── Encoder Sensitivity ──────────────────────────────── -->
                     <Border Classes="card">
                         <StackPanel>
