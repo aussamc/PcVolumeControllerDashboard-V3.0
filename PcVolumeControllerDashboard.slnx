@@ -12,4 +12,5 @@
   <Project Path="Platform.Windows/PcVolumeControllerDashboard.Platform.Windows.csproj">
     <Platform Project="x64" />
   </Project>
+  <Project Path="Platform.Linux/PcVolumeControllerDashboard.Platform.Linux.csproj" />
 </Solution>

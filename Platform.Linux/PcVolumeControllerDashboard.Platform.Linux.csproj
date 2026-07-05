@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    PcVolumeControllerDashboard.Platform.Linux — Linux audio platform layer.
+
+    Holds the Linux-only audio backend that implements the neutral
+    Core.Audio.IAudioBackend contract:
+      • PipeWireAudioBackend — per-app + endpoint volume via pw-dump (reads) and
+        wpctl (writes), against PipeWire/WirePlumber.
+
+    Targets net10.0 (shared with the macOS build — there's no -linux TFM suffix in
+    .NET) since it only shells out to CLI tools, no native/COM dependency. References
+    Core only.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>PcVolumeControllerDashboard.Platform.Linux</AssemblyName>
+    <RootNamespace>PcVolumeControllerDashboard.Platform.Linux</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Core\PcVolumeControllerDashboard.Core.csproj" />
+  </ItemGroup>
+
+</Project>
