@@ -253,8 +253,8 @@
                                       IsCheckedChanged="AppSetupCheckBox_Changed" />
                             <CheckBox x:Name="StartMinimizedToTrayCheckBox" Content="Start minimized to tray"
                                       IsCheckedChanged="AppSetupCheckBox_Changed" />
-                            <CheckBox x:Name="StartWithWindowsCheckBox" Content="Start program on Windows startup"
-                                      ToolTip.Tip="Windows only; wired in a later PR"
+                            <CheckBox x:Name="StartWithWindowsCheckBox" Content="Start program at login"
+                                      ToolTip.Tip="Windows only for now; Linux/macOS autostart wired in a later PR"
                                       IsCheckedChanged="AppSetupCheckBox_Changed" />
                             <CheckBox x:Name="AdvancedDebugLoggingCheckBox" Content="Advanced debug logging"
                                       IsCheckedChanged="AppSetupCheckBox_Changed" />

@@ -29,6 +29,12 @@ public sealed class HotkeyPickerDialog : Window
         SizeToContent = SizeToContent.Height;
         CanResize = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        Focusable = true;
+
+        // Nothing in the dialog's content (Buttons/TextBlocks) claims keyboard focus
+        // on its own, so without this the window itself never becomes the focused
+        // element and OnPreviewKeyDown's tunnel handler never sees a KeyDown.
+        Opened += (_, _) => Focus();
 
         _comboText = new TextBlock
         {
