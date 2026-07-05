@@ -178,9 +178,39 @@ Remaining to finish the port:
    - **Avalonia's "tray notifications" setting is a dead no-op** — the
      `TrayNotificationsEnabled` checkbox exists (`MainWindow.axaml.cs:338,395`) but
      nothing reads it to actually show a notification.
-   - **Not yet audited**: WPF's `MainWindow.Serial.cs` (1666 lines) vs. Avalonia's
-     `Services/SerialConnectionService.cs` (398 lines) — the 4x size gap could hide
-     reconnect edge-case differences; needs a focused follow-up pass.
+   - **Serial reconnect audit done 2026-07-05**: WPF's `MainWindow.Serial.cs`
+     (1666 lines) vs. Avalonia's `Services/SerialConnectionService.cs` (398 lines).
+     Most of the gap is justified (WM_DEVICECHANGE-driven refresh and WPF
+     `ComboBox` binding gymnastics have no cross-platform equivalent needed), but
+     found real gaps, not yet fixed:
+     - **Bug: pre-2.24-firmware controllers can never connect on Avalonia** —
+       `Core/SerialProtocol.cs:107-112` (`IsValidIdentity`) hard-rejects the HELLO
+       handshake if the reported protocol is below `MinProtocol`, so the
+       connection sits in `Identifying` until timeout and retries forever (no
+       error surfaced). WPF's `HandleHelloMessage`
+       (`MainWindow.Serial.cs:1313-1391`) only checks the device identity name and
+       connects on any protocol version (with just a UI compatibility-banner
+       warning via `IsEspProtocolCompatible`, `:1618-1664`). User impact: an
+       old-firmware controller silently never connects on Linux/Avalonia, with no
+       indication why.
+     - **No rejected/phantom-port cooldown tracking** — WPF tracks
+       wrong-identity ports (`_rejectedComPorts`/`MarkPortRejected`, `:686-697`)
+       and unopenable ports (`_phantomComPorts`/`MarkPortPhantom`, `:448-459`)
+       with separate cooldowns so it stops retrying them for a while. Avalonia's
+       `TryNextCandidate` (`SerialConnectionService.cs:217-252`) has no such
+       memory — every ~3-7s reconnect cycle re-tries every candidate including
+       ones already known to be wrong, wasting cycles (and the identify timeout)
+       if a second serial device is also plugged in.
+     - **No PC idle/lock/suspend → controller SLEEP/WAKE on Avalonia** — WPF's
+       `OnSessionSwitch`/`OnPowerModeChanged`/`UpdateControllerPowerStateFromPcActivity`
+       (`MainWindow.Serial.cs:930-1078`) implement the README's documented
+       "Auto sleep/wake" feature; zero equivalent exists anywhere under
+       `App.Avalonia/`. This is a whole missing feature, same shape as the
+       profile-system/tray-menu gaps above, not just a serial-layer nuance.
+     - **No manual per-port picker in the Avalonia UI** — `Connect(string port)`
+       exists (`SerialConnectionService.cs:129-136`, doc comment says "for a
+       future UI") but nothing calls it; only Reconnect/Disconnect are wired.
+       Minor — auto-detect covers the common case.
 3. **Retire WPF** — remove the WPF host and its Windows-only helpers, collapse the
    solution, then add a signed installer (Windows: Inno Setup; Linux: `.deb`/AppImage;
    macOS: notarized `.dmg`) and a CI build matrix.
