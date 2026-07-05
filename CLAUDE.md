@@ -20,8 +20,9 @@ the repo and builds, but is **being retired** once the Avalonia build reaches pa
 | Path | TFM | Purpose |
 |---|---|---|
 | `Core/` (`PcVolumeControllerDashboard.Core.csproj`) | `net10.0` | Platform-agnostic domain: serial layer + protocol parser, settings repository/POCOs + migrations, OLED renderer, encoder math, audio & hotkey seams. **No WPF/Windows/Avalonia refs.** |
-| `App.Avalonia/` (`App.Avalonia.csproj`) | `net10.0;net10.0-windows` | The cross-platform Avalonia host (the future single UI). References Core; references `Platform.Windows` only on the `-windows` TFM. |
+| `App.Avalonia/` (`App.Avalonia.csproj`) | `net10.0;net10.0-windows` | The cross-platform Avalonia host (the future single UI). References Core; references `Platform.Windows` only on the `-windows` TFM, `Platform.Linux` only on the plain `net10.0` TFM. |
 | `Platform.Windows/` | `net10.0-windows` | Windows-only implementations behind Core seams: WASAPI + VoiceMeeter audio backends. |
+| `Platform.Linux/` | `net10.0` | Linux audio backend behind the same seam: `PipeWireAudioBackend` (shells out to `pw-dump`/`wpctl`). Also referenced on macOS builds (shared TFM), but `AudioBackendFactory` only instantiates it at runtime on Linux. |
 | `PcVolumeControllerDashboard.csproj` (root) | `net10.0-windows` | The legacy **WPF host** (being retired). Keep it building but functionally untouched until convergence. |
 | `tests/` (`PcVolumeControllerDashboard.Tests.csproj`) | `net10.0-windows` | xUnit + FluentAssertions. Tests Core (pure logic) + Windows platform pieces. |
 | `Computer_Volume_Controller_v2.25/` | Arduino | Current ESP32 firmware (`.ino`). `v2.24/` kept for reference. |
@@ -57,9 +58,12 @@ Verification bar for any change:
 
 Notes:
 
-- The audio backend is chosen per-TFM by `AudioBackendFactory` via `#if WINDOWS`
-  (WASAPI/VoiceMeeter on Windows; Core's `NullAudioBackend` elsewhere). Same pattern
-  for global hotkeys (`WindowsGlobalHotkeyService` vs `NullGlobalHotkeyService`).
+- The audio backend is chosen by `AudioBackendFactory`: per-TFM via `#if WINDOWS`
+  (WASAPI/VoiceMeeter on Windows), then a runtime `RuntimeInformation.IsOSPlatform`
+  check on the shared non-Windows TFM (PipeWire on Linux; Core's `NullAudioBackend`
+  on macOS, which has no TFM suffix of its own to branch on at compile time). Global
+  hotkeys use the simpler per-TFM pattern (`WindowsGlobalHotkeyService` vs
+  `NullGlobalHotkeyService`) since they're Windows-only for now.
 - Multi-target incremental builds can leave a **stale `net10.0-windows` output** — if
   a `--no-build` run seems to execute old code, rebuild that TFM explicitly (or clean
   `App.Avalonia/bin` + `obj`). Building the `.csproj` directly emits to
@@ -93,9 +97,12 @@ Notes:
 
 - **`IAudioBackend`** (Core) — key-addressed audio: `MASTER`, `MIC_INPUT`,
   `PROC:<name>`, `VM_STRIP:n`, `VM_BUS:n`. Windows: WASAPI (`AudioService` port) +
-  VoiceMeeter, wrapped in a runtime-switchable backend. Linux (planned): PipeWire via
-  `wpctl` shell-out (stream IDs are ephemeral — enumerate dynamically). macOS (planned,
-  v1 scope): master volume only.
+  VoiceMeeter, wrapped in a runtime-switchable backend. Linux: `PipeWireAudioBackend`
+  (`Platform.Linux/`) — reads come from a single periodically-refreshed `pw-dump`
+  JSON graph snapshot (no shell-out on the UI's 20Hz poll path); writes shell out to
+  `wpctl set-volume`/`set-mute` (stream IDs are ephemeral — always resolved from the
+  current snapshot, never cached across refreshes). macOS (planned, v1 scope): master
+  volume only.
 - **`IGlobalHotkeyService`** (Core) — Windows impl uses `RegisterHotKey` on a
   dedicated message-only window / message loop (Avalonia has no `WndProc`). Null
   elsewhere (X11/Wayland, macOS deferred).
@@ -117,7 +124,7 @@ Notes:
 
 ## Key constants
 
-- Dashboard version: **3.10** (both hosts). Required controller protocol: **2.24**
+- Dashboard version: **3.11** (both hosts). Required controller protocol: **2.24**
   (firmware v2.25 is backward-compatible). Expected channels: **6**.
 - Hardware: v1.4 PCB, ESP32-S3-DevKitC-1-N16R8, SSD1315 OLEDs behind a TCA9548A I2C
   mux. GPIO/OLED layout is final — see the firmware source.
@@ -130,13 +137,17 @@ actions, per-channel detail, link groups + multi-app pools, volume overlay,
 settings import/export, audio-backend switch, first-run wizard, global hotkeys, and a
 software update check.
 
+**v3.11 adds the Linux audio backend** — `PipeWireAudioBackend` (`Platform.Linux/`)
+closes the previous "no assignable targets on Linux" gap: master/mic/per-app volume
+and mute now work end-to-end via `pw-dump` (reads) + `wpctl` (writes). Global hotkeys
+remain Windows-only for now (Wayland has no cross-desktop-environment global-shortcut
+API — a separate, harder problem than audio).
+
 Remaining to finish the port:
 
-1. **Linux launch re-check** (CachyOS / PipeWire) — the app hasn't been re-run on
-   Linux since early in the port.
-2. **Parity audit** — Avalonia vs WPF, feature by feature. Known deliberate gaps:
+1. **Parity audit** — Avalonia vs WPF, feature by feature. Known deliberate gaps:
    per-channel mute hotkeys, output-device cycling, SteelSeries Sonar backend (all
    deferred/post-port).
-3. **Retire WPF** — remove the WPF host and its Windows-only helpers, collapse the
+2. **Retire WPF** — remove the WPF host and its Windows-only helpers, collapse the
    solution, then add a signed installer (Windows: Inno Setup; Linux: `.deb`/AppImage;
    macOS: notarized `.dmg`) and a CI build matrix.
