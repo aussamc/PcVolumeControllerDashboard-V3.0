@@ -159,11 +159,12 @@ Remaining to finish the port:
    `dotnet test` cannot run on Linux at all — the test project targets
    `net10.0-windows` only.
 2. **Parity audit** — Avalonia vs WPF, feature by feature. **First pass done
-   2026-07-04** (confirmed at parity: encoder acceleration, volume smoothing,
-   per-channel sensitivity/limits/presets, settings import/export, diagnostics
-   export, About dialog, update checker). Known deliberate gaps: per-channel mute
-   hotkeys, output-device cycling, SteelSeries Sonar backend (all
-   deferred/post-port). Newly found gaps, not yet fixed:
+   2026-07-04** (confirmed at parity: per-channel sensitivity/limits/presets,
+   settings import/export, diagnostics export, About dialog, update checker —
+   encoder acceleration/volume smoothing were also flagged parity in that pass,
+   but a 2026-07-05 deeper audit found two real gaps there, see below). Known
+   deliberate gaps: per-channel mute hotkeys, output-device cycling, SteelSeries
+   Sonar backend (all deferred/post-port). Newly found gaps, not yet fixed:
    - **Profile system missing from Avalonia UI** — WPF has full multi-profile
      support (create/rename/duplicate/delete/switch/cycle-next, tray submenu,
      global hotkey — `MainWindow.xaml.cs:611-932`, `MainWindow.Tray.cs:70-99`,
@@ -211,6 +212,66 @@ Remaining to finish the port:
        exists (`SerialConnectionService.cs:129-136`, doc comment says "for a
        future UI") but nothing calls it; only Reconnect/Disconnect are wired.
        Minor — auto-detect covers the common case.
+   - **Encoder/volume-feel audit done 2026-07-05**: WPF's `MainWindow.Encoder.cs`
+     vs. Avalonia's `Services/ChannelRuntime.cs`. Both hosts share the exact same
+     `Core/EncoderMath.cs` acceleration/EMA-smoothing formulas — genuinely at
+     parity there. Two real gaps beyond that:
+     - **No debounce/coalescing/reverse-guard on Avalonia's encoder path** — WPF's
+       `QueueSmoothedEncoderDelta` (`MainWindow.Encoder.cs:63-156`) buffers rapid
+       raw deltas and applies them on a 25ms timer (`EncoderApplyIntervalMs`,
+       `MainWindow.xaml.cs:47`), suppressing isolated direction reversals within
+       140ms unless confirmed twice. Avalonia's `HandleEncoder`
+       (`ChannelRuntime.cs:99-136`) applies every raw `ENC` message immediately,
+       no buffering. On Linux this matters more than it would on Windows: each
+       write is a `wpctl set-volume` **process spawn**
+       (`Platform.Linux/PipeWireAudioBackend.cs`), so a fast/bouncy encoder turn
+       could spawn far more processes in a burst than WPF's batched COM writes
+       ever would.
+     - **Link groups gang unconditionally on Avalonia but only conditionally on
+       WPF** — WPF's `ApplySmoothedEncoderDelta` (`:223-331`) only propagates a
+       delta to linked channels inside the smoothing-enabled branch — with
+       Volume Smoothing off, linked channels silently stop moving together.
+       Avalonia's `HandleEncoder` (`:124-135`) always gangs linked channels
+       regardless of the smoothing setting. Same settings file, different
+       behavior across hosts — Avalonia's behavior looks like the intended one;
+       WPF's looks like a pre-existing bug this port didn't reproduce.
+   - **Volume overlay audit done 2026-07-05**: WPF's `VolumeOverlayWindow` vs.
+     Avalonia's `VolumeOverlay`/`VolumeOverlayController`. Trigger completeness,
+     the 6-way position setting, timeout/fade behavior all confirmed at parity.
+     One real gap:
+     - **Mute toggle has no distinct visual mode on Avalonia** — WPF shows a
+       dedicated mute layout (large animated speaker icon, 18pt "Muted"/"Unmuted"
+       text, volume bar hidden — `VolumeOverlayWindow.xaml.cs:56-74`). Avalonia
+       reuses the normal volume-bar view and just relabels the percentage as
+       "Muted" (`VolumeOverlay.cs:104-113`) — no icon, no mode switch, much less
+       visually distinct at a glance.
+     - Bonus finding (not a gap — Avalonia is more correct): Avalonia's overlay
+       sets `ShowActivated = false` (`VolumeOverlay.cs:47`), never stealing
+       keyboard focus. WPF sets no such flag, so every overlay pop-up likely
+       steals focus from whatever the user is typing into — a pre-existing WPF
+       bug this port already fixed, not something to backport.
+   - **App startup/single-instance audit done 2026-07-05**: WPF's `App.xaml.cs`
+     vs. Avalonia's `App.axaml.cs`/`Program.cs`/`Platform/WindowsGlue.cs`.
+     Single-instance mutex, bring-to-front, and run-on-login (HKCU Run key) are
+     all faithfully ported and confirmed at parity (correctly Windows-only on
+     both hosts). Two real gaps:
+     - **No global crash handler on Avalonia** — WPF wires
+       `DispatcherUnhandledException`/`AppDomain.UnhandledException`/
+       `TaskScheduler.UnobservedTaskException` (`App.xaml.cs:41-59`) to write a
+       crash log (`WriteCrashLog`, `:71-101`) and show a friendly error dialog
+       with a "copy details" option (`ShowCrashDialog`, `:103-136`). Zero
+       equivalent anywhere under `App.Avalonia/` — an unhandled exception on
+       Linux just kills the process with no crash log and no dialog, especially
+       bad when launched from a desktop icon with no attached console.
+     - **No `--safe` diagnostic launch flag on Avalonia** — WPF parses `--safe`
+       (`MainWindow.xaml.cs:106-107,273-298`) to disable auto-connect/reconnect/
+       audio writes for troubleshooting. No equivalent flag exists in
+       `App.Avalonia/Program.cs` or `App.axaml.cs`.
+     - Correction for the record: WPF is not wizard-less as earlier assumed —
+       it has a lightweight in-window first-run tab (`MainWindow.xaml:2731`,
+       `MainWindow.xaml.cs:279-288`); Avalonia's dedicated `FirstRunWizard`
+       window is a more built-out evolution of the same idea, not an
+       unprecedented new feature. Not a gap either direction.
 3. **Retire WPF** — remove the WPF host and its Windows-only helpers, collapse the
    solution, then add a signed installer (Windows: Inno Setup; Linux: `.deb`/AppImage;
    macOS: notarized `.dmg`) and a CI build matrix.
