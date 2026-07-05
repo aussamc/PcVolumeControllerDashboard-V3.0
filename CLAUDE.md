@@ -145,9 +145,42 @@ API — a separate, harder problem than audio).
 
 Remaining to finish the port:
 
-1. **Parity audit** — Avalonia vs WPF, feature by feature. Known deliberate gaps:
-   per-channel mute hotkeys, output-device cycling, SteelSeries Sonar backend (all
-   deferred/post-port).
-2. **Retire WPF** — remove the WPF host and its Windows-only helpers, collapse the
+1. **Linux launch re-check** (CachyOS / PipeWire) — **done 2026-07-04**, including a
+   real-hardware pass. Builds clean (`net10.0`, 0 warnings/errors) and launches on
+   CachyOS (KDE/Wayland). With a physical controller on `/dev/ttyACM0`: auto-detect,
+   port open, ESP32 reboot, and identity handshake all worked (protocol 2.25, 6
+   channels); OLED config + display-mode init sent to all 6 channels; wizard
+   completed to the dashboard; physical encoder input confirmed live (`ENC ch0
+   delta ±1` in both directions). One transient reconnect during the wizard
+   (`port is closed`) self-healed within ~17s via the existing auto-reconnect —
+   no manual fix needed. The "no assignable audio targets on Linux" gap noted here
+   originally is now **fixed as of v3.11** (`PipeWireAudioBackend`, see above);
+   `NullGlobalHotkeyService` still means global hotkeys are inert on Linux for now.
+   `dotnet test` cannot run on Linux at all — the test project targets
+   `net10.0-windows` only.
+2. **Parity audit** — Avalonia vs WPF, feature by feature. **First pass done
+   2026-07-04** (confirmed at parity: encoder acceleration, volume smoothing,
+   per-channel sensitivity/limits/presets, settings import/export, diagnostics
+   export, About dialog, update checker). Known deliberate gaps: per-channel mute
+   hotkeys, output-device cycling, SteelSeries Sonar backend (all
+   deferred/post-port). Newly found gaps, not yet fixed:
+   - **Profile system missing from Avalonia UI** — WPF has full multi-profile
+     support (create/rename/duplicate/delete/switch/cycle-next, tray submenu,
+     global hotkey — `MainWindow.xaml.cs:611-932`, `MainWindow.Tray.cs:70-99`,
+     `MainWindow.Hotkeys.cs:60,117-118`). Backed by cross-platform
+     `ProfileEntry`/`Profiles`/`ActiveProfileName` in Core, so it's implementable
+     on Avalonia, just never built — Avalonia's own `MainWindow.Hotkeys.cs` doc
+     comment notes "CycleNextProfile descoped."
+   - **Avalonia tray menu is missing most WPF actions** — WPF has Open Dashboard,
+     Connect, Disconnect, Reconnect, Open Log Folder, Exit, double-click-to-restore
+     (`MainWindow.Tray.cs:39-63`). Avalonia's tray menu (`App.axaml:22-28`) only has
+     Show Dashboard and Exit.
+   - **Avalonia's "tray notifications" setting is a dead no-op** — the
+     `TrayNotificationsEnabled` checkbox exists (`MainWindow.axaml.cs:338,395`) but
+     nothing reads it to actually show a notification.
+   - **Not yet audited**: WPF's `MainWindow.Serial.cs` (1666 lines) vs. Avalonia's
+     `Services/SerialConnectionService.cs` (398 lines) — the 4x size gap could hide
+     reconnect edge-case differences; needs a focused follow-up pass.
+3. **Retire WPF** — remove the WPF host and its Windows-only helpers, collapse the
    solution, then add a signed installer (Windows: Inno Setup; Linux: `.deb`/AppImage;
    macOS: notarized `.dmg`) and a CI build matrix.
