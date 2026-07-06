@@ -8,6 +8,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.Threading;
@@ -161,12 +162,38 @@ public partial class MainWindow : Window
             SerialConnectionState.Connected =>
                 $"Connected — protocol {_connection!.Protocol}, chip {(_connection.ConnectedChipId is { Length: > 0 } c ? c : "(none)")}",
             SerialConnectionState.Identifying => "Identifying controller…",
+            SerialConnectionState.Incompatible => IncompatibleControllerMessage(),
             _ => "Disconnected",
         };
 
-        // Reconnect only makes sense while disconnected; Disconnect while linked/scanning.
-        ReconnectButton.IsEnabled = _connection != null && state == SerialConnectionState.Disconnected;
+        // Colour the line as a warning only for the incompatible-firmware case, so
+        // the reason a recognised controller won't connect stands out; otherwise fall
+        // back to the theme's default foreground.
+        if (state == SerialConnectionState.Incompatible)
+            ConnectionStatusText.Foreground = Brushes.OrangeRed;
+        else
+            ConnectionStatusText.ClearValue(TextBlock.ForegroundProperty);
+
+        // Reconnect makes sense while disconnected or stuck on incompatible firmware
+        // (e.g. after a re-flash); Disconnect while linked/scanning/incompatible.
+        ReconnectButton.IsEnabled = _connection != null &&
+            state is SerialConnectionState.Disconnected or SerialConnectionState.Incompatible;
         DisconnectButton.IsEnabled = _connection != null && state != SerialConnectionState.Disconnected;
+    }
+
+    /// <summary>
+    /// Builds the user-facing warning for a recognised controller whose firmware is
+    /// too old to connect (the strict handshake rejects it — standing rule #5).
+    /// </summary>
+    private string IncompatibleControllerMessage()
+    {
+        IncompatibleControllerInfo? info = _connection?.IncompatibleController;
+        if (info is null)
+            return "Incompatible controller firmware — update required.";
+
+        return $"Incompatible controller on {info.Port}: firmware reports protocol " +
+               $"{info.Protocol} ({info.ChannelCount} channels), but this app requires " +
+               $"protocol {SerialConnectionService.MinProtocol}+. Update the controller firmware.";
     }
 
     private void ReconnectButton_Click(object? sender, RoutedEventArgs e) => _connection?.Reconnect();

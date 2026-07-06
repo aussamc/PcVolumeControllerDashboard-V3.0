@@ -82,4 +82,25 @@ public sealed class SerialProtocolTests
         SerialProtocol.IsValidIdentity(wrongName, "PC_VOLUME_CONTROLLER", "2.24").Should().BeFalse();
         SerialProtocol.IsValidIdentity(tooOld, "PC_VOLUME_CONTROLLER", "2.24").Should().BeFalse();
     }
+
+    [Fact]
+    public void IsExpectedDevice_MatchesOnNameRegardlessOfProtocol()
+    {
+        // Our controller by name but with old firmware: recognised (so the host can
+        // surface an incompatibility) yet not a valid identity to connect on.
+        DeviceMessage tooOld = SerialProtocol.Parse("HELLO,PC_VOLUME_CONTROLLER,2.20,6");
+
+        SerialProtocol.IsExpectedDevice(tooOld, "PC_VOLUME_CONTROLLER").Should().BeTrue();
+        SerialProtocol.IsValidIdentity(tooOld, "PC_VOLUME_CONTROLLER", "2.24").Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsExpectedDevice_RejectsWrongNameOrNonHello()
+    {
+        DeviceMessage wrongName = SerialProtocol.Parse("HELLO,SOME_OTHER_DEVICE,2.25,6");
+        DeviceMessage notHello  = SerialProtocol.Parse("ENC,0,1");
+
+        SerialProtocol.IsExpectedDevice(wrongName, "PC_VOLUME_CONTROLLER").Should().BeFalse();
+        SerialProtocol.IsExpectedDevice(notHello, "PC_VOLUME_CONTROLLER").Should().BeFalse();
+    }
 }

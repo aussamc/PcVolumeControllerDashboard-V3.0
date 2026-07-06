@@ -11,10 +11,24 @@ public enum SerialConnectionState
     Disconnected,
     Identifying,
     Connected,
+
+    /// <summary>
+    /// A controller was found and identified by name, but its firmware protocol is
+    /// below the required floor, so the strict handshake (standing rule #5) rejects
+    /// it. Distinct from <see cref="Disconnected"/> so the UI can explain *why* the
+    /// known-incompatible controller won't connect instead of retrying invisibly.
+    /// </summary>
+    Incompatible,
 }
 
 /// <summary>One raw serial line and its direction, for the Debug console.</summary>
 public readonly record struct SerialTraffic(DateTime Time, bool Outgoing, string Line);
+
+/// <summary>
+/// Details of a recognised controller whose firmware protocol is too old to
+/// connect. Surfaced to the UI so the user is told what to fix (update firmware).
+/// </summary>
+public sealed record IncompatibleControllerInfo(string Port, string Protocol, int ChannelCount);
 
 /// <summary>
 /// Drives the serial connection lifecycle for the Avalonia host: opens a port,
@@ -28,7 +42,9 @@ public readonly record struct SerialTraffic(DateTime Time, bool Outgoing, string
 public sealed class SerialConnectionService : IDisposable
 {
     private const string IdentityName = "PC_VOLUME_CONTROLLER";
-    private const string MinProtocol = "2.24";
+
+    /// <summary>Lowest controller protocol the strict handshake will accept.</summary>
+    public const string MinProtocol = "2.24";
     private const int BaudRate = 115200;
     private const int IdentifyTimeoutMs = 4000;
 
@@ -65,6 +81,17 @@ public sealed class SerialConnectionService : IDisposable
     public SerialConnectionState State { get; private set; } = SerialConnectionState.Disconnected;
     public string? ConnectedChipId { get; private set; }
     public string? Protocol { get; private set; }
+
+    /// <summary>
+    /// Set while <see cref="State"/> is <see cref="SerialConnectionState.Incompatible"/>:
+    /// the recognised-but-too-old controller the scan settled on. Null otherwise.
+    /// </summary>
+    public IncompatibleControllerInfo? IncompatibleController { get; private set; }
+
+    // Accumulates the incompatible controller seen during the in-flight scan;
+    // promoted to IncompatibleController if the scan finds nothing better. Reset at
+    // the start of each scan so a fresh scan re-evaluates.
+    private IncompatibleControllerInfo? _pendingIncompatible;
 
     /// <summary>Fired (on any thread) when the connection state changes.</summary>
     public event Action<SerialConnectionState>? StateChanged;
@@ -197,7 +224,11 @@ public sealed class SerialConnectionService : IDisposable
                 Send(ProtocolCommands.Ping); // firmware replies PONG
                 break;
 
+            // Incompatible is treated like Disconnected for reconnection: keep
+            // rescanning so that if the user flashes newer firmware, the next scan
+            // identifies it and connects (clearing the warning) with no manual step.
             case SerialConnectionState.Disconnected:
+            case SerialConnectionState.Incompatible:
                 if (!_autoReconnect || !_settings.Settings.AutoConnectOnLaunch) return;
                 if (Environment.TickCount64 - _lastScanTicks < ReconnectThrottleMs) return;
                 StartScan(quiet: true);
@@ -207,6 +238,7 @@ public sealed class SerialConnectionService : IDisposable
 
     private void BeginScan(IEnumerable<string> candidates)
     {
+        _pendingIncompatible = null; // a fresh scan re-evaluates compatibility
         _candidates.Clear();
         foreach (string p in candidates)
             _candidates.Enqueue(p);
@@ -218,6 +250,16 @@ public sealed class SerialConnectionService : IDisposable
     {
         if (_candidates.Count == 0)
         {
+            // Nothing compatible found. If a recognised-but-too-old controller
+            // turned up during the scan, settle into Incompatible (persisting its
+            // details for the UI) rather than a bare Disconnected.
+            if (_pendingIncompatible is { } incompatible)
+            {
+                IncompatibleController = incompatible;
+                SetState(SerialConnectionState.Incompatible);
+                return;
+            }
+
             if (!_quietScan) _log.Log("No controller found on any candidate port.");
             SetState(SerialConnectionState.Disconnected);
             return;
@@ -293,6 +335,8 @@ public sealed class SerialConnectionService : IDisposable
         _identifyTimer?.Dispose();
         _identifyTimer = null;
         _candidates.Clear();
+        _pendingIncompatible = null;
+        IncompatibleController = null;
         _serial.Close();
         SetState(SerialConnectionState.Disconnected);
     }
@@ -303,6 +347,39 @@ public sealed class SerialConnectionService : IDisposable
         if (!_quietScan) _log.Log($"No valid controller identity from {port} within {IdentifyTimeoutMs} ms.");
         _serial.Close();
         TryNextCandidate(); // advance to the next candidate, or stop if none remain
+    }
+
+    /// <summary>
+    /// Handles a HELLO from our controller whose protocol is below the required
+    /// floor: logs it (once per distinct incompatibility, so the every-few-seconds
+    /// rescan doesn't spam), remembers it for the UI warning, and rejects the port —
+    /// advancing to the next candidate so a compatible controller elsewhere can win.
+    /// </summary>
+    private void HandleIncompatibleController(DeviceMessage hello)
+    {
+        string port = _serial.PortName ?? "(unknown)";
+        var info = new IncompatibleControllerInfo(port, hello.Protocol, hello.ChannelCount);
+
+        // Log on an explicit (non-quiet) scan, or whenever the incompatibility is
+        // new/changed — but stay silent while a background rescan keeps re-finding
+        // the same known-incompatible controller.
+        if (!_quietScan || !info.Equals(IncompatibleController))
+            _log.Log($"Controller on {port} reports protocol {hello.Protocol} " +
+                     $"({hello.ChannelCount} channels); requires {MinProtocol}+. " +
+                     $"Not connecting — update the controller firmware.");
+
+        _pendingIncompatible = info;
+
+        // Reject off the serial read thread: this runs inside the port's own
+        // DataReceived callback, and closing a SerialPort from there can deadlock.
+        // A zero-delay timer hops threads, mirroring the identify-timeout path.
+        _identifyTimer?.Dispose();
+        _identifyTimer = new Timer(_ =>
+        {
+            if (State != SerialConnectionState.Identifying) return;
+            _serial.Close();
+            TryNextCandidate();
+        }, null, 0, Timeout.Infinite);
     }
 
     private void OnLineReceived(string line)
@@ -316,12 +393,24 @@ public sealed class SerialConnectionService : IDisposable
 
         if (State != SerialConnectionState.Connected)
         {
+            // A HELLO from our controller by name but below the protocol floor is
+            // rejected (standing rule #5) — but recorded and surfaced, not silently
+            // ignored like unrelated serial traffic.
+            if (SerialProtocol.IsExpectedDevice(msg, IdentityName) &&
+                !SerialProtocol.IsValidIdentity(msg, IdentityName, MinProtocol))
+            {
+                HandleIncompatibleController(msg);
+                return;
+            }
+
             if (msg.Kind == DeviceMessageKind.Hello &&
                 SerialProtocol.IsValidIdentity(msg, IdentityName, MinProtocol))
             {
                 _identifyTimer?.Dispose();
                 _identifyTimer = null;
                 _candidates.Clear(); // found it — stop scanning remaining ports
+                IncompatibleController = null; // a good link clears any prior warning
+                _pendingIncompatible = null;
                 ConnectedChipId = msg.ChipId;
                 Protocol = msg.Protocol;
 
