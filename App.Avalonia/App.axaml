@@ -23,6 +23,11 @@
                     <NativeMenu>
                         <NativeMenuItem Header="Show Dashboard" Click="TrayShow_OnClick" />
                         <NativeMenuItemSeparator />
+                        <NativeMenuItem Header="Reconnect" Click="TrayReconnect_OnClick" />
+                        <NativeMenuItem Header="Disconnect" Click="TrayDisconnect_OnClick" />
+                        <NativeMenuItemSeparator />
+                        <NativeMenuItem Header="Open Log Folder" Click="TrayOpenLogs_OnClick" />
+                        <NativeMenuItemSeparator />
                         <NativeMenuItem Header="Exit" Click="TrayExit_OnClick" />
                     </NativeMenu>
                 </TrayIcon.Menu>
