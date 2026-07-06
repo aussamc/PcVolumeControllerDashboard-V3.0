@@ -27,6 +27,11 @@ public partial class App : Application
     {
         Services = BuildServices();
 
+        // Wire process-wide crash handling as early as possible (right after the log
+        // service exists) so an unhandled exception writes a crash log + shows a
+        // dialog instead of the process vanishing silently.
+        CrashHandler.Install(Services.GetRequiredService<Services.LogService>());
+
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             // The tray icon keeps the process alive when the window is hidden, so we

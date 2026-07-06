@@ -17,12 +17,15 @@ public sealed class LogService
     {
         string baseDir = Path.GetDirectoryName(SettingsService.SettingsPath) ?? ".";
         string logsDir = Path.Combine(baseDir, "logs");
-        try { Directory.CreateDirectory(logsDir); } catch { /* best effort */ }
+        try { System.IO.Directory.CreateDirectory(logsDir); } catch { /* best effort */ }
         _path = Path.Combine(logsDir, $"avalonia-{DateTime.Now:yyyyMMdd-HHmmss}.log");
     }
 
     /// <summary>Absolute path of the active log file.</summary>
     public string FilePath => _path;
+
+    /// <summary>Directory the logs (and crash logs) live in.</summary>
+    public string Directory => Path.GetDirectoryName(_path) ?? ".";
 
     public void Log(string message)
     {
