@@ -190,6 +190,31 @@ public partial class App : Application
 
     private void TrayShow_OnClick(object? sender, System.EventArgs e) => ShowMainWindow();
 
+    // Reconnect/Disconnect drive the shared serial singleton — the same instance the
+    // dashboard's buttons use. Both are safe to call in any state (Reconnect covers
+    // the WPF tray's separate "Connect" too: from Disconnected it just scans).
+    private void TrayReconnect_OnClick(object? sender, System.EventArgs e)
+        => Services.GetRequiredService<Services.SerialConnectionService>().Reconnect();
+
+    private void TrayDisconnect_OnClick(object? sender, System.EventArgs e)
+        => Services.GetRequiredService<Services.SerialConnectionService>().Disconnect();
+
+    private void TrayOpenLogs_OnClick(object? sender, System.EventArgs e)
+    {
+        try
+        {
+            string dir = Services.GetRequiredService<Services.LogService>().Directory;
+            System.IO.Directory.CreateDirectory(dir);
+            // UseShellExecute lets the OS pick the file manager (explorer / xdg-open / open).
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = dir,
+                UseShellExecute = true,
+            });
+        }
+        catch { /* best-effort: no file manager / blocked */ }
+    }
+
     private void TrayExit_OnClick(object? sender, System.EventArgs e)
     {
         if (ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktop) return;
