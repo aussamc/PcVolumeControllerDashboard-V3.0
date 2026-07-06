@@ -178,7 +178,10 @@ Remaining to finish the port:
      Show Dashboard and Exit.
    - **Avalonia's "tray notifications" setting is a dead no-op** — the
      `TrayNotificationsEnabled` checkbox exists (`MainWindow.axaml.cs:338,395`) but
-     nothing reads it to actually show a notification.
+     nothing reads it to actually show a notification. **Resolution (2026-07-06):**
+     rather than remove the control, a cross-platform desktop-notification layer is
+     greenlit to make it real (Avalonia's `TrayIcon` has no balloon API) — tracked
+     as **F6** in `PARITY_FIX_BACKLOG.md`.
    - **Serial reconnect audit done 2026-07-05**: WPF's `MainWindow.Serial.cs`
      (1666 lines) vs. Avalonia's `Services/SerialConnectionService.cs` (398 lines).
      Most of the gap is justified (WM_DEVICECHANGE-driven refresh and WPF

@@ -16,6 +16,16 @@ Effort: **S** ≈ <½ day, **M** ≈ ½–2 days, **L** ≈ multi-day.
 
 ---
 
+## Progress (2026-07-06)
+
+- **Merged to `main`:** B1 (+Q6 warning line), B2, F3.
+- **In review:** F4 (tray menu actions).
+- **Greenlit, not yet built:** F6 (cross-platform notification layer — supersedes
+  the "remove the checkbox" option for F5).
+- **Next up:** F1 / F2 (the two large features), then the P2 quality batch.
+
+---
+
 ## ✅ Decisions
 
 **D1 — Pre-2.24-firmware handshake policy. RESOLVED (2026-07-06): keep it strict.**
@@ -51,7 +61,8 @@ of this).*
 | F2 | **Profile system** (create/rename/duplicate/delete/switch/cycle-next) | Full multi-profile support in WPF incl. tray submenu + global hotkey. Core already has `ProfileEntry`/`Profiles`/`ActiveProfileName`, so it's UI-only work. | L | `App.Avalonia/` UI + `MainWindow.Hotkeys.cs` (cycle descoped); Core already backs it; cf. WPF `MainWindow.xaml.cs:611-932`,`MainWindow.Tray.cs:70-99` |
 | F3 | **Log cleanup/rotation** | `LogService` writes one `avalonia-{timestamp}.log` per launch and never prunes → unbounded growth. Easy win. | S | `Services/LogService.cs:16-22`; cf. WPF `MainWindow.Ui.cs:586-628` |
 | F4 | **Tray menu — missing actions** | Avalonia tray has only Show/Exit; WPF has Connect/Disconnect/Reconnect/Open Log Folder/Exit + double-click-restore. | M | `App.axaml:22-28`; cf. WPF `MainWindow.Tray.cs:39-63` |
-| F5 | **Dead "tray notifications" checkbox** | Setting exists but nothing reads it. Either wire it to real notifications or remove the control. (Pairs with F4.) | S | `MainWindow.axaml.cs:338,395` |
+| F5 | **Inert "tray notifications" checkbox** | Setting exists but nothing reads it. **Resolution (2026-07-06): not removed — wired by F6** (cross-platform notification layer greenlit). The checkbox stays; F6 makes it real. | — | subsumed by F6 |
+| F6 | **Cross-platform desktop notification layer** (greenlit 2026-07-06) | New feature that makes the `TrayNotificationsEnabled` toggle functional on Linux/Windows (macOS deferred). Avalonia's `TrayIcon` has no balloon API and `Avalonia.Controls.Notifications` is in-window only (useless while minimised to tray), so this needs a Core seam + per-OS impls. Mirror WPF's `ShowTrayNotification` call sites (connect / disconnect / reconnect-failed / started-minimised). | M–L | new `INotificationService` (Core seam) + Linux impl (`org.freedesktop.Notifications` DBus / `notify-send`), Windows impl (WinRT toast or `NotifyIcon` balloon in `Platform.Windows`), macOS deferred; cf. WPF `MainWindow.Tray.cs:116-135`, call sites `MainWindow.Serial.cs:696,895,899`, `MainWindow.xaml.cs:306` |
 
 ---
 
@@ -95,7 +106,9 @@ of this).*
 1. **B1 + Q6** together (D1 resolved — stay strict; surface the failure + the
    diagnostics line that explains it). **B2** alongside — both are high-value
    safety nets.
-2. **F3** (log cleanup — trivial), then **F5**/**F4** (tray cluster).
+2. **F3** (log cleanup — trivial), then **F4** (tray menu actions). **F6** (the
+   notification layer that wires the F5 checkbox) is greenlit — schedule as its
+   own PR when convenient; it's independent of the big features below.
 3. **Q1** before broad Linux dogfooding (process-spawn storms are a real-hardware
    footgun), then **Q2/Q3** (serial + discovery quality).
 4. **F1** and **F2** — the two large features; schedule as their own PRs.
