@@ -16,21 +16,16 @@ Effort: **S** ≈ <½ day, **M** ≈ ½–2 days, **L** ≈ multi-day.
 
 ---
 
-## ⚠ Needs a decision before starting
+## ✅ Decisions
 
-**D1 — Pre-2.24-firmware handshake policy.** The "old firmware can never connect on
-Avalonia" finding (B1 below) sits against **standing rule #5** ("identity handshake
-is strict"). Two defensible readings:
-
-- *Avalonia's strict rejection is correct*; the bug is only that it fails **silently**
-  and retries forever with no user-facing reason.
-- *WPF's warn-and-connect is the intended UX* (it's what the README's compatibility
-  behavior advertises), and Avalonia is the outlier.
-
-**Recommendation:** treat the *silent* failure as the P0 bug (always fixable), and
-decide the connect-vs-reject policy separately. Default to matching WPF
-(connect on any protocol, show a compatibility warning) unless rule #5 is meant to
-harden that. → resolve before implementing B1.
+**D1 — Pre-2.24-firmware handshake policy. RESOLVED (2026-07-06): keep it strict.**
+Per **standing rule #5** ("identity handshake is strict"), Avalonia's rejection of a
+below-`MinProtocol` HELLO is **correct and stays**. The bug is only the *silent*
+failure — the connection loops in `Identifying` forever with no user-facing reason.
+Fix = **surface it**: a clear warning in the UI + a log entry naming the reported vs.
+required protocol, and stop presenting it as an in-progress identify with no verdict.
+Do **not** adopt WPF's warn-and-connect. This reshapes B1 (below) from a
+policy-change into a diagnostics/UX fix, and merges it tightly with Q6.
 
 ---
 
@@ -38,11 +33,13 @@ harden that. → resolve before implementing B1.
 
 | # | Item | Why | Effort | Key files |
 |---|---|---|---|---|
-| B1 | **Pre-2.24 firmware silently never connects** | `IsValidIdentity` hard-rejects HELLO below `MinProtocol`; connection loops in `Identifying` forever with no error surfaced. Old-firmware controllers are dead on Linux with no clue why. | M | `Core/SerialProtocol.cs:107-112`; `Services/SerialConnectionService.cs`; cf. WPF `MainWindow.Serial.cs:1313-1391`,`:1618-1664` |
+| B1 | **Pre-2.24 firmware fails silently** (per D1: stay strict, surface it) | `IsValidIdentity` correctly rejects HELLO below `MinProtocol`, but the connection then loops in `Identifying` forever with no error. Keep the rejection; add a distinct rejected state → **UI warning + log line** naming reported vs. required protocol, and stop the silent identify loop. | M | `Core/SerialProtocol.cs:107-112`; `Services/SerialConnectionService.cs` (needs a "rejected/incompatible" state distinct from `Identifying`); log via `LogService` |
 | B2 | **No global crash handler** | Unhandled exception just kills the process — no crash log, no dialog. Especially bad launched from a desktop icon with no console. WPF writes a crash log + friendly dialog. | M | new code in `App.axaml.cs`/`Program.cs`; cf. WPF `App.xaml.cs:41-59`,`:71-136` |
 
-*B1 depends on decision D1. Even under "keep rejecting", the fix is to surface the
-failure (diagnostics line + stop the silent retry loop) — pairs with Q6.*
+*B1 per resolved D1: **keep strict rejection**; the fix is purely to surface the
+failure (rejected state + UI warning + log) instead of retrying invisibly. Implement
+together with Q6 (the colour-coded protocol-mismatch diagnostics line is the UI half
+of this).*
 
 ---
 
@@ -95,8 +92,9 @@ failure (diagnostics line + stop the silent retry loop) — pairs with Q6.*
 
 ## Suggested sequencing
 
-1. **Resolve D1**, then **B1 + Q6** together (surface the failure + the diagnostics
-   line that explains it). **B2** alongside — both are small, high-value safety nets.
+1. **B1 + Q6** together (D1 resolved — stay strict; surface the failure + the
+   diagnostics line that explains it). **B2** alongside — both are high-value
+   safety nets.
 2. **F3** (log cleanup — trivial), then **F5**/**F4** (tray cluster).
 3. **Q1** before broad Linux dogfooding (process-spawn storms are a real-hardware
    footgun), then **Q2/Q3** (serial + discovery quality).
