@@ -101,15 +101,22 @@ public static class SerialProtocol
     }
 
     /// <summary>
+    /// True if a HELLO comes from the expected controller by exact device name,
+    /// <em>regardless</em> of protocol version. Lets a caller distinguish a
+    /// recognised-but-incompatible controller (old firmware) from an unrelated
+    /// serial device, so the incompatibility can be surfaced rather than the port
+    /// silently ignored.
+    /// </summary>
+    public static bool IsExpectedDevice(DeviceMessage hello, string expectedName) =>
+        hello.Kind == DeviceMessageKind.Hello &&
+        string.Equals(hello.Identity, expectedName, StringComparison.Ordinal);
+
+    /// <summary>
     /// True if a HELLO message satisfies the identity handshake: exact device name
     /// and a protocol version at or above the required floor.
     /// </summary>
-    public static bool IsValidIdentity(DeviceMessage hello, string expectedName, string minProtocol)
-    {
-        if (hello.Kind != DeviceMessageKind.Hello) return false;
-        if (!string.Equals(hello.Identity, expectedName, StringComparison.Ordinal)) return false;
-        return CompareProtocol(hello.Protocol, minProtocol) >= 0;
-    }
+    public static bool IsValidIdentity(DeviceMessage hello, string expectedName, string minProtocol) =>
+        IsExpectedDevice(hello, expectedName) && CompareProtocol(hello.Protocol, minProtocol) >= 0;
 
     private static int ParseInt(string[] fields, int index) =>
         index < fields.Length && int.TryParse(fields[index].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int v)

@@ -87,6 +87,8 @@ public partial class FirstRunWizard : Window
             SerialConnectionState.Connected =>
                 $"Connected — protocol {_connection!.Protocol}, chip {(_connection.ConnectedChipId is { Length: > 0 } c ? c : "(none)")}",
             SerialConnectionState.Identifying => "Identifying controller…",
+            SerialConnectionState.Incompatible =>
+                "Controller found, but its firmware is too old — update it to continue.",
             _ => "Searching for controller…",
         };
 
