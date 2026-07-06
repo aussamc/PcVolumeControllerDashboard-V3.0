@@ -159,11 +159,12 @@ Remaining to finish the port:
    `dotnet test` cannot run on Linux at all — the test project targets
    `net10.0-windows` only.
 2. **Parity audit** — Avalonia vs WPF, feature by feature. **First pass done
-   2026-07-04** (confirmed at parity: encoder acceleration, volume smoothing,
-   per-channel sensitivity/limits/presets, settings import/export, diagnostics
-   export, About dialog, update checker). Known deliberate gaps: per-channel mute
-   hotkeys, output-device cycling, SteelSeries Sonar backend (all
-   deferred/post-port). Newly found gaps, not yet fixed:
+   2026-07-04** (confirmed at parity: per-channel sensitivity/limits/presets,
+   settings import/export, diagnostics export, About dialog, update checker —
+   encoder acceleration/volume smoothing were also flagged parity in that pass,
+   but a 2026-07-05 deeper audit found two real gaps there, see below). Known
+   deliberate gaps: per-channel mute hotkeys, output-device cycling, SteelSeries
+   Sonar backend (all deferred/post-port). Newly found gaps, not yet fixed:
    - **Profile system missing from Avalonia UI** — WPF has full multi-profile
      support (create/rename/duplicate/delete/switch/cycle-next, tray submenu,
      global hotkey — `MainWindow.xaml.cs:611-932`, `MainWindow.Tray.cs:70-99`,
@@ -178,9 +179,160 @@ Remaining to finish the port:
    - **Avalonia's "tray notifications" setting is a dead no-op** — the
      `TrayNotificationsEnabled` checkbox exists (`MainWindow.axaml.cs:338,395`) but
      nothing reads it to actually show a notification.
-   - **Not yet audited**: WPF's `MainWindow.Serial.cs` (1666 lines) vs. Avalonia's
-     `Services/SerialConnectionService.cs` (398 lines) — the 4x size gap could hide
-     reconnect edge-case differences; needs a focused follow-up pass.
+   - **Serial reconnect audit done 2026-07-05**: WPF's `MainWindow.Serial.cs`
+     (1666 lines) vs. Avalonia's `Services/SerialConnectionService.cs` (398 lines).
+     Most of the gap is justified (WM_DEVICECHANGE-driven refresh and WPF
+     `ComboBox` binding gymnastics have no cross-platform equivalent needed), but
+     found real gaps, not yet fixed:
+     - **Bug: pre-2.24-firmware controllers can never connect on Avalonia** —
+       `Core/SerialProtocol.cs:107-112` (`IsValidIdentity`) hard-rejects the HELLO
+       handshake if the reported protocol is below `MinProtocol`, so the
+       connection sits in `Identifying` until timeout and retries forever (no
+       error surfaced). WPF's `HandleHelloMessage`
+       (`MainWindow.Serial.cs:1313-1391`) only checks the device identity name and
+       connects on any protocol version (with just a UI compatibility-banner
+       warning via `IsEspProtocolCompatible`, `:1618-1664`). User impact: an
+       old-firmware controller silently never connects on Linux/Avalonia, with no
+       indication why.
+     - **No rejected/phantom-port cooldown tracking** — WPF tracks
+       wrong-identity ports (`_rejectedComPorts`/`MarkPortRejected`, `:686-697`)
+       and unopenable ports (`_phantomComPorts`/`MarkPortPhantom`, `:448-459`)
+       with separate cooldowns so it stops retrying them for a while. Avalonia's
+       `TryNextCandidate` (`SerialConnectionService.cs:217-252`) has no such
+       memory — every ~3-7s reconnect cycle re-tries every candidate including
+       ones already known to be wrong, wasting cycles (and the identify timeout)
+       if a second serial device is also plugged in.
+     - **No PC idle/lock/suspend → controller SLEEP/WAKE on Avalonia** — WPF's
+       `OnSessionSwitch`/`OnPowerModeChanged`/`UpdateControllerPowerStateFromPcActivity`
+       (`MainWindow.Serial.cs:930-1078`) implement the README's documented
+       "Auto sleep/wake" feature; zero equivalent exists anywhere under
+       `App.Avalonia/`. This is a whole missing feature, same shape as the
+       profile-system/tray-menu gaps above, not just a serial-layer nuance.
+     - **No manual per-port picker in the Avalonia UI** — `Connect(string port)`
+       exists (`SerialConnectionService.cs:129-136`, doc comment says "for a
+       future UI") but nothing calls it; only Reconnect/Disconnect are wired.
+       Minor — auto-detect covers the common case.
+   - **Encoder/volume-feel audit done 2026-07-05**: WPF's `MainWindow.Encoder.cs`
+     vs. Avalonia's `Services/ChannelRuntime.cs`. Both hosts share the exact same
+     `Core/EncoderMath.cs` acceleration/EMA-smoothing formulas — genuinely at
+     parity there. Two real gaps beyond that:
+     - **No debounce/coalescing/reverse-guard on Avalonia's encoder path** — WPF's
+       `QueueSmoothedEncoderDelta` (`MainWindow.Encoder.cs:63-156`) buffers rapid
+       raw deltas and applies them on a 25ms timer (`EncoderApplyIntervalMs`,
+       `MainWindow.xaml.cs:47`), suppressing isolated direction reversals within
+       140ms unless confirmed twice. Avalonia's `HandleEncoder`
+       (`ChannelRuntime.cs:99-136`) applies every raw `ENC` message immediately,
+       no buffering. On Linux this matters more than it would on Windows: each
+       write is a `wpctl set-volume` **process spawn**
+       (`Platform.Linux/PipeWireAudioBackend.cs`), so a fast/bouncy encoder turn
+       could spawn far more processes in a burst than WPF's batched COM writes
+       ever would.
+     - **Link groups gang unconditionally on Avalonia but only conditionally on
+       WPF** — WPF's `ApplySmoothedEncoderDelta` (`:223-331`) only propagates a
+       delta to linked channels inside the smoothing-enabled branch — with
+       Volume Smoothing off, linked channels silently stop moving together.
+       Avalonia's `HandleEncoder` (`:124-135`) always gangs linked channels
+       regardless of the smoothing setting. Same settings file, different
+       behavior across hosts — Avalonia's behavior looks like the intended one;
+       WPF's looks like a pre-existing bug this port didn't reproduce.
+   - **Volume overlay audit done 2026-07-05**: WPF's `VolumeOverlayWindow` vs.
+     Avalonia's `VolumeOverlay`/`VolumeOverlayController`. Trigger completeness,
+     the 6-way position setting, timeout/fade behavior all confirmed at parity.
+     One real gap:
+     - **Mute toggle has no distinct visual mode on Avalonia** — WPF shows a
+       dedicated mute layout (large animated speaker icon, 18pt "Muted"/"Unmuted"
+       text, volume bar hidden — `VolumeOverlayWindow.xaml.cs:56-74`). Avalonia
+       reuses the normal volume-bar view and just relabels the percentage as
+       "Muted" (`VolumeOverlay.cs:104-113`) — no icon, no mode switch, much less
+       visually distinct at a glance.
+     - Bonus finding (not a gap — Avalonia is more correct): Avalonia's overlay
+       sets `ShowActivated = false` (`VolumeOverlay.cs:47`), never stealing
+       keyboard focus. WPF sets no such flag, so every overlay pop-up likely
+       steals focus from whatever the user is typing into — a pre-existing WPF
+       bug this port already fixed, not something to backport.
+   - **App startup/single-instance audit done 2026-07-05**: WPF's `App.xaml.cs`
+     vs. Avalonia's `App.axaml.cs`/`Program.cs`/`Platform/WindowsGlue.cs`.
+     Single-instance mutex, bring-to-front, and run-on-login (HKCU Run key) are
+     all faithfully ported and confirmed at parity (correctly Windows-only on
+     both hosts). Two real gaps:
+     - **No global crash handler on Avalonia** — WPF wires
+       `DispatcherUnhandledException`/`AppDomain.UnhandledException`/
+       `TaskScheduler.UnobservedTaskException` (`App.xaml.cs:41-59`) to write a
+       crash log (`WriteCrashLog`, `:71-101`) and show a friendly error dialog
+       with a "copy details" option (`ShowCrashDialog`, `:103-136`). Zero
+       equivalent anywhere under `App.Avalonia/` — an unhandled exception on
+       Linux just kills the process with no crash log and no dialog, especially
+       bad when launched from a desktop icon with no attached console.
+     - **No `--safe` diagnostic launch flag on Avalonia** — WPF parses `--safe`
+       (`MainWindow.xaml.cs:106-107,273-298`) to disable auto-connect/reconnect/
+       audio writes for troubleshooting. No equivalent flag exists in
+       `App.Avalonia/Program.cs` or `App.axaml.cs`.
+     - Correction for the record: WPF is not wizard-less as earlier assumed —
+       it has a lightweight in-window first-run tab (`MainWindow.xaml:2731`,
+       `MainWindow.xaml.cs:279-288`); Avalonia's dedicated `FirstRunWizard`
+       window is a more built-out evolution of the same idea, not an
+       unprecedented new feature. Not a gap either direction.
+   - **OLED/state-push audit done 2026-07-06**: WPF's `SendStateToDevice`/
+     `SendAllChannelStatesToDevice`/`SendOledSettingsToDevice`/
+     `SendAllChannelOledModesToDevice` (`MainWindow.Serial.cs:1410-1571`) vs.
+     Avalonia's `Services/DeviceStateService.cs`. STATE/CHSTATE/OLEDCFG/DISPMODE
+     framing, OLEDCFG-on-connect, per-channel DISPMODE, and the `MakeProtocolSafeLabel`
+     handling are all at parity — Avalonia's per-line change-detection
+     (`_lastChState`/`_lastState`) is if anything cleaner than WPF's
+     send-all-on-`SendStateIfChanged` + `QueueFullStateSend` coalescing. The one
+     WPF-only guard (`_controllerSleepRequested` suppresses pushes while the
+     controller is asleep, `:1414`,`:1451`) is subsumed by the already-documented
+     missing SLEEP/WAKE feature — nothing to add on the push layer itself.
+   - **Logging/diagnostics audit done 2026-07-06**: WPF's `MainWindow.Ui.cs`
+     (`Log`/`CleanupOldLogs`/`UpdateDiagnostics`) vs. Avalonia's
+     `Services/LogService.cs` + `MainWindow.Debug.cs`. Theme handling
+     (`ApplyTheme`, follow-system/light/dark) confirmed at parity. Real gaps:
+     - **No log cleanup/rotation on Avalonia** — WPF's `CleanupOldLogs`
+       (`MainWindow.Ui.cs:586-628`) deletes `dashboard-*.log` older than
+       `LogRetentionDays` on every startup. Avalonia's `LogService`
+       (`LogService.cs:16-22`) writes one `avalonia-{timestamp}.log` per launch
+       and **never prunes** — logs accumulate unbounded, one file per app start.
+       WPF's cleanup only globs `dashboard-*.log`, so it won't sweep Avalonia's
+       files either; on a Linux/Avalonia-only box the logs dir grows forever.
+     - **Diagnostics panel is much thinner on Avalonia** (minor) — WPF's
+       `UpdateDiagnostics` (`MainWindow.Ui.cs:119-169`) drives an 8-field panel
+       (connection state, COM port, last-heartbeat age, firmware, protocol vs.
+       required, last ESP32 message, last state sent, and a colour-coded
+       protocol-status line that warns on version/channel mismatch). Avalonia
+       collapses this to a single `ConnectionStatusText` summary
+       (`MainWindow.axaml.cs:159-165`); the rest of the detail is only in the
+       debug console/log. The missing colour-coded protocol-mismatch warning
+       overlaps the pre-2.24-firmware bug above (no user-facing indication when a
+       controller is protocol-incompatible).
+   - **Audio-session/target discovery audit done 2026-07-06**: WPF's
+     `AutoRefreshAudioSessionsIfChanged` on a 2.5s timer
+     (`AudioSessionRefreshCheckMs`, `MainWindow.xaml.cs:59`,`:1833-1857`) vs.
+     Avalonia's `RefreshTargets` (`MainWindow.axaml.cs:176-190`). Gap:
+     - **Assignable-target list doesn't auto-refresh on Avalonia** — Avalonia's
+       50ms poll only calls `RefreshChannelStates` (already-assigned channels),
+       never `RefreshTargets`, and there's no session-change timer. A
+       newly-launched app doesn't appear in the target dropdown until the user
+       clicks **Refresh**; WPF auto-detects it within ~2.5s. Already-assigned
+       channels still track fine (`ChannelRuntime` resolves keys fresh) — the gap
+       is purely new-app *discovery* in the picker.
+   - **Debug/hardware-test audit done 2026-07-06**: WPF's hardware self-test
+     panel vs. Avalonia's `MainWindow.Debug.cs`. Avalonia's Debug tab (live TX/RX
+     console + Ping/Show-ident/Scan-I2C/Test-display quick buttons + raw send) is
+     at parity with WPF's raw console. Gap:
+     - **No hardware self-test / verification panel on Avalonia** — WPF tracks
+       `_hardwareEncoderCounts`/`_hardwareButtonSeen` (`MainWindow.xaml.cs:109-110`)
+       and renders a per-channel "Channel N: encoder count X, button seen yes/no"
+       checklist via `UpdateHardwareTestSummary` (`:4387-4400`), with a Reset
+       button (`:4403-4407`) and dedicated Sleep/Wake test buttons + status
+       readout (`:4421-4432`, `MainWindow.Serial.cs:1262-1272`). This lets a user
+       confirm all six encoders and buttons physically register. Avalonia has no
+       structured self-test — SLEEP/WAKE/TEST_DISPLAY are reachable only by typing
+       raw commands in the debug send box, with no per-channel pass/fail readout.
+       Same shape as the other feature gaps, not a serial-nuance.
+     - Minor, not itemised above: WPF also has Copy-debug-console,
+       Copy-log-folder-path, Open-current-log-file, and Save-debug-snapshot
+       buttons; Avalonia covers the diagnostics-export need with its
+       `ExportDiagnostics` zip but lacks the individual copy/open-log helpers.
 3. **Retire WPF** — remove the WPF host and its Windows-only helpers, collapse the
    solution, then add a signed installer (Windows: Inno Setup; Linux: `.deb`/AppImage;
    macOS: notarized `.dmg`) and a CI build matrix.
