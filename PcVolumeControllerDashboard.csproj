@@ -82,6 +82,14 @@
     <Compile Remove="Platform.Windows\**" />
     <EmbeddedResource Remove="Platform.Windows\**" />
     <None Remove="Platform.Windows\**" />
+    <!-- Linux audio platform lib is its own project (net10.0, referenced only by
+         the Avalonia host's Linux TFM); keep its sources out of the WPF host's
+         default **/*.cs glob. Without this the host globs in PipeWireAudioBackend.cs
+         (whose bare `Timer` is ambiguous under UseWindowsForms) and Platform.Linux's
+         generated obj AssemblyInfo (duplicate assembly attributes). -->
+    <Compile Remove="Platform.Linux\**" />
+    <EmbeddedResource Remove="Platform.Linux\**" />
+    <None Remove="Platform.Linux\**" />
   </ItemGroup>
 
 </Project>
