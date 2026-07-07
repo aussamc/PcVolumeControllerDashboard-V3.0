@@ -45,6 +45,15 @@ public sealed class SerialConnectionService : IDisposable
 
     /// <summary>Lowest controller protocol the strict handshake will accept.</summary>
     public const string MinProtocol = "2.24";
+
+    /// <summary>
+    /// Channel count the dashboard is built for. A connected controller reporting
+    /// a different count still passes the (protocol-only) identity check, but the
+    /// mismatch is surfaced to the UI (Q6) since channels beyond the reported count
+    /// won't function.
+    /// </summary>
+    public const int ExpectedChannelCount = 6;
+
     private const int BaudRate = 115200;
     private const int IdentifyTimeoutMs = 4000;
 
@@ -81,6 +90,13 @@ public sealed class SerialConnectionService : IDisposable
     public SerialConnectionState State { get; private set; } = SerialConnectionState.Disconnected;
     public string? ConnectedChipId { get; private set; }
     public string? Protocol { get; private set; }
+
+    /// <summary>
+    /// Channel count reported by the connected controller's HELLO. 0 when not
+    /// connected. Compared against <see cref="ExpectedChannelCount"/> so the UI can
+    /// warn if a controller reports a different count than the dashboard expects.
+    /// </summary>
+    public int ConnectedChannelCount { get; private set; }
 
     /// <summary>
     /// Set while <see cref="State"/> is <see cref="SerialConnectionState.Incompatible"/>:
@@ -337,6 +353,7 @@ public sealed class SerialConnectionService : IDisposable
         _candidates.Clear();
         _pendingIncompatible = null;
         IncompatibleController = null;
+        ConnectedChannelCount = 0;
         _serial.Close();
         SetState(SerialConnectionState.Disconnected);
     }
@@ -413,6 +430,7 @@ public sealed class SerialConnectionService : IDisposable
                 _pendingIncompatible = null;
                 ConnectedChipId = msg.ChipId;
                 Protocol = msg.Protocol;
+                ConnectedChannelCount = msg.ChannelCount;
 
                 // Remember the port for next launch's fast reconnect, and auto-pair
                 // the controller's chip ID on first identification so the Setup tab
@@ -433,6 +451,9 @@ public sealed class SerialConnectionService : IDisposable
                 SetState(SerialConnectionState.Connected);
                 _log.Log($"Controller identified on {_serial.PortName}: protocol {msg.Protocol}, " +
                          $"{msg.ChannelCount} channels, chip {(string.IsNullOrEmpty(msg.ChipId) ? "(none)" : msg.ChipId)}.");
+                if (msg.ChannelCount != ExpectedChannelCount)
+                    _log.Log($"Warning: controller reports {msg.ChannelCount} channel(s); dashboard expects " +
+                             $"{ExpectedChannelCount}. Channels beyond the reported count won't function.");
             }
             else if (msg.Kind != DeviceMessageKind.Debug && !_quietScan)
             {

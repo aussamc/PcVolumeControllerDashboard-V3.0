@@ -157,8 +157,20 @@ public partial class MainWindow : Window
     {
         SerialConnectionState state = _connection?.State ?? SerialConnectionState.Disconnected;
 
+        // A connected controller passes the (protocol-only) identity check but can
+        // still report a different channel count than the dashboard expects (Q6) —
+        // e.g. older/newer hardware revisions. Flag it the same way an incompatible-
+        // protocol rejection is flagged, so both diagnosable causes of "channels
+        // aren't behaving as expected" are visible from the same line.
+        bool channelMismatch = state == SerialConnectionState.Connected && _connection != null &&
+            _connection.ConnectedChannelCount != SerialConnectionService.ExpectedChannelCount;
+
         ConnectionStatusText.Text = state switch
         {
+            SerialConnectionState.Connected when channelMismatch =>
+                $"Connected — protocol {_connection!.Protocol}, chip {(_connection.ConnectedChipId is { Length: > 0 } c ? c : "(none)")} " +
+                $"— WARNING: controller reports {_connection.ConnectedChannelCount} channel(s), " +
+                $"expected {SerialConnectionService.ExpectedChannelCount}; some channels won't function.",
             SerialConnectionState.Connected =>
                 $"Connected — protocol {_connection!.Protocol}, chip {(_connection.ConnectedChipId is { Length: > 0 } c ? c : "(none)")}",
             SerialConnectionState.Identifying => "Identifying controller…",
@@ -166,10 +178,10 @@ public partial class MainWindow : Window
             _ => "Disconnected",
         };
 
-        // Colour the line as a warning only for the incompatible-firmware case, so
-        // the reason a recognised controller won't connect stands out; otherwise fall
-        // back to the theme's default foreground.
-        if (state == SerialConnectionState.Incompatible)
+        // Colour the line as a warning for the incompatible-firmware case or a
+        // connected-but-channel-mismatched controller, so the reason something is
+        // wrong stands out; otherwise fall back to the theme's default foreground.
+        if (state == SerialConnectionState.Incompatible || channelMismatch)
             ConnectionStatusText.Foreground = Brushes.OrangeRed;
         else
             ConnectionStatusText.ClearValue(TextBlock.ForegroundProperty);
