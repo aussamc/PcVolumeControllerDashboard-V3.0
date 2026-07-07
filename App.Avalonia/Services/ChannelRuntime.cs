@@ -7,8 +7,17 @@ using PcVolumeControllerDashboard.Core.Audio;
 
 namespace PcVolumeControllerDashboard.App.Services;
 
-/// <summary>A volume/mute change for a channel, for the on-screen volume overlay.</summary>
-public readonly record struct VolumeOverlayInfo(int ChannelIndex, string Label, int VolumePercent, bool Muted);
+/// <summary>
+/// A volume/mute change for a channel, for the on-screen volume overlay.
+/// <paramref name="Muted"/> is the target's current mute state.
+/// <paramref name="MuteToggle"/> is true only when this change originated from a
+/// mute toggle (button action / master-mute hotkey), which drives the overlay's
+/// dedicated mute layout (speaker glyph + Muted/Unmuted text, bar hidden). A plain
+/// volume change while a target happens to be muted leaves it false so the normal
+/// volume-bar view is shown, matching the WPF host.
+/// </summary>
+public readonly record struct VolumeOverlayInfo(
+    int ChannelIndex, string Label, int VolumePercent, bool Muted, bool MuteToggle = false);
 
 /// <summary>
 /// The audio half of the runtime backbone: maps inbound controller events to
@@ -67,10 +76,10 @@ public sealed class ChannelRuntime : IDisposable
         _connection.MessageReceived += OnDeviceMessage;
     }
 
-    private void RaiseVolume(int index, ChannelSettings channel, int percent, bool muted)
+    private void RaiseVolume(int index, ChannelSettings channel, int percent, bool muted, bool muteToggle = false)
     {
         string label = string.IsNullOrWhiteSpace(channel.FriendlyName) ? $"Channel {index + 1}" : channel.FriendlyName;
-        try { VolumeChanged?.Invoke(new VolumeOverlayInfo(index, label, Math.Clamp(percent, 0, 100), muted)); }
+        try { VolumeChanged?.Invoke(new VolumeOverlayInfo(index, label, Math.Clamp(percent, 0, 100), muted, muteToggle)); }
         catch { /* overlay is best-effort */ }
     }
 
@@ -291,7 +300,7 @@ public sealed class ChannelRuntime : IDisposable
                 {
                     _log.Log($"Ch{index + 1} {muteKey}: {(muted.Value ? "muted" : "unmuted")}");
                     float v = _audio.GetVolumeByKey(muteKey);
-                    RaiseVolume(index, channel, v < 0f ? 0 : (int)Math.Round(v * 100), muted.Value);
+                    RaiseVolume(index, channel, v < 0f ? 0 : (int)Math.Round(v * 100), muted.Value, muteToggle: true);
                 }
                 break;
             }
