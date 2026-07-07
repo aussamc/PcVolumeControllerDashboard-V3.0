@@ -55,6 +55,9 @@ public partial class App : Application
             Services.GetRequiredService<Services.ChannelRuntime>();
             Services.GetRequiredService<Services.DeviceStateService>();
             Services.GetRequiredService<Services.VolumeOverlayController>();
+            // Start the PC activity monitor before connecting so lock/suspend/idle
+            // transitions drive SLEEP/WAKE (and OLED-push suppression) once connected.
+            Services.GetRequiredService<Services.SleepWakeService>();
             Services.GetRequiredService<Services.SerialConnectionService>().AutoConnect();
 
             // Global hotkeys: constructing the manager registers the assigned bindings;
@@ -143,6 +146,11 @@ public partial class App : Application
 
         // On-screen volume overlay: transient popup on knob/preset/mute changes.
         services.AddSingleton<Services.VolumeOverlayController>();
+
+        // Auto sleep/wake: PC lock/suspend/idle -> controller SLEEP, resume -> WAKE
+        // (Windows only; a no-op monitor elsewhere). Also drives the OLED-push
+        // suppression on DeviceStateService while the controller is asleep.
+        services.AddSingleton<Services.SleepWakeService>();
 
         // Software update check (queries GitHub Releases; manual/user-triggered).
         services.AddSingleton<Services.UpdateCheckService>();
