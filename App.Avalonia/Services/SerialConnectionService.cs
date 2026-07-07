@@ -58,12 +58,33 @@ public sealed class SerialConnectionService : IDisposable
     private const int LivenessTimeoutMs = 3000;
     private const int ReconnectThrottleMs = 3000;
 
+    // Per-port reconnect cooldowns (parity with WPF's _rejectedComPorts /
+    // _phantomComPorts). Without them the ~3s reconnect scan re-tries every present
+    // port each cycle — including a second serial device already known to be the
+    // wrong device — burning a full identify timeout on it every time. Two distinct
+    // windows, matching WPF's retry semantics:
+    //   • Rejected: a port that produced a HELLO with the wrong device name (or no
+    //     valid identity at all within the timeout) — confirmed not our controller,
+    //     so back off for a long window.
+    //   • Phantom: a port that failed to open (busy / disappeared), plus the
+    //     remembered controller port when it merely times out identifying — kept on
+    //     the short window so a slow-rebooting real device is never locked out long.
+    private const int RejectedPortCooldownMs = 5 * 60 * 1000; // 5 min
+    private const int PhantomPortCooldownMs = 15 * 1000;       // 15 s
+
     private readonly SerialService _serial;
     private readonly SettingsService _settings;
     private readonly LogService _log;
     private Timer? _identifyTimer;
     private Timer? _monitorTimer;
     private readonly Queue<string> _candidates = new();
+
+    // Port → cooldown-expiry (Environment.TickCount64 ms). Guarded by _cooldownLock
+    // because they're touched from the monitor/identify timer threads, the serial
+    // read thread (on success), and public UI-thread calls.
+    private readonly object _cooldownLock = new();
+    private readonly Dictionary<string, long> _rejectedPorts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, long> _phantomPorts = new(StringComparer.OrdinalIgnoreCase);
 
     // Armed while we should keep (re)connecting automatically. A hardware drop
     // leaves this true so the monitor re-establishes the link when the controller
@@ -142,6 +163,10 @@ public sealed class SerialConnectionService : IDisposable
     {
         _autoReconnect = true;
         EnsureMonitor();
+        // An explicit user "try now" clears every port cooldown so a port that was
+        // backed off (wrong device / failed open / slow identify) is retried this
+        // scan instead of waiting out its window.
+        ClearAllPortCooldowns();
         // If a controller is already connected (or mid-identify), close the port
         // first. Otherwise the rescan tries to Open() a port that's already open,
         // skips every candidate, and gets stuck "searching" until the device is
@@ -157,6 +182,7 @@ public sealed class SerialConnectionService : IDisposable
     {
         _autoReconnect = true;
         EnsureMonitor();
+        ClearPortCooldown(port); // an explicit target overrides any prior cooldown
         _quietScan = false;
         _lastScanTicks = Environment.TickCount64;
         BeginScan(new List<string> { port });
@@ -172,6 +198,11 @@ public sealed class SerialConnectionService : IDisposable
         string[] ports = SerialService.GetPortNames();
         if (!quiet)
             _log.Log($"Auto-connect: available ports = {(ports.Length == 0 ? "(none)" : string.Join(", ", ports))}.");
+
+        // Expire cooldowns whose window has passed, and forget any for a port that
+        // has since disappeared (so an unplug/replug of the real controller is tried
+        // again immediately rather than being held off by a stale cooldown).
+        PrunePortCooldowns(ports);
 
         // Candidate order: remembered port first (fast path), then — when scanning
         // is enabled (or nothing is remembered) — every other port as a fallback.
@@ -189,8 +220,14 @@ public sealed class SerialConnectionService : IDisposable
                     candidates.Add(p);
         }
 
+        // Drop ports still serving a cooldown so a known-wrong or unopenable port
+        // isn't reopened (and re-timed-out) every reconnect cycle.
+        candidates.RemoveAll(IsPortInCooldown);
+
         if (candidates.Count == 0)
         {
+            if (!quiet && ports.Length > 0)
+                _log.Log("No connectable ports — all present ports are on reconnect cooldown.");
             SetState(SerialConnectionState.Disconnected);
             return;
         }
@@ -202,6 +239,89 @@ public sealed class SerialConnectionService : IDisposable
 
     private void EnsureMonitor() =>
         _monitorTimer ??= new Timer(_ => OnMonitorTick(), null, MonitorIntervalMs, MonitorIntervalMs);
+
+    // ── Per-port reconnect cooldowns ─────────────────────────────────────────────
+
+    /// <summary>True if <paramref name="port"/> is currently serving either cooldown.</summary>
+    private bool IsPortInCooldown(string port)
+    {
+        long now = Environment.TickCount64;
+        lock (_cooldownLock)
+            return (_rejectedPorts.TryGetValue(port, out long r) && now < r) ||
+                   (_phantomPorts.TryGetValue(port, out long p) && now < p);
+    }
+
+    /// <summary>
+    /// Drops expired cooldown entries and — crucially — any cooldown for a port that
+    /// is no longer present. A physical unplug/replug therefore clears the lockout,
+    /// so the real controller reconnects promptly after being re-seated; the cooldown
+    /// only suppresses repeated retries while the same wrong/unopenable port stays
+    /// plugged in. <paramref name="presentPorts"/> is the current enumeration.
+    /// </summary>
+    private void PrunePortCooldowns(string[] presentPorts)
+    {
+        long now = Environment.TickCount64;
+        lock (_cooldownLock)
+        {
+            PruneCooldownMap(_rejectedPorts, presentPorts, now);
+            PruneCooldownMap(_phantomPorts, presentPorts, now);
+        }
+    }
+
+    private static void PruneCooldownMap(Dictionary<string, long> map, string[] presentPorts, long now)
+    {
+        if (map.Count == 0) return;
+        var expired = map
+            .Where(kv => now >= kv.Value || !presentPorts.Contains(kv.Key, StringComparer.OrdinalIgnoreCase))
+            .Select(kv => kv.Key)
+            .ToList();
+        foreach (string p in expired)
+            map.Remove(p);
+    }
+
+    /// <summary>Backs a confirmed-wrong port off for the long (rejected) window.</summary>
+    private void MarkPortRejected(string? port, string reason)
+    {
+        if (string.IsNullOrWhiteSpace(port)) return;
+        lock (_cooldownLock)
+            _rejectedPorts[port] = Environment.TickCount64 + RejectedPortCooldownMs;
+        _log.Log($"Rejected {port}: {reason}. Skipping it for {RejectedPortCooldownMs / 60000} min " +
+                 "(or until it is unplugged/replugged or you press Reconnect).");
+    }
+
+    /// <summary>Backs an unopenable (or slow remembered) port off for the short window.</summary>
+    private void MarkPortPhantom(string? port, string reason)
+    {
+        if (string.IsNullOrWhiteSpace(port)) return;
+        lock (_cooldownLock)
+            _phantomPorts[port] = Environment.TickCount64 + PhantomPortCooldownMs;
+        if (!_quietScan)
+            _log.Log($"Port {port} unavailable: {reason}. Skipping it for {PhantomPortCooldownMs / 1000}s.");
+    }
+
+    private void ClearPortCooldown(string? port)
+    {
+        if (string.IsNullOrWhiteSpace(port)) return;
+        lock (_cooldownLock)
+        {
+            _rejectedPorts.Remove(port);
+            _phantomPorts.Remove(port);
+        }
+    }
+
+    private void ClearAllPortCooldowns()
+    {
+        lock (_cooldownLock)
+        {
+            _rejectedPorts.Clear();
+            _phantomPorts.Clear();
+        }
+    }
+
+    /// <summary>True if <paramref name="port"/> is the remembered controller port.</summary>
+    private bool IsRememberedPort(string port) =>
+        !string.IsNullOrWhiteSpace(_settings.Settings.LastComPort) &&
+        string.Equals(_settings.Settings.LastComPort, port, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Once-a-second connection monitor. Connected: PING for keepalive and drop
@@ -278,6 +398,9 @@ public sealed class SerialConnectionService : IDisposable
         catch (Exception ex)
         {
             if (!_quietScan) _log.Log($"Open {port} failed: {ex.Message}; trying next.");
+            // Open failure (busy / unplugged mid-scan): short cooldown so the next
+            // cycle doesn't immediately retry it, but it recovers quickly.
+            MarkPortPhantom(port, ex.Message);
             TryNextCandidate();
             return;
         }
@@ -345,6 +468,16 @@ public sealed class SerialConnectionService : IDisposable
     {
         if (State != SerialConnectionState.Identifying) return;
         if (!_quietScan) _log.Log($"No valid controller identity from {port} within {IdentifyTimeoutMs} ms.");
+
+        // Remember this port produced no valid identity so the next reconnect cycle
+        // skips it instead of burning another full identify timeout on it. The
+        // remembered controller port only gets the short (phantom) cooldown — a slow
+        // reboot must never lock the real device out for the long rejected window.
+        if (IsRememberedPort(port))
+            MarkPortPhantom(port, "no valid controller identity within timeout");
+        else
+            MarkPortRejected(port, "no valid controller identity within timeout");
+
         _serial.Close();
         TryNextCandidate(); // advance to the next candidate, or stop if none remain
     }
@@ -409,6 +542,7 @@ public sealed class SerialConnectionService : IDisposable
                 _identifyTimer?.Dispose();
                 _identifyTimer = null;
                 _candidates.Clear(); // found it — stop scanning remaining ports
+                ClearPortCooldown(_serial.PortName); // a good identify clears any backoff
                 IncompatibleController = null; // a good link clears any prior warning
                 _pendingIncompatible = null;
                 ConnectedChipId = msg.ChipId;
