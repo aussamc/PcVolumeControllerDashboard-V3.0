@@ -67,12 +67,45 @@ public sealed class SerialConnectionService : IDisposable
     private const int LivenessTimeoutMs = 3000;
     private const int ReconnectThrottleMs = 3000;
 
+    // Per-port reconnect cooldowns (parity with WPF's _rejectedComPorts /
+    // _phantomComPorts). Without them the ~3s reconnect scan re-tries every present
+    // port each cycle — including a second serial device already known to be the
+    // wrong device — burning a full identify timeout on it every time. Two distinct
+    // windows, matching WPF's retry semantics:
+    //   • Rejected: a port that produced a HELLO with the wrong device name (or no
+    //     valid identity at all within the timeout) — confirmed not our controller,
+    //     so back off for a long window.
+    //   • Phantom: a port that failed to open (busy / disappeared), plus the
+    //     remembered controller port when it merely times out identifying — kept on
+    //     the short window so a slow-rebooting real device is never locked out long.
+    //   • Incompatible: a recognised controller whose firmware protocol is too old.
+    //     Skipped in the fast scan (so it isn't re-opened — and thereby reset — every
+    //     ~3s, which flickers the UI between Incompatible↔Identifying) but re-probed
+    //     on a slow, quiet cadence so a firmware update is still auto-detected.
+    private const int RejectedPortCooldownMs = 5 * 60 * 1000; // 5 min
+    private const int PhantomPortCooldownMs = 15 * 1000;       // 15 s
+    private const int IncompatiblePortReprobeMs = 30 * 1000;  // 30 s
+
     private readonly SerialService _serial;
     private readonly SettingsService _settings;
     private readonly LogService _log;
     private Timer? _identifyTimer;
     private Timer? _monitorTimer;
     private readonly Queue<string> _candidates = new();
+
+    // Port → cooldown-expiry (Environment.TickCount64 ms). Guarded by _cooldownLock
+    // because they're touched from the monitor/identify timer threads, the serial
+    // read thread (on success), and public UI-thread calls.
+    private readonly object _cooldownLock = new();
+    private readonly Dictionary<string, long> _rejectedPorts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, long> _phantomPorts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, long> _incompatiblePorts = new(StringComparer.OrdinalIgnoreCase);
+
+    // True while a quiet background re-probe of a known-incompatible controller is in
+    // flight: the public State deliberately stays Incompatible (no flicker) even
+    // though the port is open and identifying, so the scan-lifecycle guards that
+    // normally key on the Identifying state must also honour this flag.
+    private bool _reprobeInFlight;
 
     // Armed while we should keep (re)connecting automatically. A hardware drop
     // leaves this true so the monitor re-establishes the link when the controller
@@ -158,6 +191,10 @@ public sealed class SerialConnectionService : IDisposable
     {
         _autoReconnect = true;
         EnsureMonitor();
+        // An explicit user "try now" clears every port cooldown so a port that was
+        // backed off (wrong device / failed open / slow identify) is retried this
+        // scan instead of waiting out its window.
+        ClearAllPortCooldowns();
         // If a controller is already connected (or mid-identify), close the port
         // first. Otherwise the rescan tries to Open() a port that's already open,
         // skips every candidate, and gets stuck "searching" until the device is
@@ -173,6 +210,7 @@ public sealed class SerialConnectionService : IDisposable
     {
         _autoReconnect = true;
         EnsureMonitor();
+        ClearPortCooldown(port); // an explicit target overrides any prior cooldown
         _quietScan = false;
         _lastScanTicks = Environment.TickCount64;
         BeginScan(new List<string> { port });
@@ -188,6 +226,11 @@ public sealed class SerialConnectionService : IDisposable
         string[] ports = SerialService.GetPortNames();
         if (!quiet)
             _log.Log($"Auto-connect: available ports = {(ports.Length == 0 ? "(none)" : string.Join(", ", ports))}.");
+
+        // Expire cooldowns whose window has passed, and forget any for a port that
+        // has since disappeared (so an unplug/replug of the real controller is tried
+        // again immediately rather than being held off by a stale cooldown).
+        PrunePortCooldowns(ports);
 
         // Candidate order: remembered port first (fast path), then — when scanning
         // is enabled (or nothing is remembered) — every other port as a fallback.
@@ -205,9 +248,15 @@ public sealed class SerialConnectionService : IDisposable
                     candidates.Add(p);
         }
 
+        // Drop ports still serving a cooldown so a known-wrong or unopenable port
+        // isn't reopened (and re-timed-out) every reconnect cycle.
+        candidates.RemoveAll(IsPortInCooldown);
+
         if (candidates.Count == 0)
         {
-            SetState(SerialConnectionState.Disconnected);
+            if (!quiet && ports.Length > 0)
+                _log.Log("No connectable ports — all present ports are on reconnect cooldown.");
+            SettleIncompatibleOrDisconnected();
             return;
         }
 
@@ -218,6 +267,107 @@ public sealed class SerialConnectionService : IDisposable
 
     private void EnsureMonitor() =>
         _monitorTimer ??= new Timer(_ => OnMonitorTick(), null, MonitorIntervalMs, MonitorIntervalMs);
+
+    // ── Per-port reconnect cooldowns ─────────────────────────────────────────────
+
+    /// <summary>True if <paramref name="port"/> is currently serving either cooldown.</summary>
+    private bool IsPortInCooldown(string port)
+    {
+        long now = Environment.TickCount64;
+        lock (_cooldownLock)
+            return (_rejectedPorts.TryGetValue(port, out long r) && now < r) ||
+                   (_phantomPorts.TryGetValue(port, out long p) && now < p) ||
+                   (_incompatiblePorts.TryGetValue(port, out long i) && now < i);
+    }
+
+    /// <summary>
+    /// Drops expired cooldown entries and — crucially — any cooldown for a port that
+    /// is no longer present. A physical unplug/replug therefore clears the lockout,
+    /// so the real controller reconnects promptly after being re-seated; the cooldown
+    /// only suppresses repeated retries while the same wrong/unopenable port stays
+    /// plugged in. <paramref name="presentPorts"/> is the current enumeration.
+    /// </summary>
+    private void PrunePortCooldowns(string[] presentPorts)
+    {
+        long now = Environment.TickCount64;
+        lock (_cooldownLock)
+        {
+            PruneCooldownMap(_rejectedPorts, presentPorts, now);
+            PruneCooldownMap(_phantomPorts, presentPorts, now);
+            PruneCooldownMap(_incompatiblePorts, presentPorts, now);
+        }
+    }
+
+    private static void PruneCooldownMap(Dictionary<string, long> map, string[] presentPorts, long now)
+    {
+        if (map.Count == 0) return;
+        var expired = map
+            .Where(kv => now >= kv.Value || !presentPorts.Contains(kv.Key, StringComparer.OrdinalIgnoreCase))
+            .Select(kv => kv.Key)
+            .ToList();
+        foreach (string p in expired)
+            map.Remove(p);
+    }
+
+    /// <summary>Backs a confirmed-wrong port off for the long (rejected) window.</summary>
+    private void MarkPortRejected(string? port, string reason)
+    {
+        if (string.IsNullOrWhiteSpace(port)) return;
+        lock (_cooldownLock)
+            _rejectedPorts[port] = Environment.TickCount64 + RejectedPortCooldownMs;
+        _log.Log($"Rejected {port}: {reason}. Skipping it for {RejectedPortCooldownMs / 60000} min " +
+                 "(or until it is unplugged/replugged or you press Reconnect).");
+    }
+
+    /// <summary>Backs an unopenable (or slow remembered) port off for the short window.</summary>
+    private void MarkPortPhantom(string? port, string reason)
+    {
+        if (string.IsNullOrWhiteSpace(port)) return;
+        lock (_cooldownLock)
+            _phantomPorts[port] = Environment.TickCount64 + PhantomPortCooldownMs;
+        if (!_quietScan)
+            _log.Log($"Port {port} unavailable: {reason}. Skipping it for {PhantomPortCooldownMs / 1000}s.");
+    }
+
+    /// <summary>
+    /// Backs a recognised-but-incompatible controller's port off for the medium
+    /// re-probe window so the fast scan stops re-opening (and resetting) it every
+    /// cycle. The port is retried once the window lapses, quietly, so a firmware
+    /// update is still picked up without a manual step. Logging is left to
+    /// <see cref="HandleIncompatibleController"/> (which de-dupes it).
+    /// </summary>
+    private void MarkPortIncompatible(string? port)
+    {
+        if (string.IsNullOrWhiteSpace(port)) return;
+        lock (_cooldownLock)
+            _incompatiblePorts[port] = Environment.TickCount64 + IncompatiblePortReprobeMs;
+    }
+
+    private void ClearPortCooldown(string? port)
+    {
+        if (string.IsNullOrWhiteSpace(port)) return;
+        lock (_cooldownLock)
+        {
+            _rejectedPorts.Remove(port);
+            _phantomPorts.Remove(port);
+            _incompatiblePorts.Remove(port);
+        }
+    }
+
+    private void ClearAllPortCooldowns()
+    {
+        lock (_cooldownLock)
+        {
+            _rejectedPorts.Clear();
+            _phantomPorts.Clear();
+            _incompatiblePorts.Clear();
+        }
+    }
+
+    /// <summary>True if <paramref name="port"/> is the remembered controller port.</summary>
+    private bool IsRememberedPort(string port) =>
+        !string.IsNullOrWhiteSpace(_settings.Settings.LastComPort) &&
+        string.Equals(_settings.Settings.LastComPort, port, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Once-a-second connection monitor. Connected: PING for keepalive and drop
@@ -241,8 +391,11 @@ public sealed class SerialConnectionService : IDisposable
                 break;
 
             // Incompatible is treated like Disconnected for reconnection: keep
-            // rescanning so that if the user flashes newer firmware, the next scan
-            // identifies it and connects (clearing the warning) with no manual step.
+            // rescanning so newer firmware is auto-detected and connects with no
+            // manual step. The incompatible port sits on a re-probe cooldown so it's
+            // re-opened (and thereby reset) only every IncompatiblePortReprobeMs, and
+            // that re-probe stays quiet — the public state remains Incompatible, so
+            // the UI warning holds steady instead of flickering to Identifying.
             case SerialConnectionState.Disconnected:
             case SerialConnectionState.Incompatible:
                 if (!_autoReconnect || !_settings.Settings.AutoConnectOnLaunch) return;
@@ -261,23 +414,39 @@ public sealed class SerialConnectionService : IDisposable
         TryNextCandidate();
     }
 
+    /// <summary>
+    /// Picks the resting state after a scan found nothing to connect to. Stays
+    /// (sticky) Incompatible if an incompatible controller turned up this scan, or a
+    /// previously-known one is still plugged in — its port merely skipped this cycle
+    /// while serving its re-probe cooldown, so the warning must not drop to
+    /// Disconnected and flicker. Otherwise reports Disconnected. Also clears any
+    /// in-flight re-probe marker.
+    /// </summary>
+    private void SettleIncompatibleOrDisconnected()
+    {
+        _reprobeInFlight = false;
+        string[] ports = SerialService.GetPortNames();
+        IncompatibleControllerInfo? incompat = _pendingIncompatible ?? IncompatibleController;
+        if (incompat != null && ports.Contains(incompat.Port, StringComparer.OrdinalIgnoreCase))
+        {
+            IncompatibleController = incompat;
+            SetState(SerialConnectionState.Incompatible);
+        }
+        else
+        {
+            IncompatibleController = null;
+            SetState(SerialConnectionState.Disconnected);
+        }
+    }
+
     /// <summary>Opens the next candidate port and begins its identity handshake.</summary>
     private void TryNextCandidate()
     {
         if (_candidates.Count == 0)
         {
-            // Nothing compatible found. If a recognised-but-too-old controller
-            // turned up during the scan, settle into Incompatible (persisting its
-            // details for the UI) rather than a bare Disconnected.
-            if (_pendingIncompatible is { } incompatible)
-            {
-                IncompatibleController = incompatible;
-                SetState(SerialConnectionState.Incompatible);
-                return;
-            }
-
-            if (!_quietScan) _log.Log("No controller found on any candidate port.");
-            SetState(SerialConnectionState.Disconnected);
+            if (!_quietScan && _pendingIncompatible == null && IncompatibleController == null)
+                _log.Log("No controller found on any candidate port.");
+            SettleIncompatibleOrDisconnected();
             return;
         }
 
@@ -294,13 +463,23 @@ public sealed class SerialConnectionService : IDisposable
         catch (Exception ex)
         {
             if (!_quietScan) _log.Log($"Open {port} failed: {ex.Message}; trying next.");
+            // Open failure (busy / unplugged mid-scan): short cooldown so the next
+            // cycle doesn't immediately retry it, but it recovers quickly.
+            MarkPortPhantom(port, ex.Message);
             TryNextCandidate();
             return;
         }
 
         ConnectedChipId = null;
         Protocol = null;
-        SetState(SerialConnectionState.Identifying);
+        // A quiet re-probe of a known-incompatible controller keeps the public state
+        // on Incompatible (no Incompatible↔Identifying flicker, and the UI warning
+        // stays put); the scan-lifecycle guards honour _reprobeInFlight in place of
+        // the Identifying state. Every other scan shows Identifying as before.
+        if (_quietScan && State == SerialConnectionState.Incompatible)
+            _reprobeInFlight = true;
+        else
+            SetState(SerialConnectionState.Identifying);
         if (!_quietScan) _log.Log($"Opened {port}; requesting identity.");
 
         Send(ProtocolCommands.HelloQuery); // "HELLO?"
@@ -354,14 +533,25 @@ public sealed class SerialConnectionService : IDisposable
         _pendingIncompatible = null;
         IncompatibleController = null;
         ConnectedChannelCount = 0;
+        _reprobeInFlight = false;
         _serial.Close();
         SetState(SerialConnectionState.Disconnected);
     }
 
     private void OnIdentifyTimeout(string port)
     {
-        if (State != SerialConnectionState.Identifying) return;
+        if (State != SerialConnectionState.Identifying && !_reprobeInFlight) return;
         if (!_quietScan) _log.Log($"No valid controller identity from {port} within {IdentifyTimeoutMs} ms.");
+
+        // Remember this port produced no valid identity so the next reconnect cycle
+        // skips it instead of burning another full identify timeout on it. The
+        // remembered controller port only gets the short (phantom) cooldown — a slow
+        // reboot must never lock the real device out for the long rejected window.
+        if (IsRememberedPort(port))
+            MarkPortPhantom(port, "no valid controller identity within timeout");
+        else
+            MarkPortRejected(port, "no valid controller identity within timeout");
+
         _serial.Close();
         TryNextCandidate(); // advance to the next candidate, or stop if none remain
     }
@@ -387,13 +577,18 @@ public sealed class SerialConnectionService : IDisposable
 
         _pendingIncompatible = info;
 
+        // Back the port off the fast scan so it isn't re-opened (and thereby reset)
+        // every ~3s; it's re-probed quietly once the window lapses, so flashing newer
+        // firmware is still auto-detected without a manual step.
+        MarkPortIncompatible(port);
+
         // Reject off the serial read thread: this runs inside the port's own
         // DataReceived callback, and closing a SerialPort from there can deadlock.
         // A zero-delay timer hops threads, mirroring the identify-timeout path.
         _identifyTimer?.Dispose();
         _identifyTimer = new Timer(_ =>
         {
-            if (State != SerialConnectionState.Identifying) return;
+            if (State != SerialConnectionState.Identifying && !_reprobeInFlight) return;
             _serial.Close();
             TryNextCandidate();
         }, null, 0, Timeout.Infinite);
@@ -426,8 +621,10 @@ public sealed class SerialConnectionService : IDisposable
                 _identifyTimer?.Dispose();
                 _identifyTimer = null;
                 _candidates.Clear(); // found it — stop scanning remaining ports
+                ClearPortCooldown(_serial.PortName); // a good identify clears any backoff
                 IncompatibleController = null; // a good link clears any prior warning
                 _pendingIncompatible = null;
+                _reprobeInFlight = false; // a good identify ends any in-flight re-probe
                 ConnectedChipId = msg.ChipId;
                 Protocol = msg.Protocol;
                 ConnectedChannelCount = msg.ChannelCount;
