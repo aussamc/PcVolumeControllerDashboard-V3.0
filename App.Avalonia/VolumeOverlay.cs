@@ -2,11 +2,13 @@ using System;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Shapes;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Threading;
 using PcVolumeControllerDashboard.App.Services;
+using ShapePath = Avalonia.Controls.Shapes.Path;
 
 namespace PcVolumeControllerDashboard.App;
 
@@ -16,6 +18,11 @@ namespace PcVolumeControllerDashboard.App;
 /// configured screen corner with the channel name, a volume bar, and the
 /// percentage, then auto-hides after a timeout. The Avalonia counterpart of the
 /// WPF host's VolumeOverlayWindow.
+///
+/// A mute toggle switches to a distinct mute layout — a speaker glyph, large
+/// "Muted"/"Unmuted" text, and the volume bar hidden — matching the WPF host's
+/// ShowMuteOverlay. A plain volume change (even while the target is muted) keeps
+/// the normal volume-bar view.
 /// </summary>
 public sealed class VolumeOverlay : Window
 {
@@ -24,6 +31,12 @@ public sealed class VolumeOverlay : Window
     private const int ScreenMarginDip = 28;
     private const int FadeStepMs = 16;        // ~60 fps
     private const double FadeStep = 0.06;     // ~17 steps ≈ 270 ms fade-out
+
+    // Speaker glyph geometries (24×24 space, scaled by a Viewbox). The cone body is
+    // filled; the state mark (an X for muted, sound waves for unmuted) is stroked.
+    private const string SpeakerBodyGeometry = "M3,9 L3,15 L7,15 L12,20 L12,4 L7,9 Z";
+    private const string MutedMarkGeometry = "M15,9 L21,15 M21,9 L15,15";
+    private const string UnmutedMarkGeometry = "M15,8 A5,5 0 0 1 15,16 M17.5,5.5 A8,8 0 0 1 17.5,18.5";
 
     private static readonly IBrush PanelBrush = new SolidColorBrush(Color.FromArgb(0xE6, 0x1E, 0x1E, 0x1E));
     private static readonly IBrush TrackBrush = new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF));
@@ -34,6 +47,10 @@ public sealed class VolumeOverlay : Window
     private readonly TextBlock _value;
     private readonly Border _fill;
     private readonly Border _track;
+    private readonly StackPanel _muteRow;
+    private readonly TextBlock _muteStatus;
+    private readonly ShapePath _mutedMark;
+    private readonly ShapePath _unmutedMark;
     private readonly DispatcherTimer _hideTimer;
     private readonly DispatcherTimer _fadeTimer;
 
@@ -69,12 +86,48 @@ public sealed class VolumeOverlay : Window
             Child = _fill,
         };
 
+        // Mute layout: speaker glyph + "Muted"/"Unmuted". Shown instead of the bar on
+        // a mute toggle. The cone body is always drawn; the state mark toggles.
+        var speakerBody = new ShapePath { Data = Geometry.Parse(SpeakerBodyGeometry), Fill = Brushes.White };
+        _mutedMark = new ShapePath { Data = Geometry.Parse(MutedMarkGeometry), Stroke = Brushes.White, StrokeThickness = 2 };
+        _unmutedMark = new ShapePath { Data = Geometry.Parse(UnmutedMarkGeometry), Stroke = Brushes.White, StrokeThickness = 2 };
+
+        var speakerIcon = new Viewbox
+        {
+            Width = 26,
+            Height = 26,
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = new Canvas
+            {
+                Width = 24,
+                Height = 24,
+                Children = { speakerBody, _mutedMark, _unmutedMark },
+            },
+        };
+
+        _muteStatus = new TextBlock
+        {
+            FontSize = 18,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = Brushes.White,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        _muteRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 12,
+            Margin = new Thickness(0, 6, 0, 0),
+            IsVisible = false,
+            Children = { speakerIcon, _muteStatus },
+        };
+
         Content = new Border
         {
             Background = PanelBrush,
             CornerRadius = new CornerRadius(12),
             Padding = new Thickness(18, 14),
-            Child = new StackPanel { Children = { header, _track } },
+            Child = new StackPanel { Children = { header, _track, _muteRow } },
         };
 
         // After the visible timeout, fade the window out rather than cutting it off.
@@ -104,13 +157,32 @@ public sealed class VolumeOverlay : Window
     public void ShowVolume(VolumeOverlayInfo info, string position, double timeoutSeconds)
     {
         _label.Text = info.Label;
-        _value.Text = info.Muted ? "Muted" : $"{info.VolumePercent}%";
-        _fill.Background = info.Muted ? MutedBrush : FillBrush;
 
-        // Proportional fill width within the track's inner width.
-        double trackWidth = OverlayWidth - 36; // panel padding (18 each side)
-        _fill.Width = Math.Max(0, trackWidth * Math.Clamp(info.VolumePercent, 0, 100) / 100.0);
-        _fill.Height = 10;
+        if (info.MuteToggle)
+        {
+            // Mute mode — dedicated layout: speaker glyph + Muted/Unmuted, no bar.
+            _value.IsVisible = false;
+            _track.IsVisible = false;
+            _muteRow.IsVisible = true;
+            _mutedMark.IsVisible = info.Muted;
+            _unmutedMark.IsVisible = !info.Muted;
+            _muteStatus.Text = info.Muted ? "Muted" : "Unmuted";
+        }
+        else
+        {
+            // Volume mode — channel name, proportional bar, and percentage.
+            _value.IsVisible = true;
+            _track.IsVisible = true;
+            _muteRow.IsVisible = false;
+
+            _value.Text = info.Muted ? "Muted" : $"{info.VolumePercent}%";
+            _fill.Background = info.Muted ? MutedBrush : FillBrush;
+
+            // Proportional fill width within the track's inner width.
+            double trackWidth = OverlayWidth - 36; // panel padding (18 each side)
+            _fill.Width = Math.Max(0, trackWidth * Math.Clamp(info.VolumePercent, 0, 100) / 100.0);
+            _fill.Height = 10;
+        }
 
         // Cancel any in-flight fade-out and restore full opacity for this update.
         _fadeTimer.Stop();

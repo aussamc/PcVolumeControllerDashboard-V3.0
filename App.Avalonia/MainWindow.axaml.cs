@@ -92,11 +92,17 @@ public partial class MainWindow : Window
         base.OnClosing(e);
 
         // A user close with minimise-to-tray off must exit the app (the lifetime is
-        // OnExplicitShutdown). When _reallyClose is set the shutdown is already in
-        // progress (tray "Exit" called it), so don't re-enter it.
+        // OnExplicitShutdown). Shutdown() closes every window, which re-invokes this
+        // OnClosing — so set _reallyClose *first*: without it the re-entrant call
+        // takes this same branch and calls Shutdown() again, recursing until the
+        // stack overflows. (The tray "Exit" command sets it via AllowClose() for the
+        // same reason.)
         if (!_reallyClose &&
             Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            _reallyClose = true;
             desktop.Shutdown();
+        }
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -157,8 +163,20 @@ public partial class MainWindow : Window
     {
         SerialConnectionState state = _connection?.State ?? SerialConnectionState.Disconnected;
 
+        // A connected controller passes the (protocol-only) identity check but can
+        // still report a different channel count than the dashboard expects (Q6) —
+        // e.g. older/newer hardware revisions. Flag it the same way an incompatible-
+        // protocol rejection is flagged, so both diagnosable causes of "channels
+        // aren't behaving as expected" are visible from the same line.
+        bool channelMismatch = state == SerialConnectionState.Connected && _connection != null &&
+            _connection.ConnectedChannelCount != SerialConnectionService.ExpectedChannelCount;
+
         ConnectionStatusText.Text = state switch
         {
+            SerialConnectionState.Connected when channelMismatch =>
+                $"Connected — protocol {_connection!.Protocol}, chip {(_connection.ConnectedChipId is { Length: > 0 } c ? c : "(none)")} " +
+                $"— WARNING: controller reports {_connection.ConnectedChannelCount} channel(s), " +
+                $"expected {SerialConnectionService.ExpectedChannelCount}; some channels won't function.",
             SerialConnectionState.Connected =>
                 $"Connected — protocol {_connection!.Protocol}, chip {(_connection.ConnectedChipId is { Length: > 0 } c ? c : "(none)")}",
             SerialConnectionState.Identifying => "Identifying controller…",
@@ -166,10 +184,10 @@ public partial class MainWindow : Window
             _ => "Disconnected",
         };
 
-        // Colour the line as a warning only for the incompatible-firmware case, so
-        // the reason a recognised controller won't connect stands out; otherwise fall
-        // back to the theme's default foreground.
-        if (state == SerialConnectionState.Incompatible)
+        // Colour the line as a warning for the incompatible-firmware case or a
+        // connected-but-channel-mismatched controller, so the reason something is
+        // wrong stands out; otherwise fall back to the theme's default foreground.
+        if (state == SerialConnectionState.Incompatible || channelMismatch)
             ConnectionStatusText.Foreground = Brushes.OrangeRed;
         else
             ConnectionStatusText.ClearValue(TextBlock.ForegroundProperty);
