@@ -16,13 +16,27 @@ Effort: **S** ≈ <½ day, **M** ≈ ½–2 days, **L** ≈ multi-day.
 
 ---
 
-## Progress (2026-07-06)
+## Progress (updated 2026-07-08 — shipped as v3.12)
 
-- **Merged to `main`:** B1 (+Q6 warning line), B2, F3.
-- **In review:** F4 (tray menu actions).
-- **Greenlit, not yet built:** F6 (cross-platform notification layer — supersedes
-  the "remove the checkbox" option for F5).
-- **Next up:** F1 / F2 (the two large features), then the P2 quality batch.
+- **Merged to `main`:** B1 (+Q6 protocol-mismatch warning), B2, F3, F4, and the v3.12
+  batch — **Q1** (encoder debounce/coalescing/reverse-guard), **Q3** (rejected/phantom
+  port cooldowns; the same PR also fixed an incompatible-controller status *flicker* —
+  the too-old-firmware port was re-opened/reset every ~3s), **Q5** (overlay mute mode),
+  **Q6** (connected-but-channel-count-mismatch warning), **F1** (auto sleep/wake,
+  incl. suspend/resume verified on Windows). **R1** confirmed — Avalonia's link-gang
+  behavior is the correct one; nothing to port.
+- **Descoped (not a gap):** **F2** named profiles — descoped from the port
+  (`chore(avalonia): descope named profiles from the port`), along with output-device
+  cycling.
+- **Still open — the one P1 blocker:** **F6** (cross-platform notification layer;
+  wires the inert F5 tray-notifications checkbox).
+- **Still open — quality/polish:** **Q2** (target auto-refresh), **Q4** (hardware
+  self-test panel), the fuller **Q6** 8-field diagnostics panel; **P3** — N1 (`--safe`),
+  N2 (per-port picker), N3 (log-helper buttons).
+- **Next up:** F6, then the remaining P2 items, then WPF retirement (roadmap item 3).
+
+> The prioritized tables below are the original backlog catalog; the Progress block
+> above is the status of record. Most P0/P2 items plus F1/F3/F4 are now merged (v3.12).
 
 ---
 
