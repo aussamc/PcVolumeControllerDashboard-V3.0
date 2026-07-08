@@ -124,7 +124,7 @@ Notes:
 
 ## Key constants
 
-- Dashboard version: **3.11** (both hosts). Required controller protocol: **2.24**
+- Dashboard version: **3.12** (both hosts). Required controller protocol: **2.24**
   (firmware v2.25 is backward-compatible). Expected channels: **6**.
 - Hardware: v1.4 PCB, ESP32-S3-DevKitC-1-N16R8, SSD1315 OLEDs behind a TCA9548A I2C
   mux. GPIO/OLED layout is final — see the firmware source.
@@ -142,6 +142,17 @@ closes the previous "no assignable targets on Linux" gap: master/mic/per-app vol
 and mute now work end-to-end via `pw-dump` (reads) + `wpctl` (writes). Global hotkeys
 remain Windows-only for now (Wayland has no cross-desktop-environment global-shortcut
 API — a separate, harder problem than audio).
+
+**v3.12 closes most of the parity backlog** (verified on Windows with real hardware,
+2026-07-08). New/fixed on the Avalonia host: **auto sleep/wake** (PC idle/lock/suspend
+→ controller SLEEP/WAKE, suspend-flush confirmed), encoder **debounce/coalescing/
+reverse-guard**, a distinct **overlay mute mode**, a **channel-count-mismatch** warning,
+and rejected/phantom-port **reconnect cooldowns** (which also fixed an incompatible-
+controller status *flicker* and two Windows-only defects caught during verification: a
+WPF-host build break and a crash-on-close stack overflow). With B1/B2/F3/F4 already on
+`main`, the **only remaining parity blocker is the cross-platform desktop-notification
+layer (F6)**; the rest is P2/P3 polish. Named profiles (F2) were **descoped**.
+`PARITY_FIX_BACKLOG.md` is the live tracker.
 
 Remaining to finish the port:
 
@@ -164,7 +175,15 @@ Remaining to finish the port:
    encoder acceleration/volume smoothing were also flagged parity in that pass,
    but a 2026-07-05 deeper audit found two real gaps there, see below). Known
    deliberate gaps: per-channel mute hotkeys, output-device cycling, SteelSeries
-   Sonar backend (all deferred/post-port). Newly found gaps, not yet fixed:
+   Sonar backend (all deferred/post-port). Named **profiles (F2) were descoped** from
+   the port — not a gap. **Status as of v3.12 (2026-07-08):** most of the gaps
+   catalogued below are now **resolved and merged** — B1, B2, F3, F4, plus the v3.12
+   batch (Q1 encoder debounce, Q3 port cooldowns + incompatible-controller flicker
+   fix, Q5 overlay mute mode, Q6 channel-mismatch warning, F1 auto sleep/wake); R1 is
+   confirmed (Avalonia correct). **Still open:** F6 (cross-platform notification layer
+   — the one P1 blocker), Q2 (target auto-refresh), Q4 (hardware self-test panel), the
+   fuller Q6 diagnostics panel, and P3 items N1/N2/N3. See `PARITY_FIX_BACKLOG.md` for
+   the live tracker. The detailed findings below are retained as the audit record:
    - **Profile system missing from Avalonia UI** — WPF has full multi-profile
      support (create/rename/duplicate/delete/switch/cycle-next, tray submenu,
      global hotkey — `MainWindow.xaml.cs:611-932`, `MainWindow.Tray.cs:70-99`,
