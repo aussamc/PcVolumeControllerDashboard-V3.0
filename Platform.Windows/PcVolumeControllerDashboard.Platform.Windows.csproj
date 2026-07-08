@@ -25,6 +25,11 @@
 
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />
+    <!-- Microsoft.Win32.SystemEvents: session lock/unlock + power suspend/resume
+         notifications for WindowsPcActivityMonitor (the Auto sleep/wake feature).
+         Not part of the plain Microsoft.NET.Sdk shared framework (WPF/WinForms pull
+         it in transitively; this lib does not), so reference it explicitly. -->
+    <PackageReference Include="Microsoft.Win32.SystemEvents" Version="10.0.0" />
   </ItemGroup>
 
   <ItemGroup>

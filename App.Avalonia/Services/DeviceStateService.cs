@@ -36,6 +36,13 @@ public sealed class DeviceStateService : IDisposable
     private readonly string?[] _lastChState = new string?[ExpectedChannelCount];
     private string? _lastState;
 
+    // While the controller is asleep (PC locked/suspended/idle — see SleepWakeService)
+    // its OLEDs are blanked by the firmware; suppress STATE/CHSTATE pushes so the poll
+    // doesn't wake the screen back up. Mirrors the WPF host's _controllerSleepRequested
+    // guard on SendStateToDevice / SendAllChannelStatesToDevice. Toggled on the UI
+    // thread (same thread as the push).
+    private bool _asleep;
+
     public DeviceStateService(SerialConnectionService connection, SettingsService settings, LogService log)
     {
         _connection = connection;
@@ -74,6 +81,7 @@ public sealed class DeviceStateService : IDisposable
     public void PushChannelStates(IReadOnlyList<ChannelLiveState> states, int selectedIndex)
     {
         if (_connection.State != SerialConnectionState.Connected) return;
+        if (_asleep) return; // controller OLEDs are blanked while asleep — don't wake them
 
         ChannelLiveState? selected = null;
 
@@ -136,6 +144,20 @@ public sealed class DeviceStateService : IDisposable
     /// TEST_DISPLAY), which the firmware leaves frozen until new state arrives.
     /// </summary>
     public void ForceResend() => ResetChangeTracking();
+
+    /// <summary>
+    /// Sets whether the controller is asleep. While asleep, <see cref="PushChannelStates"/>
+    /// suppresses STATE/CHSTATE so the poll doesn't wake the blanked OLEDs. On wake
+    /// (<paramref name="asleep"/> = <c>false</c>) change tracking is reset so the next
+    /// push re-sends every channel and the OLEDs repaint from live state. Called from
+    /// <see cref="SleepWakeService"/> on the UI thread.
+    /// </summary>
+    public void SetControllerAsleep(bool asleep)
+    {
+        if (_asleep == asleep) return;
+        _asleep = asleep;
+        if (!asleep) ResetChangeTracking();
+    }
 
     private void ResetChangeTracking()
     {
