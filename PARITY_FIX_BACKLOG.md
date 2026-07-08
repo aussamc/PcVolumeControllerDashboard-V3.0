@@ -51,6 +51,19 @@ required protocol, and stop presenting it as an in-progress identify with no ver
 Do **not** adopt WPF's warn-and-connect. This reshapes B1 (below) from a
 policy-change into a diagnostics/UX fix, and merges it tightly with Q6.
 
+**D2 — Q4 + Q6 live in the Debug tab, gated by an `AdvancedDebugFeatures` setting.
+DECIDED 2026-07-08.** Neither the hardware self-test (Q4) nor the fuller diagnostics
+readout (Q6) warrants a new top-level panel — both are developer/troubleshooting
+surfaces. Fold them into the **existing Debug tab** (live console + raw send +
+Ping/Scan-I2C/Test-display). A new **`AdvancedDebugFeatures`** setting (**default off**)
+shows/hides the **entire** Debug tab; a **`--debug`** startup flag force-shows it for
+the session regardless of the setting (sibling to N1's `--safe`). **Constraint — the
+actionable diagnostics must stay reachable outside the toggle:** the protocol/channel-
+mismatch **warnings already render on the main connection status line** (v3.12), and the
+diagnostics-**export** entry point must live somewhere always-visible (Settings/About),
+**not** only inside the hideable Debug tab. This shrinks Q4 and Q6 from "new panel" to
+"Debug-tab section."
+
 ---
 
 ## P0 — bugs / silent failures
@@ -87,9 +100,9 @@ of this).*
 | Q1 | **Encoder debounce/coalescing/reverse-guard** | Avalonia applies every raw `ENC` immediately. On Linux each write is a `wpctl` **process spawn**, so a bouncy turn spawns a burst of processes. WPF buffers on a 25ms timer + suppresses isolated reversals. | M | `Services/ChannelRuntime.cs:99-136`; cf. WPF `MainWindow.Encoder.cs:63-156` |
 | Q2 | **Assignable-target list doesn't auto-refresh** | New app doesn't appear in the picker until manual Refresh; WPF auto-detects in ~2.5s. (Assigned channels already track fine.) | S | `MainWindow.axaml.cs:176-190`; cf. WPF `MainWindow.xaml.cs:1833-1857` |
 | Q3 | **Rejected/phantom-port cooldown tracking** | Avalonia re-tries every candidate each reconnect cycle, incl. known-wrong ports — wastes cycles + identify timeouts when a 2nd serial device is present. | M | `Services/SerialConnectionService.cs:217-252`; cf. WPF `:686-697`,`:448-459` |
-| Q4 | **Hardware self-test panel** | WPF's per-channel "encoder count X, button seen yes/no" checklist + Reset + Sleep/Wake test buttons lets a user verify all 6 encoders/buttons. Avalonia has only a raw console. | M | new UI on Debug tab; cf. WPF `MainWindow.xaml.cs:109-110`,`:4375-4432` |
+| Q4 | **Hardware self-test** — a **Debug-tab section** (per D2), not a new panel | Per-channel "encoder count X, button seen yes/no" checklist + Reset + Sleep/Wake test buttons to verify all 6 encoders/buttons. Lives in the Debug tab, gated by `AdvancedDebugFeatures` (default off; `--debug` force-shows). | S–M | extend `MainWindow.Debug.cs`; cf. WPF `MainWindow.xaml.cs:109-110`,`:4375-4432` |
 | Q5 | **Overlay mute — distinct visual mode** | WPF shows a dedicated mute layout (speaker icon, "Muted" text, bar hidden); Avalonia just relabels the percentage. | S | `VolumeOverlay.cs:104-113`; cf. WPF `VolumeOverlayWindow.xaml.cs:56-74` |
-| Q6 | **Diagnostics panel detail + protocol-mismatch warning** | Avalonia shows one summary line vs WPF's 8-field panel with a colour-coded protocol/channel-mismatch warning. The warning pairs with B1 (surface *why* an incompatible controller won't connect). | M | `MainWindow.axaml.cs:159-165`; cf. WPF `MainWindow.Ui.cs:119-169` |
+| Q6 | **Diagnostics readout** — a **Debug-tab section** (per D2), not a new panel | The colour-coded protocol/channel-mismatch **warning is DONE (v3.12)** — it renders on the main connection status line. Remaining: the fuller 8-field readout (COM port, last-heartbeat age, firmware, last ESP32 msg, last state sent, etc.) moves into the Debug tab under `AdvancedDebugFeatures`. | S | extend `MainWindow.Debug.cs`; cf. WPF `MainWindow.Ui.cs:119-169` |
 
 ---
 
