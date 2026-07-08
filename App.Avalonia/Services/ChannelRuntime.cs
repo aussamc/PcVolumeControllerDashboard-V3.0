@@ -13,10 +13,11 @@ public readonly record struct VolumeOverlayInfo(int ChannelIndex, string Label, 
 /// <summary>
 /// The audio half of the runtime backbone: maps inbound controller events to
 /// audio operations. Encoder turns adjust the assigned channel's volume — with
-/// optional acceleration (faster turns take bigger steps) and EMA smoothing
-/// (the volume eases toward its target over ~16 ms ticks) per the Encoder Feel
-/// settings. Button presses (short/long/double) run the channel's configured
-/// action.
+/// debounce/coalescing + a reverse-direction guard ahead of that (see the
+/// "Encoder debounce" region below), then optional acceleration (faster turns
+/// take bigger steps) and EMA smoothing (the volume eases toward its target
+/// over ~16 ms ticks) per the Encoder Feel settings. Button presses
+/// (short/long/double) run the channel's configured action.
 ///
 /// Everything runs on the UI thread (events are marshalled there) to match the
 /// WPF host's WASAPI COM affinity, which also means no locking is needed — all
@@ -34,6 +35,13 @@ public sealed class ChannelRuntime : IDisposable
     private const float SmoothingSnapThreshold = 0.002f; // snap when within 0.2 %
     private static readonly int[] EncoderChannelRemap = { 0, 1, 2, 3, 4, 5 };
 
+    // Encoder debounce/coalescing/reverse-guard tuning — mirrors WPF's
+    // MainWindow.xaml.cs constants of the same name (MainWindow.Encoder.cs).
+    private const int EncoderApplyIntervalMs = 25;     // min spacing between applied steps per channel
+    private const int EncoderReverseGuardMs = 140;     // window an isolated direction reversal must repeat in
+    private const int EncoderReverseConfirmEvents = 2; // raw events needed to confirm a reversal inside the guard
+    private const int EncoderMaxCoalescedDelta = 5;    // clamp on the buffered (not-yet-applied) raw delta sum
+
     private readonly SerialConnectionService _connection;
     private readonly IAudioBackend _audio;
     private readonly SettingsService _settings;
@@ -41,6 +49,15 @@ public sealed class ChannelRuntime : IDisposable
 
     // Per-channel acceleration timing (Environment.TickCount64 of the last apply).
     private readonly long[] _accelPrevApplyAt = new long[ExpectedChannelCount];
+
+    // Per-channel encoder debounce/coalescing/reverse-guard state.
+    private readonly int[] _encoderPendingDeltas = new int[ExpectedChannelCount];
+    private readonly long[] _encoderLastAppliedAt = new long[ExpectedChannelCount];
+    private readonly int[] _encoderLastDirection = new int[ExpectedChannelCount];
+    private readonly int[] _encoderReverseCandidateDirection = new int[ExpectedChannelCount];
+    private readonly int[] _encoderReverseCandidateCount = new int[ExpectedChannelCount];
+    private readonly long[] _encoderReverseCandidateStartedAt = new long[ExpectedChannelCount];
+    private readonly DispatcherTimer?[] _encoderCoalesceTimers = new DispatcherTimer?[ExpectedChannelCount];
 
     // Per-channel EMA smoothing state (normalised 0–1).
     private readonly bool[] _smoothingActive = new bool[ExpectedChannelCount];
@@ -99,7 +116,135 @@ public sealed class ChannelRuntime : IDisposable
     private void HandleEncoder(int firmwareChannel, int delta)
     {
         if (delta == 0) return;
-        if (!TryResolveChannel(firmwareChannel, out int index, out ChannelSettings channel)) return;
+        if (!TryResolveChannel(firmwareChannel, out int index, out _)) return;
+
+        QueueEncoderDelta(index, delta);
+    }
+
+    // ── Encoder debounce / coalescing / reverse-guard ───────────────────────────
+    //
+    // A fast physical turn can fire many raw ENC deltas within a few ms, and a
+    // bouncy encoder can report a spurious isolated direction reversal mid-turn.
+    // Applying every raw delta immediately would mean, on Linux, one `wpctl
+    // set-volume` process spawn per message (Platform.Linux/PipeWireAudioBackend.cs)
+    // — a bouncy burst could spawn far more processes than intended. Mirrors WPF's
+    // QueueSmoothedEncoderDelta (MainWindow.Encoder.cs): same-direction deltas are
+    // coalesced and applied at most once every EncoderApplyIntervalMs; an isolated
+    // reversal only takes effect if it repeats within EncoderReverseGuardMs
+    // (EncoderReverseConfirmEvents raw events needed to confirm it), otherwise it's
+    // dropped as encoder bounce.
+    //
+    // Unlike WPF (background Timer + lock, since raw ENC handling there isn't
+    // UI-thread-marshalled up front), this runs entirely on the UI thread — ENC
+    // messages are already posted to Dispatcher.UIThread in OnDeviceMessage — so a
+    // plain DispatcherTimer is used per channel and no locking is needed.
+    private void QueueEncoderDelta(int index, int rawDelta)
+    {
+        int direction = Math.Sign(rawDelta);
+        if (direction == 0) return;
+
+        long now = Environment.TickCount64;
+        int lastDirection = _encoderLastDirection[index];
+
+        if (lastDirection != 0 && direction != lastDirection)
+        {
+            long sinceLastApplied = now - _encoderLastAppliedAt[index];
+            bool insideReverseGuard = sinceLastApplied < EncoderReverseGuardMs;
+
+            if (insideReverseGuard)
+            {
+                if (_encoderReverseCandidateDirection[index] != direction ||
+                    now - _encoderReverseCandidateStartedAt[index] > EncoderReverseGuardMs)
+                {
+                    _encoderReverseCandidateDirection[index] = direction;
+                    _encoderReverseCandidateCount[index] = 1;
+                    _encoderReverseCandidateStartedAt[index] = now;
+                    return; // ignore isolated reverse step
+                }
+
+                _encoderReverseCandidateCount[index]++;
+                if (_encoderReverseCandidateCount[index] < EncoderReverseConfirmEvents)
+                    return; // still waiting for reverse confirmation
+            }
+        }
+        else
+        {
+            _encoderReverseCandidateDirection[index] = 0;
+            _encoderReverseCandidateCount[index] = 0;
+        }
+
+        _encoderPendingDeltas[index] = Math.Clamp(
+            _encoderPendingDeltas[index] + rawDelta, -EncoderMaxCoalescedDelta, EncoderMaxCoalescedDelta);
+
+        int delayMs = GetEncoderApplyDelayMs(index, now);
+        if (delayMs <= 0)
+        {
+            int deltaToApply = TakePendingEncoderDelta(index, now);
+            if (deltaToApply != 0) ApplyResolvedEncoderDelta(index, deltaToApply);
+            return;
+        }
+
+        ScheduleEncoderCoalesceTimer(index, delayMs);
+    }
+
+    // Milliseconds remaining before this channel's next applied step is allowed;
+    // 0 if it's never been applied yet or the interval has already elapsed.
+    private int GetEncoderApplyDelayMs(int index, long now)
+    {
+        long lastApplied = _encoderLastAppliedAt[index];
+        if (lastApplied == 0) return 0;
+
+        long elapsedMs = now - lastApplied;
+        return (int)Math.Max(0, EncoderApplyIntervalMs - elapsedMs);
+    }
+
+    // Clears and returns the buffered delta for a channel, stamping the apply time
+    // and (when non-zero) the applied direction, and resetting the reverse-guard
+    // candidate — mirrors WPF's TakePendingEncoderDeltaLocked.
+    private int TakePendingEncoderDelta(int index, long now)
+    {
+        int delta = _encoderPendingDeltas[index];
+        _encoderPendingDeltas[index] = 0;
+        _encoderLastAppliedAt[index] = now;
+
+        if (delta != 0)
+            _encoderLastDirection[index] = Math.Sign(delta);
+
+        _encoderReverseCandidateDirection[index] = 0;
+        _encoderReverseCandidateCount[index] = 0;
+
+        return delta;
+    }
+
+    // Schedules (replacing any prior pending timer for this channel) a one-shot
+    // apply of whatever delta is buffered once EncoderApplyIntervalMs has elapsed
+    // since the last apply — coalescing any further raw deltas that arrive first.
+    private void ScheduleEncoderCoalesceTimer(int index, int delayMs)
+    {
+        _encoderCoalesceTimers[index]?.Stop();
+
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(delayMs) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            _encoderCoalesceTimers[index] = null;
+
+            int deltaToApply = TakePendingEncoderDelta(index, Environment.TickCount64);
+            if (deltaToApply != 0) ApplyResolvedEncoderDelta(index, deltaToApply);
+        };
+        _encoderCoalesceTimers[index] = timer;
+        timer.Start();
+    }
+
+    // Applies a debounced/coalesced delta: resolves the channel/key fresh (settings
+    // may have changed while a delta sat in the buffer), then runs acceleration and
+    // the audio write exactly as before — this is the body that used to live
+    // directly in HandleEncoder prior to the debounce layer above.
+    private void ApplyResolvedEncoderDelta(int index, int delta)
+    {
+        ChannelSettings[] channels = _settings.Settings.Channels;
+        if (index < 0 || index >= channels.Length) return;
+        ChannelSettings channel = channels[index];
 
         string key = ChannelTargets.ResolveActiveKey(channel, _audio);
         if (string.IsNullOrWhiteSpace(key)) return;
@@ -124,6 +269,13 @@ public sealed class ChannelRuntime : IDisposable
         // Apply to the turned channel (shows the overlay), then propagate the same
         // delta to any channels sharing its link group (ganged-pot behaviour) —
         // those don't pop their own overlay. Each channel resolves its own pool key.
+        //
+        // NOTE (R1, PARITY_FIX_BACKLOG.md): this ganging is UNCONDITIONAL — it does
+        // NOT check Volume Smoothing like WPF's ApplySmoothedEncoderDelta does.
+        // That's intentional: WPF only gangs inside its smoothing-enabled branch,
+        // which silently breaks linked channels when smoothing is off — a
+        // pre-existing WPF bug this port deliberately does not reproduce. Do not
+        // make this conditional on VolumeSmoothingEnabled.
         ApplyVolumeDelta(index, channel, key, deltaPercent, step, showOverlay: true);
 
         foreach (int linked in GetLinkedChannelIndices(index))
@@ -412,5 +564,11 @@ public sealed class ChannelRuntime : IDisposable
     {
         _connection.MessageReceived -= OnDeviceMessage;
         StopSmoothingTimer();
+
+        for (int i = 0; i < _encoderCoalesceTimers.Length; i++)
+        {
+            _encoderCoalesceTimers[i]?.Stop();
+            _encoderCoalesceTimers[i] = null;
+        }
     }
 }
