@@ -92,11 +92,17 @@ public partial class MainWindow : Window
         base.OnClosing(e);
 
         // A user close with minimise-to-tray off must exit the app (the lifetime is
-        // OnExplicitShutdown). When _reallyClose is set the shutdown is already in
-        // progress (tray "Exit" called it), so don't re-enter it.
+        // OnExplicitShutdown). Shutdown() closes every window, which re-invokes this
+        // OnClosing — so set _reallyClose *first*: without it the re-entrant call
+        // takes this same branch and calls Shutdown() again, recursing until the
+        // stack overflows. (The tray "Exit" command sets it via AllowClose() for the
+        // same reason.)
         if (!_reallyClose &&
             Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            _reallyClose = true;
             desktop.Shutdown();
+        }
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
