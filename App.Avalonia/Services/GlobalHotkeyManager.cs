@@ -102,7 +102,7 @@ public sealed class GlobalHotkeyManager : IDisposable
                         break;
                     case IdToggleMasterMute:
                         _audio.ToggleMuteByKey("MASTER");
-                        RaiseMasterOverlay();
+                        RaiseMasterOverlay(muteToggle: true);
                         break;
                     case IdShowDashboard:
                         ShowDashboardRequested?.Invoke();
@@ -120,13 +120,17 @@ public sealed class GlobalHotkeyManager : IDisposable
         EncoderMath.StepFromSensitivity(_settings.Settings.EncoderSensitivityPercent,
             BaseVolumeStepPercent, MaxVolumeStepPercent, MaxEncoderSensitivityPercent);
 
-    /// <summary>Pops the overlay for the current master volume/mute after a hotkey change.</summary>
-    private void RaiseMasterOverlay()
+    /// <summary>
+    /// Pops the overlay for the current master volume/mute after a hotkey change.
+    /// <paramref name="muteToggle"/> is set for the mute hotkey so the overlay uses
+    /// its dedicated mute layout rather than the volume bar.
+    /// </summary>
+    private void RaiseMasterOverlay(bool muteToggle = false)
     {
         float v = _audio.GetVolumeByKey("MASTER");
         bool muted = _audio.GetMuteByKey("MASTER") ?? false;
         int percent = v < 0f ? 0 : (int)Math.Round(v * 100);
-        try { VolumeChanged?.Invoke(new VolumeOverlayInfo(-1, "Master", percent, muted)); }
+        try { VolumeChanged?.Invoke(new VolumeOverlayInfo(-1, "Master", percent, muted, muteToggle)); }
         catch { /* overlay is best-effort */ }
     }
 
