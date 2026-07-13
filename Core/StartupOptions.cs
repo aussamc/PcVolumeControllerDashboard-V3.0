@@ -4,9 +4,14 @@ namespace PcVolumeControllerDashboard.Core;
 /// Parsed command-line startup flags for the dashboard host. Pure and platform-
 /// neutral so the parsing is unit-testable; the host applies the results.
 ///
-/// Currently recognises <c>--debug</c> (force-show the gated Debug tab for this
-/// session, regardless of the <c>AdvancedDebugFeatures</c> setting). The N1
-/// <c>--safe</c> diagnostic flag is a planned sibling parsed here when it lands.
+/// Recognises:
+/// <list type="bullet">
+/// <item><c>--debug</c> — force-show the gated Debug tab for this session, regardless
+///   of the <c>AdvancedDebugFeatures</c> setting.</item>
+/// <item><c>--safe</c> — diagnostic launch: disable auto-connect, the reconnect loop,
+///   and all audio-control writes (encoder/button/hotkey) so a misbehaving setup can
+///   be inspected without the app driving the hardware or changing volumes.</item>
+/// </list>
 /// </summary>
 public sealed record StartupOptions
 {
@@ -16,7 +21,14 @@ public sealed record StartupOptions
     /// </summary>
     public bool ForceDebugTab { get; init; }
 
+    /// <summary>
+    /// True if <c>--safe</c> was passed: skip auto-connect / the reconnect loop and
+    /// suppress every audio-control write for troubleshooting.
+    /// </summary>
+    public bool SafeMode { get; init; }
+
     private const string DebugFlag = "--debug";
+    private const string SafeFlag = "--safe";
 
     /// <summary>
     /// Parses process arguments into a <see cref="StartupOptions"/>. Case-insensitive;
@@ -25,15 +37,19 @@ public sealed record StartupOptions
     public static StartupOptions Parse(string[]? args)
     {
         bool debug = false;
+        bool safe = false;
         if (args != null)
         {
             foreach (string arg in args)
             {
-                if (string.Equals(arg?.Trim(), DebugFlag, StringComparison.OrdinalIgnoreCase))
+                string trimmed = arg?.Trim() ?? string.Empty;
+                if (string.Equals(trimmed, DebugFlag, StringComparison.OrdinalIgnoreCase))
                     debug = true;
+                else if (string.Equals(trimmed, SafeFlag, StringComparison.OrdinalIgnoreCase))
+                    safe = true;
             }
         }
 
-        return new StartupOptions { ForceDebugTab = debug };
+        return new StartupOptions { ForceDebugTab = debug, SafeMode = safe };
     }
 }

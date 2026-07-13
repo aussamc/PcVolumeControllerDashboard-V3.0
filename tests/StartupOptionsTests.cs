@@ -44,9 +44,46 @@ public sealed class StartupOptionsTests
     }
 
     [Fact]
-    public void Parse_UnrelatedArgs_LeaveDebugOff()
+    public void Parse_UnrelatedArgs_LeaveFlagsOff()
     {
-        StartupOptions.Parse(new[] { "--safe", "debug", "-d" })
-            .ForceDebugTab.Should().BeFalse();
+        StartupOptions o = StartupOptions.Parse(new[] { "debug", "safe", "-d", "-s" });
+        o.ForceDebugTab.Should().BeFalse();
+        o.SafeMode.Should().BeFalse();
+    }
+
+    // ── --safe (N1) ───────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Parse_Null_SafeModeDefaultsOff()
+    {
+        StartupOptions.Parse(null).SafeMode.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Parse_SafeFlag_SetsSafeMode()
+    {
+        StartupOptions.Parse(new[] { "--safe" }).SafeMode.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("--SAFE")]
+    [InlineData("  --safe  ")]
+    public void Parse_SafeFlag_IsCaseInsensitiveAndTrimmed(string arg)
+    {
+        StartupOptions.Parse(new[] { arg }).SafeMode.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Parse_DebugOnly_LeavesSafeOff()
+    {
+        StartupOptions.Parse(new[] { "--debug" }).SafeMode.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Parse_DebugAndSafe_BothDetectedIndependently()
+    {
+        StartupOptions o = StartupOptions.Parse(new[] { "--debug", "--safe" });
+        o.ForceDebugTab.Should().BeTrue();
+        o.SafeMode.Should().BeTrue();
     }
 }

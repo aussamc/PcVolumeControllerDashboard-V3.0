@@ -66,7 +66,14 @@ public partial class App : Application
             // Activate the notification coordinator before connecting so it's
             // subscribed to the connection state stream (connect/disconnect toasts).
             Services.GetRequiredService<Services.NotificationService>();
-            Services.GetRequiredService<Services.SerialConnectionService>().AutoConnect();
+            // --safe (N1): construct the connection (so the UI's Reconnect / port picker
+            // still work) but skip auto-connect and the reconnect loop; ChannelRuntime /
+            // GlobalHotkeyManager separately suppress audio writes.
+            var connection = Services.GetRequiredService<Services.SerialConnectionService>();
+            if (startup.SafeMode)
+                log.Log("Safe mode (--safe): auto-connect, the reconnect loop, and audio-control writes are disabled. Use Reconnect or the port picker to connect manually.");
+            else
+                connection.AutoConnect();
 
             // Global hotkeys: constructing the manager registers the assigned bindings;
             // its "show dashboard" action reveals the window from the tray/background.
@@ -74,7 +81,7 @@ public partial class App : Application
             var hotkeys = Services.GetRequiredService<Services.GlobalHotkeyManager>();
             hotkeys.ShowDashboardRequested += ShowMainWindow;
 
-            if (settingsService.IsFirstRun)
+            if (settingsService.IsFirstRun && !startup.SafeMode)
             {
                 // Brand-new install: run the setup wizard first. The MainWindow is
                 // deliberately NOT built yet — its channel-state poll would start

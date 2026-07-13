@@ -53,11 +53,25 @@
                         <StackPanel>
                             <TextBlock Classes="h2" Text="Controller" />
                             <TextBlock x:Name="ConnectionStatusText" Text="Disconnected" Margin="0,0,0,8" />
+                            <TextBlock x:Name="SafeModeBanner" IsVisible="False" Foreground="OrangeRed"
+                                       TextWrapping="Wrap" Margin="0,0,0,8"
+                                       Text="Safe mode (--safe): auto-connect and audio-control writes are disabled. Use Reconnect or the port picker below to connect manually." />
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <Button x:Name="ReconnectButton" Content="Reconnect" Click="ReconnectButton_Click"
                                         ToolTip.Tip="Scan the COM ports and connect to the controller" />
                                 <Button x:Name="DisconnectButton" Content="Disconnect" Click="DisconnectButton_Click"
                                         ToolTip.Tip="Close the connection and stop auto-reconnecting until you reconnect" />
+                            </StackPanel>
+
+                            <!-- Manual per-port picker (N2): connect to a specific port,
+                                 bypassing auto-detect (useful with a second serial device). -->
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+                                <TextBlock Text="Port:" VerticalAlignment="Center" />
+                                <ComboBox x:Name="PortCombo" Width="160" MinWidth="120"
+                                          DropDownOpened="PortCombo_DropDownOpened"
+                                          ToolTip.Tip="Pick a specific serial port to connect to, bypassing auto-detect" />
+                                <Button x:Name="ConnectPortButton" Content="Connect to port" Click="ConnectToPort_Click"
+                                        ToolTip.Tip="Connect to the selected port instead of auto-detecting the controller" />
                             </StackPanel>
                         </StackPanel>
                     </Border>

@@ -44,6 +44,10 @@ public partial class MainWindow : Window
     private List<ChannelLiveState> _lastLive = new();
     private DashboardSettings _settings = DashboardSettings.CreateDefault();
 
+    // --safe diagnostic launch (N1): shows a banner and reflects that auto-connect /
+    // audio writes are disabled. The actual suppression lives in the runtime services.
+    private bool _safeMode;
+
     // Binding-init-order settings-wipe guard: control-change events fire while
     // ApplySettingsToUi() is populating the UI from settings (and when slider
     // observables emit their initial value). Without this flag those events would
@@ -66,6 +70,7 @@ public partial class MainWindow : Window
         _connection = connection;
         _deviceState = deviceState;
         _forceDebugTab = startup.ForceDebugTab;
+        _safeMode = startup.SafeMode;
 
         WireSliders();
         ApplySettingsToUi();
@@ -138,6 +143,9 @@ public partial class MainWindow : Window
         for (int i = 0; i < _settings.Channels.Length; i++)
             _channelRows.Add(new ChannelRow { Channel = i + 1 });
         ChannelGrid.ItemsSource = _channelRows;
+
+        SafeModeBanner.IsVisible = _safeMode;
+        PopulatePorts();
 
         RefreshTargets();
         RefreshChannelStates();
@@ -236,6 +244,34 @@ public partial class MainWindow : Window
     private void ReconnectButton_Click(object? sender, RoutedEventArgs e) => _connection?.Reconnect();
 
     private void DisconnectButton_Click(object? sender, RoutedEventArgs e) => _connection?.Disconnect();
+
+    // ── Manual per-port picker (N2) ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Fills the port picker with the currently-available serial ports, preserving the
+    /// current selection where possible. Refreshed when the dropdown is opened so it
+    /// always reflects what's plugged in without a background timer.
+    /// </summary>
+    private void PopulatePorts()
+    {
+        object? previous = PortCombo.SelectedItem;
+        string[] ports = SerialService.GetPortNames();
+        PortCombo.ItemsSource = ports;
+        if (previous is string prev && ports.Contains(prev, StringComparer.OrdinalIgnoreCase))
+            PortCombo.SelectedItem = prev;
+        else if (PortCombo.SelectedItem == null && ports.Length > 0)
+            PortCombo.SelectedIndex = 0;
+    }
+
+    private void PortCombo_DropDownOpened(object? sender, EventArgs e) => PopulatePorts();
+
+    /// <summary>Connects to the specifically-chosen port, bypassing auto-detect
+    /// (<see cref="SerialConnectionService.Connect(string)"/>).</summary>
+    private void ConnectToPort_Click(object? sender, RoutedEventArgs e)
+    {
+        if (PortCombo.SelectedItem is string port && !string.IsNullOrWhiteSpace(port))
+            _connection?.Connect(port);
+    }
 
     /// <summary>
     /// Repopulates the target pickers from the given target list (or a fresh

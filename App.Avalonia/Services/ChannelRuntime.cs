@@ -56,6 +56,12 @@ public sealed class ChannelRuntime : IDisposable
     private readonly SettingsService _settings;
     private readonly LogService _log;
 
+    // --safe diagnostic launch: observe controller events but skip every audio-control
+    // write, so a misbehaving setup can be inspected without the encoders/buttons
+    // changing volumes. Mirrors the WPF host's _safeMode guards (MainWindow.Encoder.cs,
+    // MainWindow.Serial.cs). Reads/state display are unaffected.
+    private readonly bool _safeMode;
+
     // Per-channel acceleration timing (Environment.TickCount64 of the last apply).
     private readonly long[] _accelPrevApplyAt = new long[ExpectedChannelCount];
 
@@ -84,12 +90,13 @@ public sealed class ChannelRuntime : IDisposable
     /// </summary>
     public event Action<VolumeOverlayInfo>? VolumeChanged;
 
-    public ChannelRuntime(SerialConnectionService connection, IAudioBackend audio, SettingsService settings, LogService log)
+    public ChannelRuntime(SerialConnectionService connection, IAudioBackend audio, SettingsService settings, LogService log, StartupOptions startup)
     {
         _connection = connection;
         _audio = audio;
         _settings = settings;
         _log = log;
+        _safeMode = startup.SafeMode;
         _connection.MessageReceived += OnDeviceMessage;
     }
 
@@ -125,6 +132,12 @@ public sealed class ChannelRuntime : IDisposable
     private void HandleEncoder(int firmwareChannel, int delta)
     {
         if (delta == 0) return;
+        if (_safeMode)
+        {
+            if (_settings.Settings.AdvancedDebugLogging)
+                _log.Log("Safe mode: encoder event observed but the audio write was skipped.");
+            return;
+        }
         if (!TryResolveChannel(firmwareChannel, out int index, out _)) return;
 
         QueueEncoderDelta(index, delta);
@@ -427,6 +440,11 @@ public sealed class ChannelRuntime : IDisposable
 
     private void HandleButton(int firmwareChannel, ButtonPress press)
     {
+        if (_safeMode)
+        {
+            _log.Log($"Safe mode: {press.ToString().ToLowerInvariant()}-press observed but the audio action was skipped.");
+            return;
+        }
         if (!TryResolveChannel(firmwareChannel, out int index, out ChannelSettings channel)) return;
 
         string action = press switch
