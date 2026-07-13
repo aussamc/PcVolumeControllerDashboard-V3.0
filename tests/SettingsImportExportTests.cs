@@ -41,6 +41,35 @@ public sealed class SettingsImportExportTests
     }
 
     [Fact]
+    public void AdvancedDebugFeatures_DefaultsOff()
+    {
+        // The gated Debug tab is hidden by default (decision D2).
+        DashboardSettings.CreateDefault().AdvancedDebugFeatures.Should().BeFalse();
+        new DashboardSettings().AdvancedDebugFeatures.Should().BeFalse();
+    }
+
+    [Fact]
+    public void AdvancedDebugFeatures_RoundTrips()
+    {
+        var settings = DashboardSettings.CreateDefault();
+        settings.AdvancedDebugFeatures = true;
+
+        string path = NewTempFile();
+        try
+        {
+            SettingsRepository.ExportTo(settings, path);
+            DashboardSettings? imported = SettingsRepository.ImportFrom(path, ChannelCount, MaxSensitivity);
+
+            imported.Should().NotBeNull();
+            imported!.AdvancedDebugFeatures.Should().BeTrue();
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void ImportFrom_MissingFile_ReturnsNull()
     {
         SettingsRepository.ImportFrom(NewTempFile(), ChannelCount, MaxSensitivity).Should().BeNull();

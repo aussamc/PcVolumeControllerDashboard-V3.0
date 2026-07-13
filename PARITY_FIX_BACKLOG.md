@@ -28,12 +28,18 @@ Effort: **S** ≈ <½ day, **M** ≈ ½–2 days, **L** ≈ multi-day.
 - **Descoped (not a gap):** **F2** named profiles — descoped from the port
   (`chore(avalonia): descope named profiles from the port`), along with output-device
   cycling.
+- **On branch `feat/v3.x-debug-tab` (PR #59), not yet merged:** the **Debug-tab batch
+  per D2** — **Q4** (hardware self-test section), the fuller **Q6** diagnostics readout,
+  and **N3** (copy-console / copy-log-path / open-log-file helpers) — folded into the
+  existing Debug tab, gated by a new `AdvancedDebugFeatures` setting (default off) with
+  a `--debug` startup flag that force-shows it. The diagnostics-export entry point stays
+  on the always-visible Setup tab; the v3.12 mismatch warning stays on the main status line.
 - **Still open — the one P1 blocker:** **F6** (cross-platform notification layer;
   wires the inert F5 tray-notifications checkbox).
-- **Still open — quality/polish:** **Q2** (target auto-refresh), **Q4** (hardware
-  self-test panel), the fuller **Q6** 8-field diagnostics panel; **P3** — N1 (`--safe`),
-  N2 (per-port picker), N3 (log-helper buttons).
-- **Next up:** F6, then the remaining P2 items, then WPF retirement (roadmap item 3).
+- **Still open — quality/polish:** **Q2** (target auto-refresh); **P3** — N1 (`--safe`),
+  N2 (per-port picker).
+- **Next up:** merge PR #59, then F6, then the remaining P2 items, then WPF retirement
+  (roadmap item 3).
 
 > The prioritized tables below are the original backlog catalog; the Progress block
 > above is the status of record. Most P0/P2 items plus F1/F3/F4 are now merged (v3.12).
@@ -100,9 +106,9 @@ of this).*
 | Q1 | **Encoder debounce/coalescing/reverse-guard** | Avalonia applies every raw `ENC` immediately. On Linux each write is a `wpctl` **process spawn**, so a bouncy turn spawns a burst of processes. WPF buffers on a 25ms timer + suppresses isolated reversals. | M | `Services/ChannelRuntime.cs:99-136`; cf. WPF `MainWindow.Encoder.cs:63-156` |
 | Q2 | **Assignable-target list doesn't auto-refresh** | New app doesn't appear in the picker until manual Refresh; WPF auto-detects in ~2.5s. (Assigned channels already track fine.) | S | `MainWindow.axaml.cs:176-190`; cf. WPF `MainWindow.xaml.cs:1833-1857` |
 | Q3 | **Rejected/phantom-port cooldown tracking** | Avalonia re-tries every candidate each reconnect cycle, incl. known-wrong ports — wastes cycles + identify timeouts when a 2nd serial device is present. | M | `Services/SerialConnectionService.cs:217-252`; cf. WPF `:686-697`,`:448-459` |
-| Q4 | **Hardware self-test** — a **Debug-tab section** (per D2), not a new panel | Per-channel "encoder count X, button seen yes/no" checklist + Reset + Sleep/Wake test buttons to verify all 6 encoders/buttons. Lives in the Debug tab, gated by `AdvancedDebugFeatures` (default off; `--debug` force-shows). | S–M | extend `MainWindow.Debug.cs`; cf. WPF `MainWindow.xaml.cs:109-110`,`:4375-4432` |
+| Q4 | ✅ **DONE** (PR #59) — **Hardware self-test** Debug-tab section (per D2) | Per-channel "encoder count X, button seen yes/no" checklist + Reset + Sleep/Wake test buttons to verify all 6 encoders/buttons. Lives in the Debug tab, gated by `AdvancedDebugFeatures` (default off; `--debug` force-shows). Tally in Core (`HardwareSelfTest`, unit-tested). | S–M | `MainWindow.Debug.cs`, `Core/HardwareSelfTest.cs`; cf. WPF `MainWindow.xaml.cs:109-110`,`:4375-4432` |
 | Q5 | **Overlay mute — distinct visual mode** | WPF shows a dedicated mute layout (speaker icon, "Muted" text, bar hidden); Avalonia just relabels the percentage. | S | `VolumeOverlay.cs:104-113`; cf. WPF `VolumeOverlayWindow.xaml.cs:56-74` |
-| Q6 | **Diagnostics readout** — a **Debug-tab section** (per D2), not a new panel | The colour-coded protocol/channel-mismatch **warning is DONE (v3.12)** — it renders on the main connection status line. Remaining: the fuller 8-field readout (COM port, last-heartbeat age, firmware, last ESP32 msg, last state sent, etc.) moves into the Debug tab under `AdvancedDebugFeatures`. | S | extend `MainWindow.Debug.cs`; cf. WPF `MainWindow.Ui.cs:119-169` |
+| Q6 | ✅ **DONE** — warning line (v3.12) + fuller readout (PR #59) | The colour-coded protocol/channel-mismatch **warning shipped in v3.12** on the main connection status line. The fuller readout (connection, COM port, last-heartbeat age, protocol vs required, reported-vs-expected channels, last ESP32 msg, last state sent) now lives in the Debug tab under `AdvancedDebugFeatures`. | S | `MainWindow.Debug.cs`, `SerialConnectionService.PortName`; cf. WPF `MainWindow.Ui.cs:119-169` |
 
 ---
 
@@ -112,7 +118,7 @@ of this).*
 |---|---|---|---|---|
 | N1 | **`--safe` diagnostic launch flag** | Disable auto-connect/reconnect/audio writes for troubleshooting. | S | `Program.cs`/`App.axaml.cs`; cf. WPF `MainWindow.xaml.cs:106-107,273-298` |
 | N2 | **Manual per-port picker in UI** | `Connect(string port)` exists but nothing calls it; auto-detect covers the common case. | S | `Services/SerialConnectionService.cs:129-136` |
-| N3 | **Copy/open-log helper buttons** | WPF has Copy-debug-console, Copy-log-folder-path, Open-current-log-file, Save-debug-snapshot. Avalonia's `ExportDiagnostics` zip covers the core need. | S | Debug/Settings tab UI |
+| N3 | ✅ **DONE** (PR #59) — **Copy/open-log helper buttons** | Debug tab now has Copy-debug-console, Copy-log-folder-path, Open-current-log-file (cross-platform default handler). Save-debug-snapshot stays covered by the always-visible `ExportDiagnostics` zip on the Setup tab. | S | `MainWindow.Debug.cs` |
 
 ---
 
@@ -139,7 +145,9 @@ of this).*
 3. **Q1** before broad Linux dogfooding (process-spawn storms are a real-hardware
    footgun), then **Q2/Q3** (serial + discovery quality).
 4. **F1** and **F2** — the two large features; schedule as their own PRs.
-5. **Q4/Q5**, then the **P3** batch, then confirm **R1** and move to WPF retirement.
+5. **Q4/Q5** (both done — Q5 in v3.12, Q4 in the PR #59 Debug-tab batch alongside Q6/N3),
+   then the remaining **P3** items (N1 `--safe`, N2 per-port picker), then confirm **R1**
+   (done) and move to WPF retirement.
 
 Each item is a small, build-green PR per standing rule #1 (`feat/v3.x-…` for features,
 `fix/v3.x.y-…` for bugs).

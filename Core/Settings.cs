@@ -53,6 +53,12 @@ public sealed class DashboardSettings
     public bool StartWithWindows { get; set; }
     public bool AdvancedDebugLogging { get; set; }
     public bool TrayNotificationsEnabled { get; set; } = true;
+
+    // Advanced Debug Features (parity item D2): shows/hides the entire Debug tab
+    // (serial console, hardware self-test, and diagnostics readout). Default off so
+    // the developer/troubleshooting surface stays out of the way; the `--debug`
+    // startup flag force-shows it for a single session regardless of this setting.
+    public bool AdvancedDebugFeatures { get; set; }
     public int SelectedChannelIndex { get; set; }
 
     public int EncoderSensitivityPercent { get; set; } = 50;

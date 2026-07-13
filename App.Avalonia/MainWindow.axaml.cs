@@ -23,7 +23,7 @@ namespace PcVolumeControllerDashboard.App;
 public partial class MainWindow : Window
 {
     // Shipping dashboard version (bumped per Avalonia-tab milestone).
-    private const string DashboardVersion = "3.12";
+    private const string DashboardVersion = "3.13";
     private const string RequiredProtocolVersion = "2.24";
 
     private readonly SettingsService? _settingsService;
@@ -51,13 +51,14 @@ public partial class MainWindow : Window
         InitializeComponent();
     }
 
-    public MainWindow(SettingsService settingsService, IAudioBackend audioBackend, SerialConnectionService connection, DeviceStateService deviceState) : this()
+    public MainWindow(SettingsService settingsService, IAudioBackend audioBackend, SerialConnectionService connection, DeviceStateService deviceState, StartupOptions startup) : this()
     {
         _settingsService = settingsService;
         _settings = settingsService.Settings;
         _audioBackend = audioBackend;
         _connection = connection;
         _deviceState = deviceState;
+        _forceDebugTab = startup.ForceDebugTab;
 
         WireSliders();
         ApplySettingsToUi();
@@ -381,6 +382,8 @@ public partial class MainWindow : Window
         StartWithWindowsCheckBox.IsChecked     = _settings.StartWithWindows;
         AdvancedDebugLoggingCheckBox.IsChecked = _settings.AdvancedDebugLogging;
         TrayNotificationsCheckBox.IsChecked    = _settings.TrayNotificationsEnabled;
+        AdvancedDebugFeaturesCheckBox.IsChecked = _settings.AdvancedDebugFeatures;
+        UpdateDebugTabVisibility();
 
         UpdatePairedControllerLabel();
         UpdateHotkeyLabels();
@@ -438,7 +441,11 @@ public partial class MainWindow : Window
         _settings.StartWithWindows                   = StartWithWindowsCheckBox.IsChecked == true;
         _settings.AdvancedDebugLogging               = AdvancedDebugLoggingCheckBox.IsChecked == true;
         _settings.TrayNotificationsEnabled           = TrayNotificationsCheckBox.IsChecked == true;
+        _settings.AdvancedDebugFeatures              = AdvancedDebugFeaturesCheckBox.IsChecked == true;
         Save();
+
+        // Show/hide the Debug tab live to match the toggle (--debug keeps it shown).
+        UpdateDebugTabVisibility();
 
         // Apply the run-on-login registry entry to match the toggle (Windows; no-op
         // elsewhere). Idempotent, so running it for any app-setup change is fine.
