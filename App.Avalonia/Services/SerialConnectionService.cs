@@ -124,6 +124,10 @@ public sealed class SerialConnectionService : IDisposable
     public string? ConnectedChipId { get; private set; }
     public string? Protocol { get; private set; }
 
+    /// <summary>Name of the currently-open serial port, or null when closed. Surfaced
+    /// for the Debug tab's diagnostics readout (Q6).</summary>
+    public string? PortName => _serial.PortName;
+
     /// <summary>
     /// Channel count reported by the connected controller's HELLO. 0 when not
     /// connected. Compared against <see cref="ExpectedChannelCount"/> so the UI can

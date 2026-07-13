@@ -25,7 +25,12 @@ public partial class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
-        Services = BuildServices();
+        // Parse startup flags (e.g. --debug force-shows the gated Debug tab) before
+        // composing the container so they can be injected where needed.
+        string[] args = (ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Args ?? Array.Empty<string>();
+        StartupOptions startup = StartupOptions.Parse(args);
+
+        Services = BuildServices(startup);
 
         // Wire process-wide crash handling as early as possible (right after the log
         // service exists) so an unhandled exception writes a crash log + shows a
@@ -124,9 +129,12 @@ public partial class App : Application
     /// audio backends (WASAPI/VoiceMeeter) join later behind a neutral
     /// <c>IAudioBackend</c> registered per-OS (the deferred Phase 0.4 work).
     /// </summary>
-    private static IServiceProvider BuildServices()
+    private static IServiceProvider BuildServices(StartupOptions startup)
     {
         var services = new ServiceCollection();
+
+        // Parsed command-line startup flags (e.g. --debug). Injected into the shell.
+        services.AddSingleton(startup);
 
         // Core serial layer — single shared connection for the app lifetime.
         services.AddSingleton<global::PcVolumeControllerDashboard.Core.SerialService>();

@@ -260,6 +260,9 @@
                                       IsCheckedChanged="AppSetupCheckBox_Changed" />
                             <CheckBox x:Name="TrayNotificationsCheckBox" Content="Show tray notifications"
                                       IsCheckedChanged="AppSetupCheckBox_Changed" />
+                            <CheckBox x:Name="AdvancedDebugFeaturesCheckBox" Content="Advanced debug features (show Debug tab)"
+                                      ToolTip.Tip="Shows the Debug tab: live serial console, hardware self-test, and diagnostics readout. Off by default; launch with --debug to force it on for one session."
+                                      IsCheckedChanged="AppSetupCheckBox_Changed" />
 
                             <Separator Margin="0,8,0,8" />
                             <TextBlock Text="Controller Pairing" FontWeight="SemiBold" Margin="0,0,0,4" />
@@ -568,10 +571,58 @@
             </ScrollViewer>
         </TabItem>
 
-        <TabItem Header="Debug">
+        <TabItem Header="Debug" x:Name="DebugTab">
             <DockPanel Margin="12">
 
-                <!-- ── Controls (top) ───────────────────────────────────────── -->
+                <!-- ── Diagnostics (Q6) + hardware self-test (Q4) ───────────── -->
+                <Grid DockPanel.Dock="Top" ColumnDefinitions="*,12,*" Margin="0,0,0,10">
+
+                    <!-- Q6 — always-on diagnostics readout. The colour-coded
+                         protocol/channel-mismatch WARNING lives on the Audio tab's
+                         connection status line (v3.12); this is the plain detail. -->
+                    <Border Grid.Column="0" Classes="card" Margin="0">
+                        <StackPanel>
+                            <TextBlock Classes="h3" Text="Diagnostics" Margin="0,0,0,6" />
+                            <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+                                <TextBlock Grid.Row="0" Grid.Column="0" Classes="muted" Text="Connection" />
+                                <TextBlock Grid.Row="0" Grid.Column="1" x:Name="DiagConnectionText" Text="—" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Classes="muted" Text="COM port" />
+                                <TextBlock Grid.Row="1" Grid.Column="1" x:Name="DiagPortText" Text="—" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" Classes="muted" Text="Last heartbeat" />
+                                <TextBlock Grid.Row="2" Grid.Column="1" x:Name="DiagHeartbeatText" Text="—" />
+                                <TextBlock Grid.Row="3" Grid.Column="0" Classes="muted" Text="Protocol" />
+                                <TextBlock Grid.Row="3" Grid.Column="1" x:Name="DiagProtocolText" Text="—" />
+                                <TextBlock Grid.Row="4" Grid.Column="0" Classes="muted" Text="Channels" />
+                                <TextBlock Grid.Row="4" Grid.Column="1" x:Name="DiagChannelsText" Text="—" />
+                                <TextBlock Grid.Row="5" Grid.Column="0" Classes="muted" Text="Last ESP32 msg" />
+                                <TextBlock Grid.Row="5" Grid.Column="1" x:Name="DiagLastRxText" Text="—" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Grid.Row="6" Grid.Column="0" Classes="muted" Text="Last state sent" />
+                                <TextBlock Grid.Row="6" Grid.Column="1" x:Name="DiagLastStateText" Text="—" TextTrimming="CharacterEllipsis" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Q4 — hardware self-test: confirm every encoder + button. -->
+                    <Border Grid.Column="2" Classes="card" Margin="0">
+                        <StackPanel>
+                            <TextBlock Classes="h3" Text="Hardware self-test" Margin="0,0,0,4" />
+                            <TextBlock Classes="muted" Margin="0,0,0,6"
+                                       Text="Connect the controller, then turn each encoder and press each button — every channel should tally below." />
+                            <SelectableTextBlock x:Name="SelfTestText" FontFamily="Cascadia Mono,Consolas,monospace"
+                                                 FontSize="12" Text="Channel 1: encoder count 0, button seen no" />
+                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,8,0,0">
+                                <Button Content="Reset" Click="SelfTestReset_Click" />
+                                <Button Content="Sleep test" Click="SelfTestSleep_Click"
+                                        ToolTip.Tip="Send SLEEP so the OLEDs blank (verifies sleep)" />
+                                <Button Content="Wake test" Click="SelfTestWake_Click"
+                                        ToolTip.Tip="Send WAKE and repaint the OLEDs (verifies wake)" />
+                            </StackPanel>
+                            <TextBlock x:Name="SelfTestStatusText" Classes="muted" Margin="0,6,0,0" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <!-- ── Serial console header ────────────────────────────────── -->
                 <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
                     <TextBlock Text="Serial console" Classes="h2" VerticalAlignment="Center" Margin="0" />
                     <CheckBox x:Name="DebugAutoScrollCheck" Content="Auto-scroll" IsChecked="True" Margin="16,0,0,0" VerticalAlignment="Center" />
@@ -580,7 +631,7 @@
                     <Button Content="Clear" Click="DebugClear_Click" />
                 </StackPanel>
 
-                <!-- ── Manual send + quick commands (bottom) ────────────────── -->
+                <!-- ── Manual send + quick commands + log helpers (bottom) ──── -->
                 <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <TextBox x:Name="DebugSendBox" Width="320" Watermark="Type a command (e.g. PING) and press Enter"
@@ -594,6 +645,16 @@
                         <Button Content="Show ident" Tag="SHOW_IDENT" Click="DebugQuick_Click" />
                         <Button Content="Scan I2C" Tag="SCAN_I2C" Click="DebugQuick_Click" />
                         <Button Content="Test display" Tag="TEST_DISPLAY" Click="DebugQuick_Click" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
+                        <TextBlock Text="Logs:" Classes="muted" VerticalAlignment="Center" />
+                        <Button Content="Copy console" Click="DebugCopyConsole_Click"
+                                ToolTip.Tip="Copy the live serial console text to the clipboard" />
+                        <Button Content="Copy log folder path" Click="DebugCopyLogPath_Click"
+                                ToolTip.Tip="Copy the logs folder path to the clipboard" />
+                        <Button Content="Open current log file" Click="DebugOpenLogFile_Click"
+                                ToolTip.Tip="Open this session's log file with the default handler" />
+                        <TextBlock x:Name="DebugLogHelperStatus" Classes="muted" VerticalAlignment="Center" />
                     </StackPanel>
                 </StackPanel>
 
