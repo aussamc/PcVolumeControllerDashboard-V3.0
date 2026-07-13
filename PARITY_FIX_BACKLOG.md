@@ -16,33 +16,33 @@ Effort: **S** ≈ <½ day, **M** ≈ ½–2 days, **L** ≈ multi-day.
 
 ---
 
-## Progress (updated 2026-07-08 — shipped as v3.12)
+## Progress (updated 2026-07-13 — shipped as v3.13)
 
-- **Merged to `main`:** B1 (+Q6 protocol-mismatch warning), B2, F3, F4, and the v3.12
-  batch — **Q1** (encoder debounce/coalescing/reverse-guard), **Q3** (rejected/phantom
+- **Merged to `main` (v3.12):** B1 (+Q6 protocol-mismatch warning), B2, F3, F4, and the
+  v3.12 batch — **Q1** (encoder debounce/coalescing/reverse-guard), **Q3** (rejected/phantom
   port cooldowns; the same PR also fixed an incompatible-controller status *flicker* —
   the too-old-firmware port was re-opened/reset every ~3s), **Q5** (overlay mute mode),
   **Q6** (connected-but-channel-count-mismatch warning), **F1** (auto sleep/wake,
   incl. suspend/resume verified on Windows). **R1** confirmed — Avalonia's link-gang
   behavior is the correct one; nothing to port.
+- **Merged to `main` (v3.13, PR #59):** the **Debug-tab batch per D2** — **Q4** (hardware
+  self-test section), the fuller **Q6** diagnostics readout, and **N3** (copy-console /
+  copy-log-path / open-log-file helpers) — folded into the existing Debug tab, gated by a
+  new `AdvancedDebugFeatures` setting (default off) with a `--debug` startup flag that
+  force-shows it. The diagnostics-export entry point stays on the always-visible Setup
+  tab; the v3.12 mismatch warning stays on the main status line.
 - **Descoped (not a gap):** **F2** named profiles — descoped from the port
   (`chore(avalonia): descope named profiles from the port`), along with output-device
   cycling.
-- **On branch `feat/v3.x-debug-tab` (PR #59), not yet merged:** the **Debug-tab batch
-  per D2** — **Q4** (hardware self-test section), the fuller **Q6** diagnostics readout,
-  and **N3** (copy-console / copy-log-path / open-log-file helpers) — folded into the
-  existing Debug tab, gated by a new `AdvancedDebugFeatures` setting (default off) with
-  a `--debug` startup flag that force-shows it. The diagnostics-export entry point stays
-  on the always-visible Setup tab; the v3.12 mismatch warning stays on the main status line.
 - **Still open — the one P1 blocker:** **F6** (cross-platform notification layer;
   wires the inert F5 tray-notifications checkbox).
 - **Still open — quality/polish:** **Q2** (target auto-refresh); **P3** — N1 (`--safe`),
   N2 (per-port picker).
-- **Next up:** merge PR #59, then F6, then the remaining P2 items, then WPF retirement
-  (roadmap item 3).
+- **Next up:** F6, then the remaining P2 items, then WPF retirement (roadmap item 3).
 
 > The prioritized tables below are the original backlog catalog; the Progress block
-> above is the status of record. Most P0/P2 items plus F1/F3/F4 are now merged (v3.12).
+> above is the status of record. Most P0/P2 items plus F1/F3/F4 are merged (v3.12), and
+> the Q4/Q6/N3 Debug-tab batch is merged (v3.13).
 
 ---
 
