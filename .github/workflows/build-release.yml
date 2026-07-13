@@ -1,12 +1,18 @@
 name: Build release .exe
 
-# Produces a standalone self-contained win-x64 .exe on every push to main.
-# The artifact is available for download from the Actions run page.
+# Produces a standalone self-contained win-x64 .exe on every push to main and
+# publishes it as a GitHub Release asset (tagged v<version> from the csproj).
+# Release assets do NOT count against the account's Actions artifact storage
+# quota, so this build never accumulates storage the way upload-artifact did.
 
 on:
   push:
     branches:
       - main
+
+# gh release create/upload needs write access to repo contents.
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -38,9 +44,21 @@ jobs:
           -p:DebugType=embedded
           -o publish/
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: PcVolumeControllerDashboard-v${{ steps.version.outputs.VERSION }}
-          path: publish/PcVolumeControllerDashboard.exe
-          if-no-files-found: error
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "publish/PcVolumeControllerDashboard.exe")) {
+            Write-Error "Expected publish/PcVolumeControllerDashboard.exe was not produced"
+            exit 1
+          }
+          $tag = "v$env:VERSION"
+          # Create the release if it does not exist yet, then (re)upload the asset,
+          # clobbering any existing one so re-runs of the same version stay idempotent.
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --title $tag --notes "Automated build for $tag"
+          }
+          gh release upload $tag "publish/PcVolumeControllerDashboard.exe" --clobber

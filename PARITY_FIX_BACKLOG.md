@@ -16,7 +16,7 @@ Effort: **S** ≈ <½ day, **M** ≈ ½–2 days, **L** ≈ multi-day.
 
 ---
 
-## Progress (updated 2026-07-13 — shipped as v3.13)
+## Progress (updated 2026-07-13 — shipped as v3.14)
 
 - **Merged to `main` (v3.12):** B1 (+Q6 protocol-mismatch warning), B2, F3, F4, and the
   v3.12 batch — **Q1** (encoder debounce/coalescing/reverse-guard), **Q3** (rejected/phantom
@@ -31,18 +31,24 @@ Effort: **S** ≈ <½ day, **M** ≈ ½–2 days, **L** ≈ multi-day.
   new `AdvancedDebugFeatures` setting (default off) with a `--debug` startup flag that
   force-shows it. The diagnostics-export entry point stays on the always-visible Setup
   tab; the v3.12 mismatch warning stays on the main status line.
+- **Merged to `main` (v3.14, PR #62):** **F6** — the cross-platform desktop-notification
+  layer that finally makes the `TrayNotificationsEnabled` toggle functional: connect /
+  disconnect / started-minimised notifications via a Windows WinRT toast, Linux
+  `notify-send`, and a macOS no-op (deferred), behind a Core `INotificationService` seam.
+  **This clears the last P1 blocker** — no parity blockers remain. (The WPF host's
+  reconnect-failed call site has no distinct event on the Avalonia connection service and
+  is not surfaced; connect/disconnect/started-minimised cover the UX.)
 - **Descoped (not a gap):** **F2** named profiles — descoped from the port
   (`chore(avalonia): descope named profiles from the port`), along with output-device
   cycling.
-- **Still open — the one P1 blocker:** **F6** (cross-platform notification layer;
-  wires the inert F5 tray-notifications checkbox).
-- **Still open — quality/polish:** **Q2** (target auto-refresh); **P3** — N1 (`--safe`),
-  N2 (per-port picker).
-- **Next up:** F6, then the remaining P2 items, then WPF retirement (roadmap item 3).
+- **Still open — quality/polish (no blockers left):** **Q2** (target auto-refresh);
+  **P3** — N1 (`--safe`), N2 (per-port picker).
+- **Next up:** the remaining P2/P3 polish, then WPF retirement (roadmap item 3).
 
 > The prioritized tables below are the original backlog catalog; the Progress block
-> above is the status of record. Most P0/P2 items plus F1/F3/F4 are merged (v3.12), and
-> the Q4/Q6/N3 Debug-tab batch is merged (v3.13).
+> above is the status of record. Most P0/P2 items plus F1/F3/F4 are merged (v3.12), the
+> Q4/Q6/N3 Debug-tab batch is merged (v3.13), and F6 is merged (v3.14) — clearing the
+> last P1 blocker.
 
 ---
 
@@ -95,7 +101,7 @@ of this).*
 | F3 | **Log cleanup/rotation** | `LogService` writes one `avalonia-{timestamp}.log` per launch and never prunes → unbounded growth. Easy win. | S | `Services/LogService.cs:16-22`; cf. WPF `MainWindow.Ui.cs:586-628` |
 | F4 | **Tray menu — missing actions** | Avalonia tray has only Show/Exit; WPF has Connect/Disconnect/Reconnect/Open Log Folder/Exit + double-click-restore. | M | `App.axaml:22-28`; cf. WPF `MainWindow.Tray.cs:39-63` |
 | F5 | **Inert "tray notifications" checkbox** | Setting exists but nothing reads it. **Resolution (2026-07-06): not removed — wired by F6** (cross-platform notification layer greenlit). The checkbox stays; F6 makes it real. | — | subsumed by F6 |
-| F6 | **Cross-platform desktop notification layer** (greenlit 2026-07-06) | New feature that makes the `TrayNotificationsEnabled` toggle functional on Linux/Windows (macOS deferred). Avalonia's `TrayIcon` has no balloon API and `Avalonia.Controls.Notifications` is in-window only (useless while minimised to tray), so this needs a Core seam + per-OS impls. Mirror WPF's `ShowTrayNotification` call sites (connect / disconnect / reconnect-failed / started-minimised). | M–L | new `INotificationService` (Core seam) + Linux impl (`org.freedesktop.Notifications` DBus / `notify-send`), Windows impl (WinRT toast or `NotifyIcon` balloon in `Platform.Windows`), macOS deferred; cf. WPF `MainWindow.Tray.cs:116-135`, call sites `MainWindow.Serial.cs:696,895,899`, `MainWindow.xaml.cs:306` |
+| F6 | ✅ **DONE** (v3.14, PR #62) — **Cross-platform desktop notification layer** | Makes the `TrayNotificationsEnabled` toggle functional. Core `INotificationService` seam + `NullNotificationService`; Windows = WinRT **toast** via CommunityToolkit (in the host, `#if WINDOWS`); Linux = `notify-send` (`Platform.Linux`); macOS = no-op. Coordinator gates on the setting and fires connect / disconnect (edge-tracked) / started-minimised. Reconnect-failed not wired (no distinct Avalonia event). Windows TFM bumped to `net10.0-windows10.0.17763.0` for the WinRT API. | M–L | `Core/INotificationService.cs`, `App.Avalonia/Services/NotificationService.cs`, `App.Avalonia/Platform/WindowsToastNotificationService.cs`, `Platform.Linux/LinuxNotificationService.cs`; cf. WPF `MainWindow.Tray.cs:116-135` |
 
 ---
 

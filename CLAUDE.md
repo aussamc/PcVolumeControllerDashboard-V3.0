@@ -20,7 +20,7 @@ the repo and builds, but is **being retired** once the Avalonia build reaches pa
 | Path | TFM | Purpose |
 |---|---|---|
 | `Core/` (`PcVolumeControllerDashboard.Core.csproj`) | `net10.0` | Platform-agnostic domain: serial layer + protocol parser, settings repository/POCOs + migrations, OLED renderer, encoder math, audio & hotkey seams. **No WPF/Windows/Avalonia refs.** |
-| `App.Avalonia/` (`App.Avalonia.csproj`) | `net10.0;net10.0-windows` | The cross-platform Avalonia host (the future single UI). References Core; references `Platform.Windows` only on the `-windows` TFM, `Platform.Linux` only on the plain `net10.0` TFM. |
+| `App.Avalonia/` (`App.Avalonia.csproj`) | `net10.0;net10.0-windows10.0.17763.0` | The cross-platform Avalonia host (the future single UI). References Core; references `Platform.Windows` only on the `-windows` TFM, `Platform.Linux` only on the plain `net10.0` TFM. The Windows TFM carries an OS version (Win10 1809) so the host can call the WinRT toast API for F6 desktop notifications; nothing else in the solution needs it. |
 | `Platform.Windows/` | `net10.0-windows` | Windows-only implementations behind Core seams: WASAPI + VoiceMeeter audio backends. |
 | `Platform.Linux/` | `net10.0` | Linux audio backend behind the same seam: `PipeWireAudioBackend` (shells out to `pw-dump`/`wpctl`). Also referenced on macOS builds (shared TFM), but `AudioBackendFactory` only instantiates it at runtime on Linux. |
 | `PcVolumeControllerDashboard.csproj` (root) | `net10.0-windows` | The legacy **WPF host** (being retired). Keep it building but functionally untouched until convergence. |
@@ -38,12 +38,12 @@ current OS explicitly:
 
 ```bash
 # Build the Avalonia app
-dotnet build App.Avalonia/App.Avalonia.csproj -f net10.0-windows   # Windows
-dotnet build App.Avalonia/App.Avalonia.csproj -f net10.0           # Linux/macOS
+dotnet build App.Avalonia/App.Avalonia.csproj -f net10.0-windows10.0.17763.0   # Windows
+dotnet build App.Avalonia/App.Avalonia.csproj -f net10.0                       # Linux/macOS
 
 # Run it
-dotnet run --project App.Avalonia/App.Avalonia.csproj -f net10.0-windows   # Windows
-dotnet run --project App.Avalonia/App.Avalonia.csproj -f net10.0           # Linux/macOS
+dotnet run --project App.Avalonia/App.Avalonia.csproj -f net10.0-windows10.0.17763.0   # Windows
+dotnet run --project App.Avalonia/App.Avalonia.csproj -f net10.0                       # Linux/macOS
 
 # Tests (target the test project directly to avoid rebuilding the running app)
 dotnet test tests/PcVolumeControllerDashboard.Tests.csproj
@@ -51,7 +51,7 @@ dotnet test tests/PcVolumeControllerDashboard.Tests.csproj
 
 Verification bar for any change:
 
-- **Both** Avalonia TFMs (`net10.0` and `net10.0-windows`) build at **0 warnings / 0 errors**.
+- **Both** Avalonia TFMs (`net10.0` and `net10.0-windows10.0.17763.0`) build at **0 warnings / 0 errors**.
 - The full test suite passes.
 - The Windows build launches.
 - The WPF host (`PcVolumeControllerDashboard.csproj`) still builds.
@@ -64,10 +64,10 @@ Notes:
   on macOS, which has no TFM suffix of its own to branch on at compile time). Global
   hotkeys use the simpler per-TFM pattern (`WindowsGlobalHotkeyService` vs
   `NullGlobalHotkeyService`) since they're Windows-only for now.
-- Multi-target incremental builds can leave a **stale `net10.0-windows` output** — if
-  a `--no-build` run seems to execute old code, rebuild that TFM explicitly (or clean
-  `App.Avalonia/bin` + `obj`). Building the `.csproj` directly emits to
-  `bin/Debug/<tfm>/`; solution builds emit to `bin/x64/Debug/<tfm>/`.
+- Multi-target incremental builds can leave a **stale `net10.0-windows10.0.17763.0`
+  output** — if a `--no-build` run seems to execute old code, rebuild that TFM
+  explicitly (or clean `App.Avalonia/bin` + `obj`). Building the `.csproj` directly
+  emits to `bin/Debug/<tfm>/`; solution builds emit to `bin/x64/Debug/<tfm>/`.
 - Some settings tests touch the real user config path — run tests with `APPDATA`
   (Windows) / `XDG_CONFIG_HOME`-equivalent redirected to a temp dir if you don't want
   to read the live `settings.json`.
@@ -124,7 +124,7 @@ Notes:
 
 ## Key constants
 
-- Dashboard version: **3.13** (both hosts). Required controller protocol: **2.24**
+- Dashboard version: **3.14** (both hosts). Required controller protocol: **2.24**
   (firmware v2.25 is backward-compatible). Expected channels: **6**.
 - Hardware: v1.4 PCB, ESP32-S3-DevKitC-1-N16R8, SSD1315 OLEDs behind a TCA9548A I2C
   mux. GPIO/OLED layout is final — see the firmware source.
@@ -149,10 +149,11 @@ API — a separate, harder problem than audio).
 reverse-guard**, a distinct **overlay mute mode**, a **channel-count-mismatch** warning,
 and rejected/phantom-port **reconnect cooldowns** (which also fixed an incompatible-
 controller status *flicker* and two Windows-only defects caught during verification: a
-WPF-host build break and a crash-on-close stack overflow). With B1/B2/F3/F4 already on
-`main`, the **only remaining parity blocker is the cross-platform desktop-notification
-layer (F6)**; the rest is P2/P3 polish. Named profiles (F2) were **descoped**.
-`PARITY_FIX_BACKLOG.md` is the live tracker.
+WPF-host build break and a crash-on-close stack overflow). Since then the **Q4/Q6/N3
+Debug-tab batch shipped (v3.13)** and **F6 (the cross-platform desktop-notification layer)
+shipped (v3.14)** — with B1/B2/F3/F4 already on `main`, **no parity blockers remain**; the
+rest is P2/P3 polish (Q2 target auto-refresh, N1 `--safe`, N2 per-port picker). Named
+profiles (F2) were **descoped**. `PARITY_FIX_BACKLOG.md` is the live tracker.
 
 Remaining to finish the port:
 
@@ -180,10 +181,11 @@ Remaining to finish the port:
    catalogued below are now **resolved and merged** — B1, B2, F3, F4, plus the v3.12
    batch (Q1 encoder debounce, Q3 port cooldowns + incompatible-controller flicker
    fix, Q5 overlay mute mode, Q6 channel-mismatch warning, F1 auto sleep/wake); R1 is
-   confirmed (Avalonia correct). **Still open:** F6 (cross-platform notification layer
-   — the one P1 blocker), Q2 (target auto-refresh), Q4 (hardware self-test panel), the
-   fuller Q6 diagnostics panel, and P3 items N1/N2/N3. See `PARITY_FIX_BACKLOG.md` for
-   the live tracker. The detailed findings below are retained as the audit record:
+   confirmed (Avalonia correct). **Since v3.12:** the **Q4/Q6/N3 Debug-tab batch** shipped
+   (v3.13) and **F6** (cross-platform notification layer) shipped (v3.14), clearing the
+   last P1 blocker. **Still open (polish only, no blockers):** Q2 (target auto-refresh)
+   and P3 items N1 (`--safe`) / N2 (per-port picker). See `PARITY_FIX_BACKLOG.md` for the
+   live tracker. The detailed findings below are retained as the audit record:
    - **Profile system missing from Avalonia UI** — WPF has full multi-profile
      support (create/rename/duplicate/delete/switch/cycle-next, tray submenu,
      global hotkey — `MainWindow.xaml.cs:611-932`, `MainWindow.Tray.cs:70-99`,
