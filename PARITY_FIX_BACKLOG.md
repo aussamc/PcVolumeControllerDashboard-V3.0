@@ -16,7 +16,7 @@ Effort: **S** ≈ <½ day, **M** ≈ ½–2 days, **L** ≈ multi-day.
 
 ---
 
-## Progress (updated 2026-07-13 — shipped as v3.14)
+## Progress (updated 2026-07-14 — shipped as v3.14.1)
 
 - **Merged to `main` (v3.12):** B1 (+Q6 protocol-mismatch warning), B2, F3, F4, and the
   v3.12 batch — **Q1** (encoder debounce/coalescing/reverse-guard), **Q3** (rejected/phantom
@@ -38,17 +38,23 @@ Effort: **S** ≈ <½ day, **M** ≈ ½–2 days, **L** ≈ multi-day.
   **This clears the last P1 blocker** — no parity blockers remain. (The WPF host's
   reconnect-failed call site has no distinct event on the Avalonia connection service and
   is not surfaced; connect/disconnect/started-minimised cover the UX.)
+- **Merged to `main` (v3.14.1, PR #63):** **Q2** — the assignable-target picker now
+  auto-refreshes: a newly-launched app appears in the Assign Target dropdown (and the
+  per-channel pool picker) within ~2.5s without a manual Refresh, and the picker also
+  refreshes instantly on a default-device switch (via the backend's `TargetsChanged`
+  event). Change-detected so an unchanged target set never rebuilds the combo. **This
+  clears the P2 backlog.**
 - **Descoped (not a gap):** **F2** named profiles — descoped from the port
   (`chore(avalonia): descope named profiles from the port`), along with output-device
   cycling.
-- **Still open — quality/polish (no blockers left):** **Q2** (target auto-refresh);
-  **P3** — N1 (`--safe`), N2 (per-port picker).
-- **Next up:** the remaining P2/P3 polish, then WPF retirement (roadmap item 3).
+- **Still open — P3 polish only (no blockers left):** N1 (`--safe`), N2 (per-port picker).
+- **Next up:** the P3 polish (N1, N2), then WPF retirement (roadmap item 3).
 
 > The prioritized tables below are the original backlog catalog; the Progress block
 > above is the status of record. Most P0/P2 items plus F1/F3/F4 are merged (v3.12), the
-> Q4/Q6/N3 Debug-tab batch is merged (v3.13), and F6 is merged (v3.14) — clearing the
-> last P1 blocker.
+> Q4/Q6/N3 Debug-tab batch is merged (v3.13), F6 is merged (v3.14) — clearing the last
+> P1 blocker — and Q2 is merged (v3.14.1), clearing the P2 backlog. Only P3 polish (N1,
+> N2) remains before WPF retirement.
 
 ---
 
@@ -110,7 +116,7 @@ of this).*
 | # | Item | Why | Effort | Key files |
 |---|---|---|---|---|
 | Q1 | **Encoder debounce/coalescing/reverse-guard** | Avalonia applies every raw `ENC` immediately. On Linux each write is a `wpctl` **process spawn**, so a bouncy turn spawns a burst of processes. WPF buffers on a 25ms timer + suppresses isolated reversals. | M | `Services/ChannelRuntime.cs:99-136`; cf. WPF `MainWindow.Encoder.cs:63-156` |
-| Q2 | **Assignable-target list doesn't auto-refresh** | New app doesn't appear in the picker until manual Refresh; WPF auto-detects in ~2.5s. (Assigned channels already track fine.) | S | `MainWindow.axaml.cs:176-190`; cf. WPF `MainWindow.xaml.cs:1833-1857` |
+| Q2 | ✅ **DONE** (v3.14.1, PR #63) — **Assignable-target list auto-refresh** | A newly-launched app now appears in the picker within ~2.5s (and the picker refreshes instantly on a default-device switch via `TargetsChanged`), no manual Refresh needed. A 2.5s timer re-enumerates and refreshes only when the target-key set changed (`SetEquals`), so an unchanged set never rebuilds the combo. | S | `MainWindow.axaml.cs` (`AutoRefreshTargetsIfChanged`); cf. WPF `MainWindow.xaml.cs:1833-1857` |
 | Q3 | **Rejected/phantom-port cooldown tracking** | Avalonia re-tries every candidate each reconnect cycle, incl. known-wrong ports — wastes cycles + identify timeouts when a 2nd serial device is present. | M | `Services/SerialConnectionService.cs:217-252`; cf. WPF `:686-697`,`:448-459` |
 | Q4 | ✅ **DONE** (PR #59) — **Hardware self-test** Debug-tab section (per D2) | Per-channel "encoder count X, button seen yes/no" checklist + Reset + Sleep/Wake test buttons to verify all 6 encoders/buttons. Lives in the Debug tab, gated by `AdvancedDebugFeatures` (default off; `--debug` force-shows). Tally in Core (`HardwareSelfTest`, unit-tested). | S–M | `MainWindow.Debug.cs`, `Core/HardwareSelfTest.cs`; cf. WPF `MainWindow.xaml.cs:109-110`,`:4375-4432` |
 | Q5 | **Overlay mute — distinct visual mode** | WPF shows a dedicated mute layout (speaker icon, "Muted" text, bar hidden); Avalonia just relabels the percentage. | S | `VolumeOverlay.cs:104-113`; cf. WPF `VolumeOverlayWindow.xaml.cs:56-74` |
