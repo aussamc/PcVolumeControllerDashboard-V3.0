@@ -124,7 +124,7 @@ Notes:
 
 ## Key constants
 
-- Dashboard version: **3.12** (both hosts). Required controller protocol: **2.24**
+- Dashboard version: **3.13** (both hosts). Required controller protocol: **2.24**
   (firmware v2.25 is backward-compatible). Expected channels: **6**.
 - Hardware: v1.4 PCB, ESP32-S3-DevKitC-1-N16R8, SSD1315 OLEDs behind a TCA9548A I2C
   mux. GPIO/OLED layout is final — see the firmware source.
