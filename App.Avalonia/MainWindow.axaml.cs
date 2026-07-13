@@ -23,7 +23,7 @@ namespace PcVolumeControllerDashboard.App;
 public partial class MainWindow : Window
 {
     // Shipping dashboard version (bumped per Avalonia-tab milestone).
-    private const string DashboardVersion = "3.14";
+    private const string DashboardVersion = "3.14.1";
     private const string RequiredProtocolVersion = "2.24";
 
     private readonly SettingsService? _settingsService;
@@ -32,6 +32,13 @@ public partial class MainWindow : Window
     private DeviceStateService? _deviceState;
     private readonly ObservableCollection<ChannelRow> _channelRows = new();
     private DispatcherTimer? _channelPollTimer;
+    // Assignable-target discovery (Q2): the picker is re-enumerated on a slow cadence
+    // (and on the backend's TargetsChanged event) so a newly-launched app appears
+    // without a manual Refresh. The 50ms channel poll is far too frequent to
+    // re-enumerate sessions, so this runs on its own timer with change detection.
+    private DispatcherTimer? _targetRefreshTimer;
+    private HashSet<string> _lastTargetKeys = new(StringComparer.OrdinalIgnoreCase);
+    private const int TargetRefreshIntervalMs = 2500;
     // Latest live per-channel state from the poll; drives the OLED previews so they
     // track the hardware instead of showing static samples.
     private List<ChannelLiveState> _lastLive = new();
@@ -158,6 +165,17 @@ public partial class MainWindow : Window
         _channelPollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
         _channelPollTimer.Tick += (_, _) => RefreshChannelStates();
         _channelPollTimer.Start();
+
+        // Q2: auto-discover newly-launched apps in the target picker. A slow timer
+        // catches new app sessions (which raise no OS notification), and the backend's
+        // TargetsChanged event gives an instant refresh on a default-device switch.
+        // Both funnel through the change-detecting AutoRefreshTargetsIfChanged so an
+        // unchanged target set never rebuilds the combo.
+        _targetRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(TargetRefreshIntervalMs) };
+        _targetRefreshTimer.Tick += (_, _) => AutoRefreshTargetsIfChanged();
+        _targetRefreshTimer.Start();
+        if (_audioBackend != null)
+            _audioBackend.TargetsChanged += () => Dispatcher.UIThread.Post(AutoRefreshTargetsIfChanged);
     }
 
     private void UpdateConnectionStatus()
@@ -219,9 +237,15 @@ public partial class MainWindow : Window
 
     private void DisconnectButton_Click(object? sender, RoutedEventArgs e) => _connection?.Disconnect();
 
-    private void RefreshTargets()
+    /// <summary>
+    /// Repopulates the target pickers from the given target list (or a fresh
+    /// enumeration when <paramref name="fetched"/> is null), preserving each combo's
+    /// selection by key, and records the target-key set so the Q2 auto-refresh can
+    /// tell when the set has actually changed.
+    /// </summary>
+    private void RefreshTargets(IReadOnlyList<AudioTarget>? fetched = null)
     {
-        var targets = (_audioBackend?.GetAvailableTargets() ?? (IReadOnlyList<AudioTarget>)Array.Empty<AudioTarget>()).ToList();
+        var targets = (fetched ?? _audioBackend?.GetAvailableTargets() ?? (IReadOnlyList<AudioTarget>)Array.Empty<AudioTarget>()).ToList();
         object? previous = TargetCombo.SelectedItem;
         TargetCombo.ItemsSource = targets;
         // Preserve selection by key where possible.
@@ -233,6 +257,28 @@ public partial class MainWindow : Window
         DetailPoolCombo.ItemsSource = targets;
         if (prevPool is AudioTarget pp)
             DetailPoolCombo.SelectedItem = targets.FirstOrDefault(t => t.Key == pp.Key);
+
+        _lastTargetKeys = new HashSet<string>(targets.Select(t => t.Key), StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Q2: re-enumerates the assignable targets and refreshes the pickers only when the
+    /// set of keys has changed since the last refresh, so a newly-launched (or closed)
+    /// app appears in the dropdown without a manual Refresh — but an unchanged set never
+    /// rebuilds the combo (which would disrupt an open dropdown or a live selection).
+    /// Runs off a slow timer (new app sessions raise no OS notification) and the
+    /// backend's TargetsChanged event (default-device switch). WASAPI's 100ms session
+    /// cache means the periodic enumeration is fresh without forcing InvalidateCache.
+    /// </summary>
+    private void AutoRefreshTargetsIfChanged()
+    {
+        if (_audioBackend == null) return;
+        IReadOnlyList<AudioTarget> targets = _audioBackend.GetAvailableTargets();
+        var keys = new HashSet<string>(targets.Select(t => t.Key), StringComparer.OrdinalIgnoreCase);
+        if (keys.SetEquals(_lastTargetKeys)) return;
+
+        RefreshTargets(targets); // updates the pickers and _lastTargetKeys
+        RefreshChannelStates();
     }
 
     private void RefreshChannelStates()
