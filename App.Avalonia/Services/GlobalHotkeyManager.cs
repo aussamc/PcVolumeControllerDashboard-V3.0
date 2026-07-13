@@ -35,6 +35,10 @@ public sealed class GlobalHotkeyManager : IDisposable
     private readonly SettingsService _settings;
     private readonly LogService _log;
 
+    // --safe diagnostic launch: suppress the master volume/mute audio writes (the
+    // "show dashboard" hotkey still works, since it changes no audio).
+    private readonly bool _safeMode;
+
     /// <summary>Raised (on the UI thread) when the "show dashboard" hotkey fires.</summary>
     public event Action? ShowDashboardRequested;
 
@@ -44,11 +48,12 @@ public sealed class GlobalHotkeyManager : IDisposable
     /// </summary>
     public event Action<VolumeOverlayInfo>? VolumeChanged;
 
-    public GlobalHotkeyManager(IAudioBackend audio, SettingsService settings, LogService log)
+    public GlobalHotkeyManager(IAudioBackend audio, SettingsService settings, LogService log, StartupOptions startup)
     {
         _audio = audio;
         _settings = settings;
         _log = log;
+        _safeMode = startup.SafeMode;
 
         _service = CreatePlatformService();
         _service.HotkeyPressed += OnHotkeyPressed;
@@ -90,6 +95,13 @@ public sealed class GlobalHotkeyManager : IDisposable
         {
             try
             {
+                // Safe mode suppresses audio writes; "show dashboard" still works.
+                if (_safeMode && id != IdShowDashboard)
+                {
+                    _log.Log("Safe mode: master volume/mute hotkey observed but the audio write was skipped.");
+                    return;
+                }
+
                 switch (id)
                 {
                     case IdMasterVolumeUp:
