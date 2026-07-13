@@ -63,6 +63,9 @@ public partial class App : Application
             // Start the PC activity monitor before connecting so lock/suspend/idle
             // transitions drive SLEEP/WAKE (and OLED-push suppression) once connected.
             Services.GetRequiredService<Services.SleepWakeService>();
+            // Activate the notification coordinator before connecting so it's
+            // subscribed to the connection state stream (connect/disconnect toasts).
+            Services.GetRequiredService<Services.NotificationService>();
             Services.GetRequiredService<Services.SerialConnectionService>().AutoConnect();
 
             // Global hotkeys: constructing the manager registers the assigned bindings;
@@ -105,7 +108,10 @@ public partial class App : Application
         _mainWindow = Services.GetRequiredService<MainWindow>();
 
         if (settings.StartMinimizedToTray && settings.MinimizeToTray)
+        {
             log.Log("Started minimized to tray.");
+            Services.GetRequiredService<Services.NotificationService>().NotifyStartedMinimized();
+        }
         else
             desktop.MainWindow = _mainWindow;
     }
@@ -159,6 +165,11 @@ public partial class App : Application
         // (Windows only; a no-op monitor elsewhere). Also drives the OLED-push
         // suppression on DeviceStateService while the controller is asleep.
         services.AddSingleton<Services.SleepWakeService>();
+
+        // Desktop notifications (F6): connect/disconnect/started-minimised toasts,
+        // gated by the TrayNotificationsEnabled setting. Windows toast / Linux
+        // notify-send / macOS no-op, chosen inside the coordinator.
+        services.AddSingleton<Services.NotificationService>();
 
         // Software update check (queries GitHub Releases; manual/user-triggered).
         services.AddSingleton<Services.UpdateCheckService>();

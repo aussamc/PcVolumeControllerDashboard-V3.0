@@ -20,7 +20,7 @@ the repo and builds, but is **being retired** once the Avalonia build reaches pa
 | Path | TFM | Purpose |
 |---|---|---|
 | `Core/` (`PcVolumeControllerDashboard.Core.csproj`) | `net10.0` | Platform-agnostic domain: serial layer + protocol parser, settings repository/POCOs + migrations, OLED renderer, encoder math, audio & hotkey seams. **No WPF/Windows/Avalonia refs.** |
-| `App.Avalonia/` (`App.Avalonia.csproj`) | `net10.0;net10.0-windows` | The cross-platform Avalonia host (the future single UI). References Core; references `Platform.Windows` only on the `-windows` TFM, `Platform.Linux` only on the plain `net10.0` TFM. |
+| `App.Avalonia/` (`App.Avalonia.csproj`) | `net10.0;net10.0-windows10.0.17763.0` | The cross-platform Avalonia host (the future single UI). References Core; references `Platform.Windows` only on the `-windows` TFM, `Platform.Linux` only on the plain `net10.0` TFM. The Windows TFM carries an OS version (Win10 1809) so the host can call the WinRT toast API for F6 desktop notifications; nothing else in the solution needs it. |
 | `Platform.Windows/` | `net10.0-windows` | Windows-only implementations behind Core seams: WASAPI + VoiceMeeter audio backends. |
 | `Platform.Linux/` | `net10.0` | Linux audio backend behind the same seam: `PipeWireAudioBackend` (shells out to `pw-dump`/`wpctl`). Also referenced on macOS builds (shared TFM), but `AudioBackendFactory` only instantiates it at runtime on Linux. |
 | `PcVolumeControllerDashboard.csproj` (root) | `net10.0-windows` | The legacy **WPF host** (being retired). Keep it building but functionally untouched until convergence. |
@@ -38,12 +38,12 @@ current OS explicitly:
 
 ```bash
 # Build the Avalonia app
-dotnet build App.Avalonia/App.Avalonia.csproj -f net10.0-windows   # Windows
-dotnet build App.Avalonia/App.Avalonia.csproj -f net10.0           # Linux/macOS
+dotnet build App.Avalonia/App.Avalonia.csproj -f net10.0-windows10.0.17763.0   # Windows
+dotnet build App.Avalonia/App.Avalonia.csproj -f net10.0                       # Linux/macOS
 
 # Run it
-dotnet run --project App.Avalonia/App.Avalonia.csproj -f net10.0-windows   # Windows
-dotnet run --project App.Avalonia/App.Avalonia.csproj -f net10.0           # Linux/macOS
+dotnet run --project App.Avalonia/App.Avalonia.csproj -f net10.0-windows10.0.17763.0   # Windows
+dotnet run --project App.Avalonia/App.Avalonia.csproj -f net10.0                       # Linux/macOS
 
 # Tests (target the test project directly to avoid rebuilding the running app)
 dotnet test tests/PcVolumeControllerDashboard.Tests.csproj
@@ -51,7 +51,7 @@ dotnet test tests/PcVolumeControllerDashboard.Tests.csproj
 
 Verification bar for any change:
 
-- **Both** Avalonia TFMs (`net10.0` and `net10.0-windows`) build at **0 warnings / 0 errors**.
+- **Both** Avalonia TFMs (`net10.0` and `net10.0-windows10.0.17763.0`) build at **0 warnings / 0 errors**.
 - The full test suite passes.
 - The Windows build launches.
 - The WPF host (`PcVolumeControllerDashboard.csproj`) still builds.
@@ -64,10 +64,10 @@ Notes:
   on macOS, which has no TFM suffix of its own to branch on at compile time). Global
   hotkeys use the simpler per-TFM pattern (`WindowsGlobalHotkeyService` vs
   `NullGlobalHotkeyService`) since they're Windows-only for now.
-- Multi-target incremental builds can leave a **stale `net10.0-windows` output** — if
-  a `--no-build` run seems to execute old code, rebuild that TFM explicitly (or clean
-  `App.Avalonia/bin` + `obj`). Building the `.csproj` directly emits to
-  `bin/Debug/<tfm>/`; solution builds emit to `bin/x64/Debug/<tfm>/`.
+- Multi-target incremental builds can leave a **stale `net10.0-windows10.0.17763.0`
+  output** — if a `--no-build` run seems to execute old code, rebuild that TFM
+  explicitly (or clean `App.Avalonia/bin` + `obj`). Building the `.csproj` directly
+  emits to `bin/Debug/<tfm>/`; solution builds emit to `bin/x64/Debug/<tfm>/`.
 - Some settings tests touch the real user config path — run tests with `APPDATA`
   (Windows) / `XDG_CONFIG_HOME`-equivalent redirected to a temp dir if you don't want
   to read the live `settings.json`.

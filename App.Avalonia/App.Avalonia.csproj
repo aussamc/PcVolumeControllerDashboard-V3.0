@@ -15,10 +15,15 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <!-- Multi-targeted so the cross-platform UI builds for any OS (net10.0) while
-         the Windows build (net10.0-windows) can reference the Windows audio
-         platform lib. The audio backend is selected per-TFM by AudioBackendFactory.
-         Run: Windows -> -f net10.0-windows ; Linux/macOS -> -f net10.0. -->
-    <TargetFrameworks>net10.0;net10.0-windows</TargetFrameworks>
+         the Windows build can reference the Windows audio platform lib. The audio
+         backend is selected per-TFM by AudioBackendFactory. Run: Windows ->
+         -f net10.0-windows10.0.17763.0 ; Linux/macOS -> -f net10.0.
+         The Windows TFM carries an OS version (10.0.17763.0 = Win10 1809) so the
+         host can call the WinRT toast API (Microsoft.Toolkit.Uwp.Notifications) for
+         F6 desktop notifications; the plain `net10.0-windows` TFM has no WinRT
+         projection. This is contained to the Avalonia host — Core, Platform.Windows,
+         the WPF host, and the test project are unchanged. -->
+    <TargetFrameworks>net10.0;net10.0-windows10.0.17763.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
@@ -72,8 +77,19 @@
 
   <!-- Windows audio backends (WASAPI + VoiceMeeter) — referenced only by the
        Windows build. -->
-  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0-windows'">
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0-windows10.0.17763.0'">
     <ProjectReference Include="..\Platform.Windows\PcVolumeControllerDashboard.Platform.Windows.csproj" />
+  </ItemGroup>
+
+  <!-- Windows desktop notifications (F6): modern WinRT toast via CommunityToolkit.
+       Windows build only; the toast is raised by WindowsToastNotificationService
+       (App.Avalonia/Platform) behind #if WINDOWS. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0-windows10.0.17763.0'">
+    <PackageReference Include="Microsoft.Toolkit.Uwp.Notifications" Version="7.1.3" />
+    <!-- Override the toolkit's transitive System.Drawing.Common 4.7.0, which carries
+         NU1904 (GHSA-rxg9-xrhp-64gj), with the patched .NET 10 release. This is the
+         Windows-only TFM, so System.Drawing.Common being Windows-only (6.0+) is fine. -->
+    <PackageReference Include="System.Drawing.Common" Version="10.0.0" />
   </ItemGroup>
 
   <!-- Linux audio backend (PipeWire via pw-dump/wpctl) — this TFM is shared with a
