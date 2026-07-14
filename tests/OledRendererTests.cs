@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using FluentAssertions;
 using Xunit;
 
@@ -60,6 +62,59 @@ public sealed class OledRendererTests
 
         unmuted.Pixels.ToArray().Should().NotEqual(muted.Pixels.ToArray(),
             "muted shows \"MUTE\" while unmuted shows the volume number");
+    }
+
+    public static IEnumerable<object[]> AllModes()
+    {
+        yield return new object[] { "AppVolume",      (Action<OledRenderer>)(r => r.RenderAppVolume("Browser", 73, false, "Active")) };
+        yield return new object[] { "LargeVolume",    (Action<OledRenderer>)(r => r.RenderLargeVolume("Master", 100, false)) };
+        yield return new object[] { "LargeVolumeMute",(Action<OledRenderer>)(r => r.RenderLargeVolume("Master", 100, true)) };
+        yield return new object[] { "MuteStatus",     (Action<OledRenderer>)(r => r.RenderMuteStatus("Music", 40, true)) };
+        yield return new object[] { "AppOrDeviceName",(Action<OledRenderer>)(r => r.RenderAppOrDeviceName(3, "Speakers", "Active", 88)) };
+        yield return new object[] { "BarPercent",     (Action<OledRenderer>)(r => r.RenderBarPercent("Game", 55, false)) };
+    }
+
+    [Theory]
+    [MemberData(nameof(AllModes))]
+    public void AllModes_ReserveBottomAntiBurnMargin(string name, Action<OledRenderer> render)
+    {
+        // Every mode must keep content within rows 0..(63 - AntiBurnMaxOffset) so the
+        // firmware's 0..3px SETDISPLAYOFFSET shift never wraps a lit pixel (item 11).
+        var r = new OledRenderer();
+        render(r);
+
+        int firstReservedRow = OledRenderer.Height - OledRenderer.AntiBurnMaxOffset; // 61
+        LitInBand(r, firstReservedRow, OledRenderer.Height).Should().Be(0,
+            $"{name} must leave the bottom {OledRenderer.AntiBurnMaxOffset} rows clear for the anti-burn shift");
+    }
+
+    [Fact]
+    public void ApplyDisplayOffset_ShiftsContentDownWithWrap()
+    {
+        var r = new OledRenderer();
+        r.RenderLargeVolume("Master", 100, muted: false);
+        // The rule is a full-width lit row at y18; nothing is lit at y21 yet.
+        LitInBand(r, 18, 19).Should().Be(W);
+        LitInBand(r, 21, 22).Should().Be(0);
+
+        r.ApplyDisplayOffset(3);
+
+        // After a 3px downward shift the rule moves to y21; y18 is now clear.
+        LitInBand(r, 21, 22).Should().Be(W, "the rule shifts down by the offset");
+        LitInBand(r, 18, 19).Should().Be(0);
+    }
+
+    [Fact]
+    public void ApplyDisplayOffset_Zero_IsNoOp()
+    {
+        var a = new OledRenderer();
+        a.RenderLargeVolume("Master", 50, muted: false);
+        var b = new OledRenderer();
+        b.RenderLargeVolume("Master", 50, muted: false);
+
+        a.ApplyDisplayOffset(0);
+
+        a.Pixels.ToArray().Should().Equal(b.Pixels.ToArray());
     }
 
     [Fact]

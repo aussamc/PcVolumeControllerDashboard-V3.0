@@ -9,6 +9,10 @@
 //     muted the big number is replaced by the word "MUTE" (same size 4);
 //     when unmuted the number returns.  The dashboard's Core OLED preview
 //     (OledRenderer.RenderLargeVolume) mirrors this pixel layout exactly.
+//   - Anti-burn-in no longer clips the bottom text: every display mode now keeps
+//     its content within rows 0..60 (the two modes with a bottom line at y56 —
+//     APP_VOLUME and BAR_PERCENT — were lifted to y54), reserving the bottom 3 rows
+//     so the 0..3px SETDISPLAYOFFSET shift only ever wraps empty rows.
 //   - Version bumped to 2.26 (display-only change; reflash required to see it).
 //     The wire protocol is unchanged from 2.25 — the dashboard's required
 //     protocol floor (2.24) still accepts this firmware.
@@ -305,6 +309,11 @@ void setAllDisplaysPower(bool on) {
 
 // =============================================================================
 // Anti-burn-in pixel shift (same offset applied to all displays in sync)
+//   Hardware SETDISPLAYOFFSET shifts the whole panel down 0..3px and WRAPS, so
+//   every display mode must keep its content within rows 0..60 (see updateDisplay);
+//   the reserved bottom 3 rows mean a full shift only ever wraps empty rows.
+//   (A future firmware could replace this with a clamped 2-D software jitter — see
+//   the "software-jitter anti-burn" item in the dashboard FEATURE_BACKLOG.)
 // =============================================================================
 void applyAntiBurnInOffset() {
   uint8_t offset = 0;
@@ -380,8 +389,8 @@ void updateDisplay(int ch) {
     display.drawRect(8, 28, 112, 14, SSD1306_WHITE);
     int barWidth = map(constrain(c.volume, 0, 100), 0, 100, 0, 108);
     display.fillRect(10, 30, barWidth, 10, SSD1306_WHITE);
-    drawCenteredSmall(volumeText, 48);
-    drawCenteredSmall(muteText, 56);
+    drawCenteredSmall(volumeText, 46);
+    drawCenteredSmall(muteText, 54);
 
   } else {
     // Default: APP_VOLUME — label + large-ish volume + mute + status
@@ -395,7 +404,7 @@ void updateDisplay(int ch) {
     display.print(volumeText);
     display.setTextSize(1);
     drawCenteredSmall(muteText, 46);
-    drawCenteredSmall(statusLine, 56);
+    drawCenteredSmall(statusLine, 54);
   }
 
   display.display();
