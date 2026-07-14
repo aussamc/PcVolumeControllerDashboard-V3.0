@@ -411,7 +411,7 @@
                         <StackPanel>
                             <TextBlock Classes="h2" Text="Volume Overlay" />
                             <TextBlock Classes="muted" Margin="0,0,0,10"
-                                       Text="Shows the channel name and volume level on-screen when you turn an encoder knob. (Overlay window is ported in a later PR; the preference is saved now.)" />
+                                       Text="Shows the channel name and volume level on-screen when you turn an encoder knob." />
                             <CheckBox x:Name="OverlayEnabledCheckBox" Content="Show volume overlay when encoder turns"
                                       IsCheckedChanged="OverlayCheckBox_Changed" />
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
@@ -425,11 +425,25 @@
                                     <ComboBoxItem Content="Bottom Right" Tag="BottomRight" />
                                 </ComboBox>
                             </StackPanel>
-                            <StackPanel Orientation="Horizontal">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                 <TextBlock Text="Dismiss after:" VerticalAlignment="Center" Width="130" />
                                 <Slider x:Name="OverlayTimeoutSlider" Minimum="1" Maximum="8" TickFrequency="0.5" IsSnapToTickEnabled="True" Width="200" />
                                 <TextBlock x:Name="OverlayTimeoutValueText" VerticalAlignment="Center" Margin="8,0,0,0" Text="2.5 s" />
                             </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <TextBlock Text="Transparency:" VerticalAlignment="Center" Width="130" />
+                                <Slider x:Name="OverlayOpacitySlider" Minimum="30" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True" Width="200" />
+                                <TextBlock x:Name="OverlayOpacityValueText" VerticalAlignment="Center" Margin="8,0,0,0" Text="100%" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <TextBlock Text="Size:" VerticalAlignment="Center" Width="130" />
+                                <Slider x:Name="OverlayScaleSlider" Minimum="75" Maximum="150" TickFrequency="5" IsSnapToTickEnabled="True" Width="200" />
+                                <TextBlock x:Name="OverlayScaleValueText" VerticalAlignment="Center" Margin="8,0,0,0" Text="100%" />
+                            </StackPanel>
+                            <CheckBox x:Name="OverlayAllScreensCheckBox" Content="Show on all screens"
+                                      IsCheckedChanged="OverlayAllScreensCheckBox_Changed" Margin="0,0,0,8" />
+                            <Button x:Name="OverlayPreviewButton" Content="Preview" Click="OverlayPreviewButton_Click"
+                                    HorizontalAlignment="Left" />
                         </StackPanel>
                     </Border>
 

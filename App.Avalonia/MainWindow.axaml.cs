@@ -23,13 +23,15 @@ namespace PcVolumeControllerDashboard.App;
 public partial class MainWindow : Window
 {
     // Shipping dashboard version (bumped per Avalonia-tab milestone).
-    private const string DashboardVersion = "3.14.2";
+    private const string DashboardVersion = "3.15";
     private const string RequiredProtocolVersion = "2.24";
 
     private readonly SettingsService? _settingsService;
     private IAudioBackend? _audioBackend;
     private SerialConnectionService? _connection;
     private DeviceStateService? _deviceState;
+    // Overlay controller — used to show a live preview while adjusting appearance.
+    private readonly VolumeOverlayController? _overlay;
     private readonly ObservableCollection<ChannelRow> _channelRows = new();
     private DispatcherTimer? _channelPollTimer;
     // Assignable-target discovery (Q2): the picker is re-enumerated on a slow cadence
@@ -62,13 +64,14 @@ public partial class MainWindow : Window
         InitializeComponent();
     }
 
-    public MainWindow(SettingsService settingsService, IAudioBackend audioBackend, SerialConnectionService connection, DeviceStateService deviceState, StartupOptions startup) : this()
+    public MainWindow(SettingsService settingsService, IAudioBackend audioBackend, SerialConnectionService connection, DeviceStateService deviceState, VolumeOverlayController overlay, StartupOptions startup) : this()
     {
         _settingsService = settingsService;
         _settings = settingsService.Settings;
         _audioBackend = audioBackend;
         _connection = connection;
         _deviceState = deviceState;
+        _overlay = overlay;
         _forceDebugTab = startup.ForceDebugTab;
         _safeMode = startup.SafeMode;
 
@@ -433,6 +436,8 @@ public partial class MainWindow : Window
         AccelMaxMultiplierSlider.GetObservable(Slider.ValueProperty).Subscribe(new AnonymousObserver(_ => OnAccelMaxMultiplierChanged()));
         AccelCurveSlider.GetObservable(Slider.ValueProperty).Subscribe(new AnonymousObserver(_ => OnAccelCurveChanged()));
         OverlayTimeoutSlider.GetObservable(Slider.ValueProperty).Subscribe(new AnonymousObserver(_ => OnOverlayTimeoutChanged()));
+        OverlayOpacitySlider.GetObservable(Slider.ValueProperty).Subscribe(new AnonymousObserver(_ => OnOverlayOpacityChanged()));
+        OverlayScaleSlider.GetObservable(Slider.ValueProperty).Subscribe(new AnonymousObserver(_ => OnOverlayScaleChanged()));
         OledBrightnessSlider.GetObservable(Slider.ValueProperty).Subscribe(new AnonymousObserver(_ => OnOledBrightnessChanged()));
         OledSleepTimeoutSlider.GetObservable(Slider.ValueProperty).Subscribe(new AnonymousObserver(_ => OnOledSleepTimeoutChanged()));
         OledConnectedIdleTimeoutSlider.GetObservable(Slider.ValueProperty).Subscribe(new AnonymousObserver(_ => OnOledConnectedIdleTimeoutChanged()));
@@ -497,6 +502,11 @@ public partial class MainWindow : Window
         OverlayPositionComboBox.SelectedIndex = PositionToIndex(_settings.OverlayPosition);
         OverlayTimeoutSlider.Value = Math.Clamp(_settings.OverlayTimeoutSeconds, 1, 8);
         UpdateOverlayTimeoutLabel();
+        OverlayOpacitySlider.Value = Math.Clamp(_settings.OverlayOpacity * 100, 30, 100);
+        UpdateOverlayOpacityLabel();
+        OverlayScaleSlider.Value = Math.Clamp(_settings.OverlayScale * 100, 75, 150);
+        UpdateOverlayScaleLabel();
+        OverlayAllScreensCheckBox.IsChecked = _settings.OverlayAllScreens;
 
         // OLED Setup
         DisplayModeComboBox.SelectedIndex = DisplayModeToIndex(_settings.OledDisplayMode);
@@ -715,6 +725,7 @@ public partial class MainWindow : Window
         {
             _settings.OverlayPosition = tag;
             Save();
+            _overlay?.ShowPreview();
         }
     }
 
@@ -728,6 +739,41 @@ public partial class MainWindow : Window
 
     private void UpdateOverlayTimeoutLabel() =>
         OverlayTimeoutValueText.Text = $"{OverlayTimeoutSlider.Value:0.0} s";
+
+    private void OnOverlayOpacityChanged()
+    {
+        UpdateOverlayOpacityLabel();
+        if (_initializing) return;
+        _settings.OverlayOpacity = Math.Round(OverlayOpacitySlider.Value / 100.0, 2);
+        Save();
+        _overlay?.ShowPreview();
+    }
+
+    private void UpdateOverlayOpacityLabel() =>
+        OverlayOpacityValueText.Text = $"{OverlayOpacitySlider.Value:0}%";
+
+    private void OnOverlayScaleChanged()
+    {
+        UpdateOverlayScaleLabel();
+        if (_initializing) return;
+        _settings.OverlayScale = Math.Round(OverlayScaleSlider.Value / 100.0, 2);
+        Save();
+        _overlay?.ShowPreview();
+    }
+
+    private void UpdateOverlayScaleLabel() =>
+        OverlayScaleValueText.Text = $"{OverlayScaleSlider.Value:0}%";
+
+    private void OverlayAllScreensCheckBox_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+        _settings.OverlayAllScreens = OverlayAllScreensCheckBox.IsChecked == true;
+        Save();
+        _overlay?.ShowPreview();
+    }
+
+    private void OverlayPreviewButton_Click(object? sender, RoutedEventArgs e) =>
+        _overlay?.ShowPreview();
 
     // ── Maintenance ────────────────────────────────────────────────────────────
 
