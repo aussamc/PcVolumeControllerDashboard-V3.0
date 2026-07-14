@@ -23,7 +23,7 @@ namespace PcVolumeControllerDashboard.App;
 public partial class MainWindow : Window
 {
     // Shipping dashboard version (bumped per Avalonia-tab milestone).
-    private const string DashboardVersion = "3.15";
+    private const string DashboardVersion = "3.16";
     private const string RequiredProtocolVersion = "2.24";
 
     private readonly SettingsService? _settingsService;
@@ -1042,6 +1042,7 @@ public partial class MainWindow : Window
         _settings.OledAntiBurnInEnabled = OledAntiBurnInCheckBox.IsChecked == true;
         Save();
         _deviceState?.PushOledConfig();
+        RenderOledPreviews();  // reflect the shift (or its removal) in the preview immediately
     }
 
     private void OnOledBrightnessChanged()
@@ -1137,9 +1138,24 @@ public partial class MainWindow : Window
                 default:                           renderer.RenderAppVolume(label, vol, muted, status); break;
             }
 
+            // Mirror the controller's anti-burn-in shift so the preview matches the
+            // device. The poll re-renders ~10x/sec while this tab shows, so the offset
+            // drifts over time just like the hardware.
+            if (_settings.OledAntiBurnInEnabled)
+                renderer.ApplyDisplayOffset(AntiBurnPreviewOffset());
+
             images[i].Source = OledImage.Build(renderer);
         }
     }
+
+    /// <summary>
+    /// The current anti-burn-in vertical offset (0..3px), mirroring the firmware's
+    /// cadence of <c>(millis() / 30000) % 4</c> but on the PC wall-clock. The device
+    /// and PC clocks aren't phase-synced, so this reproduces the same shifting
+    /// behaviour rather than the exact same pixel at the exact same instant.
+    /// </summary>
+    private static int AntiBurnPreviewOffset() =>
+        (int)((DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 30000L) % 4L);
 
     private static string DisplayModeName(string mode) => mode switch
     {

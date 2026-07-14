@@ -328,18 +328,23 @@ namespace PcVolumeControllerDashboard.Core
             string volumeText = $"{volume}%";
             DrawString(volumeText, (128 - TextWidth(volumeText, 2)) / 2, 22, 2);
             DrawCenteredSmall(muted ? "Muted" : "Unmuted", 46, 1);
-            DrawCenteredSmall(status, 56, 1);
+            // Bottom line at y54 (not y56) so it ends at row 60 — see AntiBurnMaxOffset.
+            DrawCenteredSmall(status, 54, 1);
         }
 
-        /// <summary>Mode: Large volume number.</summary>
+        /// <summary>
+        /// Mode: Large volume number. Mirrors the firmware LARGE_VOLUME branch
+        /// (v2.26): channel name at size 2, a rule at y18, then a size-4 value.
+        /// There is no separate mute strip — when muted, the big number is
+        /// replaced by the word "MUTE"; when unmuted, the volume number returns.
+        /// </summary>
         public void RenderLargeVolume(string label, int volume, bool muted)
         {
             ClearDisplay();
-            DrawCenteredSmall(label, 0, 1);
-            DrawHLine(0, 12, 128);
-            string volumeText = $"{volume}%";
-            DrawString(volumeText, (128 - TextWidth(volumeText, 3)) / 2, 24, 3);
-            DrawCenteredSmall(muted ? "Muted" : "Unmuted", 56, 1);
+            DrawCenteredSmall(label, 0, 2);
+            DrawHLine(0, 18, 128);
+            string bigText = muted ? "MUTE" : $"{volume}%";
+            DrawString(bigText, (128 - TextWidth(bigText, 4)) / 2, 26, 4);
         }
 
         /// <summary>Mode: Mute status.</summary>
@@ -371,8 +376,42 @@ namespace PcVolumeControllerDashboard.Core
             DrawRect(8, 28, 112, 14);
             int barWidth = (int)Math.Round(Math.Clamp(volume, 0, 100) / 100.0 * 108);
             if (barWidth > 0) FillRect(10, 30, barWidth, 10);
-            DrawCenteredSmall($"{volume}%", 48, 1);
-            DrawCenteredSmall(muted ? "Muted" : "Unmuted", 56, 1);
+            // Both bottom lines lifted (y46/y54, not y48/y56) so the last row ends at
+            // 60 and the anti-burn shift never wraps — see AntiBurnMaxOffset.
+            DrawCenteredSmall($"{volume}%", 46, 1);
+            DrawCenteredSmall(muted ? "Muted" : "Unmuted", 54, 1);
+        }
+
+        // ── Anti-burn-in ─────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Maximum downward pixel shift the firmware's anti-burn-in cycle applies
+        /// (SETDISPLAYOFFSET steps 0..3). Every render mode keeps its content within
+        /// rows 0..(Height-1-AntiBurnMaxOffset) = 0..60 so that a full shift never
+        /// pushes a lit pixel into the wrap zone (item 11).
+        /// </summary>
+        public const int AntiBurnMaxOffset = 3;
+
+        /// <summary>
+        /// Mirrors the firmware's hardware anti-burn-in shift (SSD1306
+        /// SETDISPLAYOFFSET): the whole framebuffer is shifted down by
+        /// <paramref name="offset"/> rows, wrapping at the bottom exactly as the
+        /// device does. Call after a Render* method so the on-screen preview matches
+        /// the physical display. <paramref name="offset"/> is taken modulo Height.
+        /// Because every mode reserves the bottom <see cref="AntiBurnMaxOffset"/> rows,
+        /// a 0..AntiBurnMaxOffset shift only ever wraps empty rows.
+        /// </summary>
+        public void ApplyDisplayOffset(int offset)
+        {
+            offset = ((offset % H) + H) % H;
+            if (offset == 0) return;
+            bool[] shifted = new bool[_pixels.Length];
+            for (int r = 0; r < H; r++)
+            {
+                int dst = (r + offset) % H;
+                Array.Copy(_pixels, r * W, shifted, dst * W, W);
+            }
+            Array.Copy(shifted, _pixels, _pixels.Length);
         }
 
     }

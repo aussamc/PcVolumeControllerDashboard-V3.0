@@ -25,7 +25,7 @@ reached feature parity — the Avalonia host is the single UI going forward.
 | `Platform.Windows/` | `net10.0-windows` | Windows-only implementations behind Core seams: WASAPI + VoiceMeeter audio backends. |
 | `Platform.Linux/` | `net10.0` | Linux audio backend behind the same seam: `PipeWireAudioBackend` (shells out to `pw-dump`/`wpctl`). Also referenced on macOS builds (shared TFM), but `AudioBackendFactory` only instantiates it at runtime on Linux. |
 | `tests/` (`PcVolumeControllerDashboard.Tests.csproj`) | `net10.0-windows` | xUnit + FluentAssertions. Tests Core (pure logic) + Windows platform pieces. |
-| `Computer_Volume_Controller_v2.25/` | Arduino | Current ESP32 firmware (`.ino`). `v2.24/` kept for reference. |
+| `Computer_Volume_Controller_v2.26/` | Arduino | Current ESP32 firmware (`.ino`). `v2.25/`/`v2.24/` kept for reference. |
 | `PcVolumeControllerDashboard.slnx` | | Solution file (Core + App.Avalonia + Platform.Windows/Linux + tests). |
 
 Namespaces: Core = `PcVolumeControllerDashboard.Core`; Avalonia host =
@@ -112,7 +112,7 @@ Notes:
   `_initializing`/`_detailLoading` flag is set (they'd otherwise persist control
   defaults over just-loaded settings during construction).
 
-## Serial protocol (firmware v2.25)
+## Serial protocol (firmware v2.26)
 
 - Handshake: ESP32 → `HELLO,PC_VOLUME_CONTROLLER,<protocol>,<channels>,<chipId>`
   (5th field = chip ID for controller pairing; absent = pre-v2.25, still accepted).
@@ -124,8 +124,9 @@ Notes:
 
 ## Key constants
 
-- Dashboard version: **3.15** (Avalonia host). Required controller protocol: **2.24**
-  (firmware v2.25 is backward-compatible). Expected channels: **6**.
+- Dashboard version: **3.16** (Avalonia host). Required controller protocol: **2.24**
+  (firmware v2.26 is backward-compatible — v2.26 is a display-only change over v2.25,
+  wire protocol unchanged). Expected channels: **6**.
 - Hardware: v1.4 PCB, ESP32-S3-DevKitC-1-N16R8, SSD1315 OLEDs behind a TCA9548A I2C
   mux. GPIO/OLED layout is final — see the firmware source.
 
@@ -170,6 +171,15 @@ build-green; a user-facing batch bumps `3.x`).
   **already shipped** — no code change, just fix the stale "ported in a later PR" helper
   text on the overlay card. See `FEATURE_BACKLOG.md` for per-item design + the
   version-bump chore list.
+
+- **v3.16–v3.20 — UX & lifecycle batch** *(planned 2026-07-14):* an 18-item request
+  spanning first-run defaults (ch2–ch6 start **unassigned**, only ch1 = Master; ch4 label
+  "Voice Chat"; no pool-by-default), OLED-tab polish + anti-burn-in preview/clip fixes,
+  Setup-tab declutter + Debug-tab move, a **two-stream (Quick/Advanced) wizard overhaul**,
+  a **download + one-click auto-updater**, and an opt-in **Share Diagnostics** crash
+  reporter. Sequenced as five bumps (3.16→3.20). Two open external dependencies: the
+  diagnostics **upload endpoint is undecided**, and the Windows installer is **unsigned**
+  (SmartScreen friction for auto-apply). Full per-item design in `FEATURE_BACKLOG.md`.
 
 Remaining to finish the port:
 
