@@ -362,6 +362,10 @@ Remaining to finish the port:
 3. **Retire WPF** — **removal done** (the root WPF host project + its source and the
    WPF-only `UpdateCheckerTests` were deleted, the solution collapsed to Core +
    App.Avalonia + Platform.Windows/Linux + tests, and the release workflow repointed to
-   publish the Avalonia host's self-contained win-x64 exe). **Still to do:** a signed
-   installer (Windows: Inno Setup; Linux: `.deb`/AppImage; macOS: notarized `.dmg`) and a
-   multi-OS CI build matrix.
+   publish the Avalonia host's self-contained win-x64 exe). **Installers:** a **Windows
+   Inno Setup installer** is now built by `.github/workflows/build-installer.yml`
+   (`installers/windows/PcVolumeController.iss`) — validated as a workflow artifact on
+   PRs and attached to the `v<version>` release on push to `main`, alongside the portable
+   single-file exe. It's currently **unsigned**. **Still to do:** code-sign the Windows
+   installer, add a Linux `.deb`/AppImage and a macOS notarized `.dmg`, and a multi-OS CI
+   build matrix.

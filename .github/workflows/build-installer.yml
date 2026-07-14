@@ -1,0 +1,106 @@
+name: Build Windows installer
+
+# Packages the Avalonia host into an Inno Setup installer (setup .exe).
+#   • pull_request — builds the installer and uploads it as a workflow artifact so the
+#     packaging can be validated before merge (no release changes).
+#   • push to main — builds the installer and attaches it to the v<version> GitHub
+#     Release (alongside the portable single-file .exe from build-release.yml).
+# Path-filtered so unrelated PRs don't trigger the (heavy) self-contained publish.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'installers/windows/**'
+      - 'App.Avalonia/**'
+      - 'Core/**'
+      - 'Platform.Windows/**'
+      - '.github/workflows/build-installer.yml'
+  pull_request:
+    paths:
+      - 'installers/windows/**'
+      - 'App.Avalonia/**'
+      - 'Core/**'
+      - 'Platform.Windows/**'
+      - '.github/workflows/build-installer.yml'
+
+# gh release upload needs write access to repo contents (push-to-main path only).
+permissions:
+  contents: write
+
+jobs:
+  installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+
+      - name: Read version
+        id: version
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path App.Avalonia/App.Avalonia.csproj -Pattern '<Version>(.*?)</Version>').Matches[0].Groups[1].Value
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Publish self-contained folder
+        run: >
+          dotnet publish App.Avalonia/App.Avalonia.csproj
+          -c Release
+          -f net10.0-windows10.0.17763.0
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=false
+          -p:DebugType=none
+          -o installer_input/
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
+            "/DMyAppVersion=$env:VERSION" `
+            "/DSourceDir=$env:GITHUB_WORKSPACE\installer_input" `
+            "/DOutputDir=$env:GITHUB_WORKSPACE\installer_output" `
+            "/DAppIcon=$env:GITHUB_WORKSPACE\App.Avalonia\Assets\app-icon.ico" `
+            "installers\windows\PcVolumeController.iss"
+
+      - name: Verify installer produced
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          $exe = "installer_output/PcVolumeControllerDashboard-Setup-$env:VERSION.exe"
+          if (-not (Test-Path $exe)) { Write-Error "Installer not produced: $exe"; exit 1 }
+          Write-Host "Built $exe ($((Get-Item $exe).Length) bytes)"
+
+      - name: Upload installer artifact (PR validation)
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: installer_output/*.exe
+
+      - name: Attach installer to release (main)
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        shell: pwsh
+        run: |
+          $tag = "v$env:VERSION"
+          # Create the release if build-release.yml hasn't yet, then (re)upload idempotently.
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --title $tag --notes "Automated build for $tag"
+          }
+          gh release upload $tag "installer_output/PcVolumeControllerDashboard-Setup-$env:VERSION.exe" --clobber
