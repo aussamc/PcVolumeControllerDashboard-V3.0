@@ -156,6 +156,21 @@ N2 (per-port picker) shipped (v3.14.2)** — with B1/B2/F3/F4 already on `main`,
 parity backlog (P0–P3) is cleared**; only WPF retirement (roadmap item 3) remains. Named
 profiles (F2) were **descoped**. `PARITY_FIX_BACKLOG.md` is the live tracker.
 
+### Post-parity features
+
+With parity cleared and WPF retired, new feature work is tracked in
+**`FEATURE_BACKLOG.md`** (same conventions as the parity tracker: PRs only, small and
+build-green; a user-facing batch bumps `3.x`).
+
+- **v3.15 — Volume overlay enhancements** *(planned, one PR
+  `feat/v3.15-overlay-enhancements`, bump 3.14.2 → 3.15):* **O1** transparency slider
+  (`OverlayOpacity`), **O2** size/scale slider (`OverlayScale`, whole-overlay Viewbox
+  scale), **O4** show-on-all-screens (`OverlayAllScreens`, multi-window mirror). **O3**
+  screen position (the 6 Top/Bottom × Left/Center/Right corners the user asked for) is
+  **already shipped** — no code change, just fix the stale "ported in a later PR" helper
+  text on the overlay card. See `FEATURE_BACKLOG.md` for per-item design + the
+  version-bump chore list.
+
 Remaining to finish the port:
 
 1. **Linux launch re-check** (CachyOS / PipeWire) — **done 2026-07-04**, including a
