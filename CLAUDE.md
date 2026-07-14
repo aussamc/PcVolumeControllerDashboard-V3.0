@@ -369,7 +369,10 @@ Remaining to finish the port:
    single-file exe. It's currently **unsigned**. **Linux packaging** is built by
    `.github/workflows/build-linux-packages.yml` via `installers/linux/build.sh` — a
    Debian **`.deb`** and a universal **AppImage** from the self-contained linux-x64
-   publish (PR artifact + release attach, same pattern as Windows). **Still to do:**
-   code-sign the Windows installer, a macOS notarized `.dmg` (needs an Apple Developer
-   ID), and a multi-OS CI build matrix. (Linux runtime install/launch is best verified on
-   the CachyOS box; CI only validates that the packages build.)
+   publish (PR artifact + release attach, same pattern as Windows). A **multi-OS CI
+   matrix** (`.github/workflows/ci.yml`) builds the Avalonia host on Windows/Linux/macOS
+   on every push and PR, and runs the test suite on the Windows leg (the test project is
+   `net10.0-windows`-only). **Still to do:** code-sign the Windows installer and a macOS
+   notarized `.dmg` (both need signing credentials — a Windows cert / an Apple Developer
+   ID). (Linux runtime install/launch is best verified on the CachyOS box; CI only
+   validates that the packages build.)

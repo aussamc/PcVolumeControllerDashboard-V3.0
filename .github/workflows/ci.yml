@@ -1,0 +1,53 @@
+name: CI
+
+# Continuous integration: builds the Avalonia host on Windows, Linux, and macOS on
+# every push to main and every PR, and runs the test suite (Windows only — the test
+# project targets net10.0-windows). This is the build/test gate; the build-release /
+# build-installer / build-linux-packages workflows handle distributables separately.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    name: build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            tfm: net10.0-windows10.0.17763.0
+            test: true
+          - os: ubuntu-latest
+            tfm: net10.0
+            test: false
+          - os: macos-latest
+            tfm: net10.0
+            test: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.x'
+
+      # Build the Avalonia host for this OS's TFM. On Linux/macOS only the net10.0
+      # (non-Windows) TFM is built; EnableWindowsTargeting just lets restore resolve
+      # the multi-target project's Windows TFM packs (a no-op on Windows).
+      - name: Build Avalonia host (${{ matrix.tfm }})
+        run: >
+          dotnet build App.Avalonia/App.Avalonia.csproj
+          -c Release
+          -f ${{ matrix.tfm }}
+          -p:EnableWindowsTargeting=true
+
+      # Tests target net10.0-windows, so they only run on the Windows leg.
+      - name: Test
+        if: ${{ matrix.test }}
+        run: dotnet test tests/PcVolumeControllerDashboard.Tests.csproj -c Release

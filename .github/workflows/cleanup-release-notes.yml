@@ -19,7 +19,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           # Use the default GITHUB_TOKEN — no PAT needed for same-repo pushes.
           token: ${{ secrets.GITHUB_TOKEN }}
