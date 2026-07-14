@@ -46,6 +46,9 @@ jobs:
           echo "VERSION=$version" >> "$GITHUB_OUTPUT"
 
       - name: Publish self-contained linux-x64
+        # -f net10.0 publishes only the Linux TFM, but restore still evaluates the
+        # project's Windows TFM (net10.0-windows...), which errors on Linux (NETSDK1100)
+        # unless EnableWindowsTargeting lets restore resolve the Windows targeting packs.
         run: >
           dotnet publish App.Avalonia/App.Avalonia.csproj
           -c Release
@@ -54,6 +57,7 @@ jobs:
           --self-contained true
           -p:PublishSingleFile=false
           -p:DebugType=none
+          -p:EnableWindowsTargeting=true
           -o linux_input/
 
       - name: Build .deb + AppImage
