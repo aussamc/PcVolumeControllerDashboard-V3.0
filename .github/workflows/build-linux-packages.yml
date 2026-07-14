@@ -1,0 +1,84 @@
+name: Build Linux packages
+
+# Packages the Avalonia host for Linux from a self-contained linux-x64 publish:
+# a Debian .deb and a universal AppImage (installers/linux/build.sh).
+#   • pull_request — builds both and uploads them as a workflow artifact for
+#     pre-merge validation (path-filtered; no release changes).
+#   • push to main — builds both and attaches them to the v<version> GitHub Release.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'installers/linux/**'
+      - 'App.Avalonia/**'
+      - 'Core/**'
+      - 'Platform.Linux/**'
+      - '.github/workflows/build-linux-packages.yml'
+  pull_request:
+    paths:
+      - 'installers/linux/**'
+      - 'App.Avalonia/**'
+      - 'Core/**'
+      - 'Platform.Linux/**'
+      - '.github/workflows/build-linux-packages.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+
+      - name: Read version
+        id: version
+        run: |
+          version=$(grep -oPm1 '(?<=<Version>)[^<]+' App.Avalonia/App.Avalonia.csproj)
+          echo "VERSION=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Publish self-contained linux-x64
+        run: >
+          dotnet publish App.Avalonia/App.Avalonia.csproj
+          -c Release
+          -f net10.0
+          -r linux-x64
+          --self-contained true
+          -p:PublishSingleFile=false
+          -p:DebugType=none
+          -o linux_input/
+
+      - name: Build .deb + AppImage
+        run: bash installers/linux/build.sh linux_input "${{ steps.version.outputs.VERSION }}" linux_output
+
+      - name: Inspect .deb
+        run: |
+          dpkg-deb --info linux_output/*.deb
+          dpkg-deb --contents linux_output/*.deb | head -40
+
+      - name: Upload packages artifact (PR validation)
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: |
+            linux_output/*.deb
+            linux_output/*.AppImage
+
+      - name: Attach packages to release (main)
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          tag="v$VERSION"
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "$tag" --notes "Automated build for $tag"
+          gh release upload "$tag" linux_output/*.deb linux_output/*.AppImage --clobber

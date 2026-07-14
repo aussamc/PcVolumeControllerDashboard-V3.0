@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=PC Volume Controller Dashboard
+Comment=Dashboard for the PC Volume Controller hardware
+Exec=pcvolumecontroller
+Icon=pcvolumecontroller
+Terminal=false
+Categories=AudioVideo;Audio;Utility;
+StartupWMClass=PcVolumeControllerDashboard.Avalonia

@@ -366,6 +366,10 @@ Remaining to finish the port:
    Inno Setup installer** is now built by `.github/workflows/build-installer.yml`
    (`installers/windows/PcVolumeController.iss`) — validated as a workflow artifact on
    PRs and attached to the `v<version>` release on push to `main`, alongside the portable
-   single-file exe. It's currently **unsigned**. **Still to do:** code-sign the Windows
-   installer, add a Linux `.deb`/AppImage and a macOS notarized `.dmg`, and a multi-OS CI
-   build matrix.
+   single-file exe. It's currently **unsigned**. **Linux packaging** is built by
+   `.github/workflows/build-linux-packages.yml` via `installers/linux/build.sh` — a
+   Debian **`.deb`** and a universal **AppImage** from the self-contained linux-x64
+   publish (PR artifact + release attach, same pattern as Windows). **Still to do:**
+   code-sign the Windows installer, a macOS notarized `.dmg` (needs an Apple Developer
+   ID), and a multi-OS CI build matrix. (Linux runtime install/launch is best verified on
+   the CachyOS box; CI only validates that the packages build.)
