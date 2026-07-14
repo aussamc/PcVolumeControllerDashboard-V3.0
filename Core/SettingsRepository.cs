@@ -329,7 +329,7 @@ public static class SettingsRepository
             settings.OledConnectedIdleAction = OledIdleActions.DimTo30;
 
         if (string.IsNullOrWhiteSpace(settings.OledDisplayMode))
-            settings.OledDisplayMode = DisplayModes.AppNameAndVolume;
+            settings.OledDisplayMode = DisplayModes.LargeVolume;
 
         settings.SelectedChannelIndex = Math.Clamp(settings.SelectedChannelIndex, 0, channelCount - 1);
 
