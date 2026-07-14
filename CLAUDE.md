@@ -12,24 +12,25 @@ to the controller's OLEDs.
 
 This repo is the **v3 cross-platform rewrite** (Windows + Linux + macOS via
 **Avalonia UI**), ported from a Windows-only **WPF/.NET 10** app (v2.61.1). The port
-is a faithful code-behind port first, not an MVVM rewrite. The WPF host still lives in
-the repo and builds, but is **being retired** once the Avalonia build reaches parity.
+was a faithful code-behind port first, not an MVVM rewrite. The original WPF host has
+been **retired** (removed in the v3.x WPF-retirement PR) now that the Avalonia host
+reached feature parity — the Avalonia host is the single UI going forward.
 
 ## Repository layout
 
 | Path | TFM | Purpose |
 |---|---|---|
 | `Core/` (`PcVolumeControllerDashboard.Core.csproj`) | `net10.0` | Platform-agnostic domain: serial layer + protocol parser, settings repository/POCOs + migrations, OLED renderer, encoder math, audio & hotkey seams. **No WPF/Windows/Avalonia refs.** |
-| `App.Avalonia/` (`App.Avalonia.csproj`) | `net10.0;net10.0-windows10.0.17763.0` | The cross-platform Avalonia host (the future single UI). References Core; references `Platform.Windows` only on the `-windows` TFM, `Platform.Linux` only on the plain `net10.0` TFM. The Windows TFM carries an OS version (Win10 1809) so the host can call the WinRT toast API for F6 desktop notifications; nothing else in the solution needs it. |
+| `App.Avalonia/` (`App.Avalonia.csproj`) | `net10.0;net10.0-windows10.0.17763.0` | The cross-platform Avalonia host — **the single UI**. References Core; references `Platform.Windows` only on the `-windows` TFM, `Platform.Linux` only on the plain `net10.0` TFM. The Windows TFM carries an OS version (Win10 1809) so the host can call the WinRT toast API for F6 desktop notifications; nothing else in the solution needs it. |
 | `Platform.Windows/` | `net10.0-windows` | Windows-only implementations behind Core seams: WASAPI + VoiceMeeter audio backends. |
 | `Platform.Linux/` | `net10.0` | Linux audio backend behind the same seam: `PipeWireAudioBackend` (shells out to `pw-dump`/`wpctl`). Also referenced on macOS builds (shared TFM), but `AudioBackendFactory` only instantiates it at runtime on Linux. |
-| `PcVolumeControllerDashboard.csproj` (root) | `net10.0-windows` | The legacy **WPF host** (being retired). Keep it building but functionally untouched until convergence. |
 | `tests/` (`PcVolumeControllerDashboard.Tests.csproj`) | `net10.0-windows` | xUnit + FluentAssertions. Tests Core (pure logic) + Windows platform pieces. |
 | `Computer_Volume_Controller_v2.25/` | Arduino | Current ESP32 firmware (`.ino`). `v2.24/` kept for reference. |
-| `Assets/`, `PcVolumeControllerDashboard.slnx` | | Icons; solution file. |
+| `PcVolumeControllerDashboard.slnx` | | Solution file (Core + App.Avalonia + Platform.Windows/Linux + tests). |
 
 Namespaces: Core = `PcVolumeControllerDashboard.Core`; Avalonia host =
-`PcVolumeControllerDashboard.App`; WPF host = `PcVolumeControllerDashboard`.
+`PcVolumeControllerDashboard.App`. (The retired WPF host used the bare
+`PcVolumeControllerDashboard` namespace.)
 
 ## Build, run, test
 
@@ -54,7 +55,6 @@ Verification bar for any change:
 - **Both** Avalonia TFMs (`net10.0` and `net10.0-windows10.0.17763.0`) build at **0 warnings / 0 errors**.
 - The full test suite passes.
 - The Windows build launches.
-- The WPF host (`PcVolumeControllerDashboard.csproj`) still builds.
 
 Notes:
 
@@ -77,12 +77,12 @@ Notes:
 1. **PRs only** — never commit directly to `main`. Branch `feat/v3.x-...` (features)
    or `fix/v3.x.y-...` (bug fixes). Work in small, build-green PRs.
 2. **Versioning** — major/user-facing change bumps `3.x` (e.g. `3.9 → 3.10`); minor
-   fix bumps `3.x.y`. On a bump, update **all** of: `DashboardVersion` in both hosts'
-   `MainWindow` code, `<Version>/<AssemblyVersion>/<FileVersion>` in the Avalonia and
-   WPF csprojs, the README compatibility table, and `RELEASE_NOTES_vX.Y.md` (remove
-   the superseded notes file). Infra-only PRs don't bump.
-3. **Keep the WPF host building and functionally untouched** until the convergence
-   step (only version-string changes are made to it during the port).
+   fix bumps `3.x.y`. On a bump, update **all** of: `DashboardVersion` in the Avalonia
+   host's `MainWindow` code, `<Version>/<AssemblyVersion>/<FileVersion>` in the Avalonia
+   csproj, the README compatibility table, and `RELEASE_NOTES_vX.Y.md` (remove the
+   superseded notes file). Infra-only PRs don't bump.
+3. **The WPF host has been retired** (removed in the v3.x WPF-retirement PR). The
+   Avalonia host is the single UI — there is no second host to keep in sync.
 4. **Serial channel indices are always 0-based (0–5) on the wire; always 1-based
    (1–6) in the UI.** Never change this.
 5. **Identity handshake is strict** — `HELLO` must match both the `PC_VOLUME_CONTROLLER`
@@ -124,7 +124,7 @@ Notes:
 
 ## Key constants
 
-- Dashboard version: **3.14.2** (both hosts). Required controller protocol: **2.24**
+- Dashboard version: **3.14.2** (Avalonia host). Required controller protocol: **2.24**
   (firmware v2.25 is backward-compatible). Expected channels: **6**.
 - Hardware: v1.4 PCB, ESP32-S3-DevKitC-1-N16R8, SSD1315 OLEDs behind a TCA9548A I2C
   mux. GPIO/OLED layout is final — see the firmware source.
@@ -359,6 +359,9 @@ Remaining to finish the port:
        Copy-log-folder-path, Open-current-log-file, and Save-debug-snapshot
        buttons; Avalonia covers the diagnostics-export need with its
        `ExportDiagnostics` zip but lacks the individual copy/open-log helpers.
-3. **Retire WPF** — remove the WPF host and its Windows-only helpers, collapse the
-   solution, then add a signed installer (Windows: Inno Setup; Linux: `.deb`/AppImage;
-   macOS: notarized `.dmg`) and a CI build matrix.
+3. **Retire WPF** — **removal done** (the root WPF host project + its source and the
+   WPF-only `UpdateCheckerTests` were deleted, the solution collapsed to Core +
+   App.Avalonia + Platform.Windows/Linux + tests, and the release workflow repointed to
+   publish the Avalonia host's self-contained win-x64 exe). **Still to do:** a signed
+   installer (Windows: Inno Setup; Linux: `.deb`/AppImage; macOS: notarized `.dmg`) and a
+   multi-OS CI build matrix.
