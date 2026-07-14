@@ -124,7 +124,7 @@ Notes:
 
 ## Key constants
 
-- Dashboard version: **3.16** (Avalonia host). Required controller protocol: **2.24**
+- Dashboard version: **3.17** (Avalonia host). Required controller protocol: **2.24**
   (firmware v2.26 is backward-compatible — v2.26 is a display-only change over v2.25,
   wire protocol unchanged). Expected channels: **6**.
 - Hardware: v1.4 PCB, ESP32-S3-DevKitC-1-N16R8, SSD1315 OLEDs behind a TCA9548A I2C

@@ -6,6 +6,7 @@ this file is the full archive.
 
 | Dashboard | Required firmware protocol | Hardware       |
 |-----------|---------------------------|----------------|
+| v3.17     | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v3.16     | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v3.15     | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v3.14.2   | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
