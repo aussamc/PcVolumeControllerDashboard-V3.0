@@ -5,5 +5,5 @@ Comment=Dashboard for the PC Volume Controller hardware
 Exec=pcvolumecontroller
 Icon=pcvolumecontroller
 Terminal=false
-Categories=AudioVideo;Audio;Utility;
+Categories=AudioVideo;Mixer;
 StartupWMClass=PcVolumeControllerDashboard.Avalonia
