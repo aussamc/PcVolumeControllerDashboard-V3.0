@@ -331,15 +331,19 @@ namespace PcVolumeControllerDashboard.Core
             DrawCenteredSmall(status, 56, 1);
         }
 
-        /// <summary>Mode: Large volume number.</summary>
+        /// <summary>
+        /// Mode: Large volume number. Mirrors the firmware LARGE_VOLUME branch
+        /// (v2.26): channel name at size 2, a rule at y18, then a size-4 value.
+        /// There is no separate mute strip — when muted, the big number is
+        /// replaced by the word "MUTE"; when unmuted, the volume number returns.
+        /// </summary>
         public void RenderLargeVolume(string label, int volume, bool muted)
         {
             ClearDisplay();
-            DrawCenteredSmall(label, 0, 1);
-            DrawHLine(0, 12, 128);
-            string volumeText = $"{volume}%";
-            DrawString(volumeText, (128 - TextWidth(volumeText, 3)) / 2, 24, 3);
-            DrawCenteredSmall(muted ? "Muted" : "Unmuted", 56, 1);
+            DrawCenteredSmall(label, 0, 2);
+            DrawHLine(0, 18, 128);
+            string bigText = muted ? "MUTE" : $"{volume}%";
+            DrawString(bigText, (128 - TextWidth(bigText, 4)) / 2, 26, 4);
         }
 
         /// <summary>Mode: Mute status.</summary>
