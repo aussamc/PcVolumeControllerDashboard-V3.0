@@ -47,6 +47,13 @@
     <RootNamespace>PcVolumeControllerDashboard.App</RootNamespace>
   </PropertyGroup>
 
+  <!-- Embed the app icon in the Windows exe so the installed app, taskbar, and
+       Start-menu/desktop shortcuts show it (the Inno Setup installer reuses the same
+       .ico). Windows TFM only — ApplicationIcon is a no-op on the Linux/macOS TFM. -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-windows10.0.17763.0'">
+    <ApplicationIcon>Assets\app-icon.ico</ApplicationIcon>
+  </PropertyGroup>
+
   <ItemGroup>
     <AvaloniaResource Include="Assets\**" />
   </ItemGroup>
