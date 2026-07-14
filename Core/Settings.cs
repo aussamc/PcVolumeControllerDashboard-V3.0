@@ -116,6 +116,12 @@ public sealed class DashboardSettings
     public bool OverlayEnabled { get; set; } = true;
     public string OverlayPosition { get; set; } = "BottomCenter";
     public double OverlayTimeoutSeconds { get; set; } = 2.5;
+    // Overlay appearance (v3.15+). Clamped at consumption in VolumeOverlay:
+    // opacity 0.30–1.00 (1.0 = fully opaque), scale 0.75–1.50 (1.0 = default size).
+    // AllScreens mirrors the popup on every monitor instead of the primary only.
+    public double OverlayOpacity { get; set; } = 1.0;
+    public double OverlayScale { get; set; } = 1.0;
+    public bool OverlayAllScreens { get; set; } = false;
 
     // Output device cycle list (v2.35+). Device IDs included in the cycle, in order.
     public List<string> OutputDeviceCycleList { get; set; } = new();

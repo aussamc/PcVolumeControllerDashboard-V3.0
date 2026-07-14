@@ -8,6 +8,7 @@ using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Threading;
 using PcVolumeControllerDashboard.App.Services;
+using PcVolumeControllerDashboard.Core;
 using ShapePath = Avalonia.Controls.Shapes.Path;
 
 namespace PcVolumeControllerDashboard.App;
@@ -26,6 +27,9 @@ namespace PcVolumeControllerDashboard.App;
 /// </summary>
 public sealed class VolumeOverlay : Window
 {
+    // Base (unscaled) design size. The panel lays out in this fixed coordinate space
+    // and a Viewbox scales the whole visual by the user's OverlayScale, so fonts, the
+    // bar, and the mute glyph all scale together (O2).
     private const double OverlayWidth = 320;
     private const double OverlayHeight = 84;
     private const int ScreenMarginDip = 28;
@@ -53,6 +57,10 @@ public sealed class VolumeOverlay : Window
     private readonly ShapePath _unmutedMark;
     private readonly DispatcherTimer _hideTimer;
     private readonly DispatcherTimer _fadeTimer;
+
+    // The opacity this show is targeting (user's OverlayOpacity). The fade-out animates
+    // from here toward 0, and each show/hide resets to it rather than a hard-coded 1.
+    private double _baseOpacity = 1.0;
 
     public VolumeOverlay()
     {
@@ -122,13 +130,20 @@ public sealed class VolumeOverlay : Window
             Children = { speakerIcon, _muteStatus },
         };
 
-        Content = new Border
+        // Fixed-size design panel laid out in the base coordinate space; the Viewbox
+        // scales it to fill the (scaled) window client area, so O2's scale factor
+        // enlarges/shrinks everything uniformly without re-doing any layout math.
+        var panel = new Border
         {
+            Width = OverlayWidth,
+            Height = OverlayHeight,
             Background = PanelBrush,
             CornerRadius = new CornerRadius(12),
             Padding = new Thickness(18, 14),
             Child = new StackPanel { Children = { header, _track, _muteRow } },
         };
+
+        Content = new Viewbox { Stretch = Stretch.Fill, Child = panel };
 
         // After the visible timeout, fade the window out rather than cutting it off.
         // Construct the fade timer before wiring the hide timer's Tick so the lambda
@@ -147,15 +162,26 @@ public sealed class VolumeOverlay : Window
         {
             _fadeTimer.Stop();
             Hide();
-            Opacity = 1; // ready for the next show
+            Opacity = _baseOpacity; // ready for the next show
             return;
         }
         Opacity = next;
     }
 
-    /// <summary>Shows/refreshes the overlay for a change and (re)starts the auto-hide timer.</summary>
-    public void ShowVolume(VolumeOverlayInfo info, string position, double timeoutSeconds)
+    /// <summary>
+    /// Shows/refreshes the overlay for a change and (re)starts the auto-hide timer.
+    /// <paramref name="opacity"/> (O1) and <paramref name="scale"/> (O2) are clamped
+    /// here; <paramref name="screen"/> (O4) targets a specific monitor — null means the
+    /// primary screen.
+    /// </summary>
+    public void ShowVolume(VolumeOverlayInfo info, string position, double timeoutSeconds,
+                           double opacity, double scale, Screen? screen = null)
     {
+        double s = OverlayLayout.ClampScale(scale);
+        Width = OverlayWidth * s;
+        Height = OverlayHeight * s;
+        _baseOpacity = OverlayLayout.ClampOpacity(opacity);
+
         _label.Text = info.Label;
 
         if (info.MuteToggle)
@@ -184,36 +210,41 @@ public sealed class VolumeOverlay : Window
             _fill.Height = 10;
         }
 
-        // Cancel any in-flight fade-out and restore full opacity for this update.
+        // Cancel any in-flight fade-out and restore the target opacity for this update.
         _fadeTimer.Stop();
-        Opacity = 1;
+        Opacity = _baseOpacity;
 
         if (!IsVisible) Show();
-        PositionOnScreen(position);
+        PositionOnScreen(position, screen);
 
         _hideTimer.Stop();
         _hideTimer.Interval = TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 0.5, 10));
         _hideTimer.Start();
     }
 
-    private void PositionOnScreen(string position)
+    /// <summary>Immediately hides the overlay (no fade) and cancels its timers. Used to
+    /// retire a per-monitor overlay when the screen set shrinks or all-screens is off.</summary>
+    public void HideNow()
     {
-        Screen? screen = Screens.Primary ?? Screens.All.FirstOrDefault();
-        if (screen is null) return;
+        _hideTimer.Stop();
+        _fadeTimer.Stop();
+        if (IsVisible) Hide();
+        Opacity = _baseOpacity;
+    }
 
-        PixelRect area = screen.WorkingArea;     // physical pixels
-        double scale = screen.Scaling <= 0 ? 1.0 : screen.Scaling;
-        int w = (int)(OverlayWidth * scale);
-        int h = (int)(OverlayHeight * scale);
-        int margin = (int)(ScreenMarginDip * scale);
+    private void PositionOnScreen(string position, Screen? screen)
+    {
+        Screen? target = screen ?? Screens.Primary ?? Screens.All.FirstOrDefault();
+        if (target is null) return;
 
-        string pos = position ?? "BottomCenter";
-        int x = pos.Contains("Left", StringComparison.OrdinalIgnoreCase) ? area.X + margin
-              : pos.Contains("Right", StringComparison.OrdinalIgnoreCase) ? area.Right - w - margin
-              : area.X + (area.Width - w) / 2;
-        int y = pos.StartsWith("Top", StringComparison.OrdinalIgnoreCase) ? area.Y + margin
-              : area.Bottom - h - margin;
+        PixelRect area = target.WorkingArea;     // physical pixels
+        double dpi = target.Scaling <= 0 ? 1.0 : target.Scaling;
+        // Width/Height are the scaled DIP client size; convert to physical pixels.
+        int w = (int)(Width * dpi);
+        int h = (int)(Height * dpi);
+        int margin = (int)(ScreenMarginDip * dpi);
 
+        (int x, int y) = OverlayLayout.Position(area.X, area.Y, area.Width, area.Height, w, h, margin, position);
         Position = new PixelPoint(x, y);
     }
 }
