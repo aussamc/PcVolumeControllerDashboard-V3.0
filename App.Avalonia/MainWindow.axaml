@@ -340,7 +340,7 @@
                             <TextBlock Classes="h2" Text="Encoder Sensitivity" />
                             <TextBlock Classes="muted" Margin="0,0,0,10"
                                        Text="Controls how much the volume changes for each encoder click. 50% is the default; higher values allow much faster changes." />
-                            <Slider x:Name="EncoderSensitivitySlider" Minimum="0" Maximum="500" TickFrequency="10" IsSnapToTickEnabled="True" MaxWidth="420" HorizontalAlignment="Stretch" />
+                            <Slider x:Name="EncoderSensitivitySlider" Minimum="0" Maximum="500" TickFrequency="10" IsSnapToTickEnabled="True" Width="420" HorizontalAlignment="Left" />
                             <TextBlock x:Name="EncoderSensitivityValueText" FontWeight="SemiBold" Margin="0,8,0,0" Text="Sensitivity: 50%" />
                         </StackPanel>
                     </Border>
@@ -518,10 +518,10 @@
                             </StackPanel>
 
                             <TextBlock x:Name="OledBrightnessValueText" FontWeight="SemiBold" Margin="0,0,0,4" Text="Brightness: 100%" />
-                            <Slider x:Name="OledBrightnessSlider" Minimum="0" Maximum="100" MaxWidth="420" HorizontalAlignment="Stretch" Margin="0,0,0,10" />
+                            <Slider x:Name="OledBrightnessSlider" Minimum="0" Maximum="100" Width="420" HorizontalAlignment="Left" Margin="12,0,0,10" />
 
                             <TextBlock x:Name="OledSleepTimeoutValueText" FontWeight="SemiBold" Margin="0,0,0,4" Text="Disconnected sleep timeout: 2 minute(s)" />
-                            <Slider x:Name="OledSleepTimeoutSlider" Minimum="1" Maximum="60" TickFrequency="1" IsSnapToTickEnabled="True" MaxWidth="420" HorizontalAlignment="Stretch" Margin="0,0,0,14" />
+                            <Slider x:Name="OledSleepTimeoutSlider" Minimum="1" Maximum="60" TickFrequency="1" IsSnapToTickEnabled="True" Width="420" HorizontalAlignment="Left" Margin="12,0,0,14" />
 
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                                 <TextBlock Text="Connected idle action:" VerticalAlignment="Center" Width="160" />
@@ -538,7 +538,7 @@
                             </StackPanel>
 
                             <TextBlock x:Name="OledConnectedIdleTimeoutValueText" FontWeight="SemiBold" Margin="0,0,0,4" Text="Connected idle timeout: 10 minute(s)" />
-                            <Slider x:Name="OledConnectedIdleTimeoutSlider" Minimum="1" Maximum="60" TickFrequency="1" IsSnapToTickEnabled="True" MaxWidth="420" HorizontalAlignment="Stretch" Margin="0,0,0,14" />
+                            <Slider x:Name="OledConnectedIdleTimeoutSlider" Minimum="1" Maximum="60" TickFrequency="1" IsSnapToTickEnabled="True" Width="420" HorizontalAlignment="Left" Margin="12,0,0,14" />
 
                             <CheckBox x:Name="OledAntiBurnInCheckBox" Content="Enable anti-burn-in pixel shifting"
                                       ToolTip.Tip="Shifts pixels slightly over time to prevent OLED burn-in"
