@@ -171,6 +171,15 @@ build-green; a user-facing batch bumps `3.x`).
   text on the overlay card. See `FEATURE_BACKLOG.md` for per-item design + the
   version-bump chore list.
 
+- **v3.16–v3.20 — UX & lifecycle batch** *(planned 2026-07-14):* an 18-item request
+  spanning first-run defaults (ch2–ch6 start **unassigned**, only ch1 = Master; ch4 label
+  "Voice Chat"; no pool-by-default), OLED-tab polish + anti-burn-in preview/clip fixes,
+  Setup-tab declutter + Debug-tab move, a **two-stream (Quick/Advanced) wizard overhaul**,
+  a **download + one-click auto-updater**, and an opt-in **Share Diagnostics** crash
+  reporter. Sequenced as five bumps (3.16→3.20). Two open external dependencies: the
+  diagnostics **upload endpoint is undecided**, and the Windows installer is **unsigned**
+  (SmartScreen friction for auto-apply). Full per-item design in `FEATURE_BACKLOG.md`.
+
 Remaining to finish the port:
 
 1. **Linux launch re-check** (CachyOS / PipeWire) — **done 2026-07-04**, including a

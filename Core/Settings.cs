@@ -48,9 +48,13 @@ public sealed class DashboardSettings
     public bool AutoConnectOnLaunch { get; set; } = true;
     public bool FirstRunWizardCompleted { get; set; } = true;
     public bool ScanAllComPortsIfRememberedMissing { get; set; } = true;
-    public bool MinimizeToTray { get; set; }
-    public bool StartMinimizedToTray { get; set; }
-    public bool StartWithWindows { get; set; }
+    // Tray/login defaults default ON for a fresh install (v3.16): this is a background
+    // tray utility, so new users almost always want it tucked into the tray and launched
+    // with the OS. Fresh-install only — Normalize must never retroactively flip these for
+    // existing users' saved settings.json.
+    public bool MinimizeToTray { get; set; } = true;
+    public bool StartMinimizedToTray { get; set; } = true;
+    public bool StartWithWindows { get; set; } = true;
     public bool AdvancedDebugLogging { get; set; }
     public bool TrayNotificationsEnabled { get; set; } = true;
 
@@ -64,7 +68,11 @@ public sealed class DashboardSettings
     public int EncoderSensitivityPercent { get; set; } = 50;
 
     // Encoder Feel — acceleration and smoothing (added v2.16)
-    public bool AccelerationEnabled { get; set; } = false;
+    // AccelerationEnabled defaults ON (v3.16, Medium preset): Medium acceleration gives a
+    // better out-of-box feel (fast spins cover the range quickly, slow turns stay precise).
+    // VolumeSmoothingEnabled stays off. Fresh-install only. The ChannelRuntime/EncoderMath
+    // path already honours this flag, so this is a pure default change, not new behaviour.
+    public bool AccelerationEnabled { get; set; } = true;
     public string AccelerationPreset { get; set; } = AccelerationPresets.Medium;
     public bool VolumeSmoothingEnabled { get; set; } = false;
     public string VolumeSmoothingSpeed { get; set; } = SmoothingSpeed.Normal;
@@ -79,7 +87,9 @@ public sealed class DashboardSettings
     public float AccelCurveExponent   { get; set; } = 0.5f;
 
     public string ThemeMode { get; set; } = ThemeModes.FollowSystem;
-    public string OledDisplayMode { get; set; } = DisplayModes.AppNameAndVolume;
+    // Default OLED mode is Large Volume Number (v3.16). Fresh-install only; existing
+    // users keep their saved mode (Normalize only fills a blank one, see SettingsRepository).
+    public string OledDisplayMode { get; set; } = DisplayModes.LargeVolume;
     public int OledBrightnessPercent { get; set; } = 100;
     public int OledSleepTimeoutMinutes { get; set; } = 2;
     public string OledConnectedIdleAction { get; set; } = OledIdleActions.DimTo30;
@@ -143,16 +153,29 @@ public sealed class DashboardSettings
         };
     }
 
+    /// <summary>
+    /// Suggested friendly-name placeholders for each channel (1-based order), surfaced by
+    /// the wizard / assign UI as hints only — they are NOT written as bindings. A fresh
+    /// install binds only ch1 = Master; ch2–ch6 start unassigned (see CreateDefaultChannels).
+    /// </summary>
+    public static readonly string[] SuggestedChannelNames =
+    {
+        "Master", "Browser", "Music", "Voice Chat", "Game", "Microphone"
+    };
+
     public static ChannelSettings[] CreateDefaultChannels()
     {
+        // Fresh-install default (v3.16): only ch1 = Master is actually bound. ch2–ch6 start
+        // Unassigned (empty TargetKey/FriendlyName); the SuggestedChannelNames above are shown
+        // by the wizard/assign UI as placeholders. No channel starts in multi-app pool mode.
         return new[]
         {
-            new ChannelSettings { TargetKey = "MASTER",     FriendlyName = "Master",  ButtonAction = ChannelButtonActions.ToggleAssignedMute, LongPressButtonAction = ChannelButtonActions.NoAction, DoublePressButtonAction = ChannelButtonActions.NoAction },
-            new ChannelSettings { TargetKey = "PROC:chrome", FriendlyName = "Browser", ButtonAction = ChannelButtonActions.ToggleAssignedMute, LongPressButtonAction = ChannelButtonActions.NoAction, DoublePressButtonAction = ChannelButtonActions.NoAction },
-            new ChannelSettings { TargetKey = "PROC:Spotify", FriendlyName = "Music",  ButtonAction = ChannelButtonActions.ToggleAssignedMute, LongPressButtonAction = ChannelButtonActions.NoAction, DoublePressButtonAction = ChannelButtonActions.NoAction },
-            new ChannelSettings { TargetKey = "PROC:Discord", FriendlyName = "Discord", ButtonAction = ChannelButtonActions.ToggleAssignedMute, LongPressButtonAction = ChannelButtonActions.NoAction, DoublePressButtonAction = ChannelButtonActions.NoAction },
-            new ChannelSettings { TargetKey = "",             FriendlyName = "",        ButtonAction = ChannelButtonActions.ToggleAssignedMute, LongPressButtonAction = ChannelButtonActions.NoAction, DoublePressButtonAction = ChannelButtonActions.NoAction },
-            new ChannelSettings { TargetKey = "",             FriendlyName = "",        ButtonAction = ChannelButtonActions.ToggleAssignedMute, LongPressButtonAction = ChannelButtonActions.NoAction, DoublePressButtonAction = ChannelButtonActions.NoAction }
+            new ChannelSettings { TargetKey = "MASTER", FriendlyName = "Master", ButtonAction = ChannelButtonActions.ToggleAssignedMute, LongPressButtonAction = ChannelButtonActions.NoAction, DoublePressButtonAction = ChannelButtonActions.NoAction },
+            new ChannelSettings { TargetKey = "", FriendlyName = "", ButtonAction = ChannelButtonActions.ToggleAssignedMute, LongPressButtonAction = ChannelButtonActions.NoAction, DoublePressButtonAction = ChannelButtonActions.NoAction },
+            new ChannelSettings { TargetKey = "", FriendlyName = "", ButtonAction = ChannelButtonActions.ToggleAssignedMute, LongPressButtonAction = ChannelButtonActions.NoAction, DoublePressButtonAction = ChannelButtonActions.NoAction },
+            new ChannelSettings { TargetKey = "", FriendlyName = "", ButtonAction = ChannelButtonActions.ToggleAssignedMute, LongPressButtonAction = ChannelButtonActions.NoAction, DoublePressButtonAction = ChannelButtonActions.NoAction },
+            new ChannelSettings { TargetKey = "", FriendlyName = "", ButtonAction = ChannelButtonActions.ToggleAssignedMute, LongPressButtonAction = ChannelButtonActions.NoAction, DoublePressButtonAction = ChannelButtonActions.NoAction },
+            new ChannelSettings { TargetKey = "", FriendlyName = "", ButtonAction = ChannelButtonActions.ToggleAssignedMute, LongPressButtonAction = ChannelButtonActions.NoAction, DoublePressButtonAction = ChannelButtonActions.NoAction }
         };
     }
 }
