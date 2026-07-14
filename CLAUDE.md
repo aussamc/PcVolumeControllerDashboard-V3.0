@@ -151,10 +151,10 @@ and rejected/phantom-port **reconnect cooldowns** (which also fixed an incompati
 controller status *flicker* and two Windows-only defects caught during verification: a
 WPF-host build break and a crash-on-close stack overflow). Since then the **Q4/Q6/N3
 Debug-tab batch shipped (v3.13)**, **F6 (the cross-platform desktop-notification layer)
-shipped (v3.14)**, and **Q2 (target auto-refresh) shipped (v3.14.1)** — with B1/B2/F3/F4
-already on `main`, **no parity blockers remain and the P2 backlog is clear**; the rest is
-P3 polish (N1 `--safe`, N2 per-port picker). Named profiles (F2) were **descoped**.
-`PARITY_FIX_BACKLOG.md` is the live tracker.
+shipped (v3.14)**, **Q2 (target auto-refresh) shipped (v3.14.1)**, and **N1 (`--safe`) +
+N2 (per-port picker) shipped (v3.14.2)** — with B1/B2/F3/F4 already on `main`, **the full
+parity backlog (P0–P3) is cleared**; only WPF retirement (roadmap item 3) remains. Named
+profiles (F2) were **descoped**. `PARITY_FIX_BACKLOG.md` is the live tracker.
 
 Remaining to finish the port:
 
@@ -183,10 +183,10 @@ Remaining to finish the port:
    batch (Q1 encoder debounce, Q3 port cooldowns + incompatible-controller flicker
    fix, Q5 overlay mute mode, Q6 channel-mismatch warning, F1 auto sleep/wake); R1 is
    confirmed (Avalonia correct). **Since v3.12:** the **Q4/Q6/N3 Debug-tab batch** shipped
-   (v3.13), **F6** (cross-platform notification layer) shipped (v3.14), and **Q2** (target
-   auto-refresh) shipped (v3.14.1), clearing the last P1 blocker and the P2 backlog.
-   **Still open (P3 polish only, no blockers):** N1 (`--safe`) / N2 (per-port picker).
-   See `PARITY_FIX_BACKLOG.md` for the
+   (v3.13), **F6** (cross-platform notification layer) shipped (v3.14), **Q2** (target
+   auto-refresh) shipped (v3.14.1), and **N1 (`--safe`) + N2 (per-port picker)** shipped
+   (v3.14.2) — clearing the last P1 blocker and the entire P2/P3 backlog. **Nothing open;
+   only WPF retirement (roadmap item 3) remains.** See `PARITY_FIX_BACKLOG.md` for the
    live tracker. The detailed findings below are retained as the audit record:
    - **Profile system missing from Avalonia UI** — WPF has full multi-profile
      support (create/rename/duplicate/delete/switch/cycle-next, tray submenu,

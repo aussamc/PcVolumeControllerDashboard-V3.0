@@ -16,7 +16,7 @@ Effort: **S** ≈ <½ day, **M** ≈ ½–2 days, **L** ≈ multi-day.
 
 ---
 
-## Progress (updated 2026-07-14 — shipped as v3.14.1)
+## Progress (updated 2026-07-14 — shipped as v3.14.2)
 
 - **Merged to `main` (v3.12):** B1 (+Q6 protocol-mismatch warning), B2, F3, F4, and the
   v3.12 batch — **Q1** (encoder debounce/coalescing/reverse-guard), **Q3** (rejected/phantom
@@ -44,17 +44,21 @@ Effort: **S** ≈ <½ day, **M** ≈ ½–2 days, **L** ≈ multi-day.
   refreshes instantly on a default-device switch (via the backend's `TargetsChanged`
   event). Change-detected so an unchanged target set never rebuilds the combo. **This
   clears the P2 backlog.**
+- **Merged to `main` (v3.14.2, PR #65):** **N1** (`--safe` diagnostic launch — skips
+  auto-connect/reconnect and suppresses all audio-control writes, with a Controller-card
+  banner) and **N2** (manual per-port picker on the Controller card, calling
+  `SerialConnectionService.Connect(port)`). **This clears the P3 backlog.**
 - **Descoped (not a gap):** **F2** named profiles — descoped from the port
   (`chore(avalonia): descope named profiles from the port`), along with output-device
   cycling.
-- **Still open — P3 polish only (no blockers left):** N1 (`--safe`), N2 (per-port picker).
-- **Next up:** the P3 polish (N1, N2), then WPF retirement (roadmap item 3).
+- **Nothing open — the full parity backlog (P0–P3) is cleared.**
+- **Next up:** WPF retirement (roadmap item 3) — remove the WPF host + its Windows-only
+  helpers, collapse the solution, then add signed installers and a CI build matrix.
 
 > The prioritized tables below are the original backlog catalog; the Progress block
-> above is the status of record. Most P0/P2 items plus F1/F3/F4 are merged (v3.12), the
-> Q4/Q6/N3 Debug-tab batch is merged (v3.13), F6 is merged (v3.14) — clearing the last
-> P1 blocker — and Q2 is merged (v3.14.1), clearing the P2 backlog. Only P3 polish (N1,
-> N2) remains before WPF retirement.
+> above is the status of record. Everything is merged: most P0/P2 items plus F1/F3/F4
+> (v3.12), the Q4/Q6/N3 Debug-tab batch (v3.13), F6 (v3.14 — last P1 blocker), Q2 (v3.14.1
+> — clears P2), and N1/N2 (v3.14.2 — clears P3). Only WPF retirement remains.
 
 ---
 
@@ -128,8 +132,8 @@ of this).*
 
 | # | Item | Why | Effort | Key files |
 |---|---|---|---|---|
-| N1 | **`--safe` diagnostic launch flag** | Disable auto-connect/reconnect/audio writes for troubleshooting. | S | `Program.cs`/`App.axaml.cs`; cf. WPF `MainWindow.xaml.cs:106-107,273-298` |
-| N2 | **Manual per-port picker in UI** | `Connect(string port)` exists but nothing calls it; auto-detect covers the common case. | S | `Services/SerialConnectionService.cs:129-136` |
+| N1 | ✅ **DONE** (v3.14.2, PR #65) — **`--safe` diagnostic launch flag** | Parsed in Core `StartupOptions` (sibling to `--debug`). Skips auto-connect / the reconnect loop and the first-run wizard, and suppresses all audio-control writes (encoder/button/preset in `ChannelRuntime`, master vol/mute in `GlobalHotkeyManager`) — gated at the input handlers like WPF. Controller-card banner reflects it. | S | `Core/StartupOptions.cs`, `App.axaml.cs`, `Services/ChannelRuntime.cs`, `Services/GlobalHotkeyManager.cs`; cf. WPF `MainWindow.xaml.cs:106-107,273-298` |
+| N2 | ✅ **DONE** (v3.14.2, PR #65) — **Manual per-port picker in UI** | Port dropdown (refreshed on open) + "Connect to port" button on the Controller card, calling `SerialConnectionService.Connect(port)` to bypass auto-detect. | S | `MainWindow.axaml`/`MainWindow.axaml.cs`; `Services/SerialConnectionService.cs:129-136` |
 | N3 | ✅ **DONE** (PR #59) — **Copy/open-log helper buttons** | Debug tab now has Copy-debug-console, Copy-log-folder-path, Open-current-log-file (cross-platform default handler). Save-debug-snapshot stays covered by the always-visible `ExportDiagnostics` zip on the Setup tab. | S | `MainWindow.Debug.cs` |
 
 ---
