@@ -31,13 +31,14 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          $version = (Select-String -Path PcVolumeControllerDashboard.csproj -Pattern '<Version>(.*?)</Version>').Matches[0].Groups[1].Value
+          $version = (Select-String -Path App.Avalonia/App.Avalonia.csproj -Pattern '<Version>(.*?)</Version>').Matches[0].Groups[1].Value
           echo "VERSION=$version" >> $env:GITHUB_OUTPUT
 
       - name: Publish standalone exe
         run: >
-          dotnet publish PcVolumeControllerDashboard.csproj
+          dotnet publish App.Avalonia/App.Avalonia.csproj
           -c Release
+          -f net10.0-windows10.0.17763.0
           -r win-x64
           --self-contained true
           -p:PublishSingleFile=true
@@ -50,8 +51,8 @@ jobs:
           VERSION: ${{ steps.version.outputs.VERSION }}
         shell: pwsh
         run: |
-          if (-not (Test-Path "publish/PcVolumeControllerDashboard.exe")) {
-            Write-Error "Expected publish/PcVolumeControllerDashboard.exe was not produced"
+          if (-not (Test-Path "publish/PcVolumeControllerDashboard.Avalonia.exe")) {
+            Write-Error "Expected publish/PcVolumeControllerDashboard.Avalonia.exe was not produced"
             exit 1
           }
           $tag = "v$env:VERSION"
@@ -61,4 +62,4 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             gh release create $tag --title $tag --notes "Automated build for $tag"
           }
-          gh release upload $tag "publish/PcVolumeControllerDashboard.exe" --clobber
+          gh release upload $tag "publish/PcVolumeControllerDashboard.Avalonia.exe" --clobber

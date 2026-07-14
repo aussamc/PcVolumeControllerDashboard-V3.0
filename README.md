@@ -48,17 +48,23 @@ Settings are saved to `%APPDATA%\PcVolumeController\settings.json` and restored 
 
 ## Building
 
-```
-dotnet build -c Release
-```
-
-To publish a standalone `.exe` for distribution:
+The app is the Avalonia host, which multi-targets — build the TFM for your OS:
 
 ```
-dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
+# Windows
+dotnet build App.Avalonia/App.Avalonia.csproj -c Release -f net10.0-windows10.0.17763.0
+# Linux / macOS
+dotnet build App.Avalonia/App.Avalonia.csproj -c Release -f net10.0
 ```
 
-Output is in `bin\Release\net10.0-windows\win-x64\publish\`.
+To publish a standalone Windows `.exe` for distribution:
+
+```
+dotnet publish App.Avalonia/App.Avalonia.csproj -c Release -f net10.0-windows10.0.17763.0 -r win-x64 --self-contained true -p:PublishSingleFile=true
+```
+
+Output is `PcVolumeControllerDashboard.Avalonia.exe` under
+`App.Avalonia\bin\Release\net10.0-windows10.0.17763.0\win-x64\publish\`.
 
 ---
 
@@ -73,17 +79,19 @@ Flash the firmware via Arduino IDE / Arduino CLI with the ESP32-S3 Arduino core 
 ## Project structure
 
 ```
-PcVolumeControllerDashboard.slnx        — solution file (main project + tests)
-PcVolumeControllerDashboard.csproj      — .NET 10 WPF project
-MainWindow.xaml / .cs                   — main application window
-App.xaml / .cs                          — WPF app entry point
-AssemblyInfo.cs                         — assembly attributes
-Assets/                                 — application assets (app-icon.ico)
+PcVolumeControllerDashboard.slnx        — solution file
+App.Avalonia/                           — cross-platform Avalonia host (the app), net10.0 + net10.0-windows10.0.17763.0
+Core/                                   — platform-agnostic domain (serial, settings, OLED renderer, seams), net10.0
+Platform.Windows/                       — Windows audio backends (WASAPI + VoiceMeeter) behind the Core seam
+Platform.Linux/                         — Linux audio backend (PipeWire via pw-dump/wpctl) behind the same seam
 tests/                                  — xUnit + FluentAssertions test project
 Computer_Volume_Controller_v2.25/       — ESP32 Arduino firmware source (v2.25, current — adds chip-ID pairing)
 Computer_Volume_Controller_v2.24/       — previous firmware source (v2.24, retained for reference)
 firmware_bin/                           — firmware build output
 ```
+
+> The original Windows-only **WPF host** was retired in v3.x once the Avalonia host
+> reached feature parity; the Avalonia host is now the single UI on Windows, Linux, and macOS.
 
 ---
 
