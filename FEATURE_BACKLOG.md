@@ -260,9 +260,16 @@ rule #2.
 
 ---
 
-### v3.17 — Setup-tab restructure & Debug-tab move
+### v3.17 — Setup-tab restructure & Debug-tab move  ✅ shipped
 
-Bump **3.16 → 3.17**.
+Bump **3.16 → 3.17** (done). Branch `feat/v3.17-setup-restructure`.
+
+**Shipped:** items 6, 3b, and 7 all landed. The Setup tab's cards are now collapsible
+`Expander` sections (Application Setup expanded by default, the rest collapsed);
+"Advanced debug logging" moved to the Debug tab's Logs row (same `AdvancedDebugLogging`
+setting + `AppSetupCheckBox_Changed` handler, so no logic change); both stale "Coming in
+later PRs" cards removed, plus the stale "(serial sync ports in a later PR)" copy on the
+OLED tab. Verified: both TFMs 0/0, 233 tests green, Windows build launches.
 
 **Item 6 — move Advanced Debug Logging to Debug tab.** Relocate the "Advanced debug
 logging" checkbox out of Application Setup into the Debug tab (it's a diagnostics

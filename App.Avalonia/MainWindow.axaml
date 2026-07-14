@@ -41,6 +41,11 @@
         <Style Selector="CheckBox">
             <Setter Property="Margin" Value="0,0,0,8" />
         </Style>
+        <!-- Collapsible section for the Setup tab (v3.17 declutter). -->
+        <Style Selector="Expander.section">
+            <Setter Property="Margin" Value="0,0,0,12" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
     </Window.Styles>
 
     <TabControl x:Name="MainTabs">
@@ -207,15 +212,6 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- ── Still deferred ───────────────────────────────────── -->
-                    <Border Classes="card">
-                        <StackPanel>
-                            <TextBlock Classes="h2" Text="Coming in later PRs" />
-                            <TextBlock Classes="muted"
-                                       Text="Channel link groups, multi-app pools, named profiles, output-device cycling, and the connect/disconnect controls are ported in follow-up PRs." />
-                        </StackPanel>
-                    </Border>
-
                 </StackPanel>
             </ScrollViewer>
         </TabItem>
@@ -254,9 +250,9 @@
                     </Border>
 
                     <!-- ── Application Setup ────────────────────────────────── -->
-                    <Border Classes="card">
+                    <Expander Classes="section" IsExpanded="True">
+                        <Expander.Header><TextBlock Classes="h2" Text="Application Setup" Margin="0" /></Expander.Header>
                         <StackPanel>
-                            <TextBlock Classes="h2" Text="Application Setup" />
                             <CheckBox x:Name="AutoConnectCheckBox" Content="Auto-connect on launch"
                                       ToolTip.Tip="Automatically connect to the controller when the dashboard opens"
                                       IsCheckedChanged="AppSetupCheckBox_Changed" />
@@ -269,8 +265,6 @@
                                       IsCheckedChanged="AppSetupCheckBox_Changed" />
                             <CheckBox x:Name="StartWithWindowsCheckBox" Content="Start program at login"
                                       ToolTip.Tip="Windows only for now; Linux/macOS autostart wired in a later PR"
-                                      IsCheckedChanged="AppSetupCheckBox_Changed" />
-                            <CheckBox x:Name="AdvancedDebugLoggingCheckBox" Content="Advanced debug logging"
                                       IsCheckedChanged="AppSetupCheckBox_Changed" />
                             <CheckBox x:Name="TrayNotificationsCheckBox" Content="Show tray notifications"
                                       IsCheckedChanged="AppSetupCheckBox_Changed" />
@@ -295,12 +289,12 @@
                                     ToolTip.Tip="Open the first-run setup wizard again"
                                     Click="RunSetupWizardButton_Click" />
                         </StackPanel>
-                    </Border>
+                    </Expander>
 
                     <!-- ── Global Hotkeys ───────────────────────────────────── -->
-                    <Border Classes="card">
+                    <Expander Classes="section">
+                        <Expander.Header><TextBlock Classes="h2" Text="Global Hotkeys" Margin="0" /></Expander.Header>
                         <StackPanel>
-                            <TextBlock Classes="h2" Text="Global Hotkeys" />
                             <TextBlock Classes="muted" Margin="0,0,0,8"
                                        Text="System-wide shortcuts that work even when the dashboard is in the background. Click Set, then press a key combination." />
 
@@ -332,23 +326,23 @@
                                 <Button Grid.Column="3" Content="Clear" Click="HotkeyShowDashboardClear_Click" />
                             </Grid>
                         </StackPanel>
-                    </Border>
+                    </Expander>
 
                     <!-- ── Encoder Sensitivity ──────────────────────────────── -->
-                    <Border Classes="card">
+                    <Expander Classes="section">
+                        <Expander.Header><TextBlock Classes="h2" Text="Encoder Sensitivity" Margin="0" /></Expander.Header>
                         <StackPanel>
-                            <TextBlock Classes="h2" Text="Encoder Sensitivity" />
                             <TextBlock Classes="muted" Margin="0,0,0,10"
                                        Text="Controls how much the volume changes for each encoder click. 50% is the default; higher values allow much faster changes." />
                             <Slider x:Name="EncoderSensitivitySlider" Minimum="0" Maximum="500" TickFrequency="10" IsSnapToTickEnabled="True" Width="420" HorizontalAlignment="Left" />
                             <TextBlock x:Name="EncoderSensitivityValueText" FontWeight="SemiBold" Margin="0,8,0,0" Text="Sensitivity: 50%" />
                         </StackPanel>
-                    </Border>
+                    </Expander>
 
                     <!-- ── Encoder Feel ─────────────────────────────────────── -->
-                    <Border Classes="card">
+                    <Expander Classes="section">
+                        <Expander.Header><TextBlock Classes="h2" Text="Encoder Feel" Margin="0" /></Expander.Header>
                         <StackPanel>
-                            <TextBlock Classes="h2" Text="Encoder Feel" />
                             <TextBlock Classes="muted" Margin="0,0,0,12"
                                        Text="Volume acceleration scales the step when you turn the encoder quickly. Volume smoothing eases volume to its target over a short time rather than jumping instantly." />
 
@@ -394,22 +388,22 @@
                                 </ComboBox>
                             </StackPanel>
                         </StackPanel>
-                    </Border>
+                    </Expander>
 
                     <!-- ── Style Settings ───────────────────────────────────── -->
-                    <Border Classes="card">
+                    <Expander Classes="section">
+                        <Expander.Header><TextBlock Classes="h2" Text="Style Settings" Margin="0" /></Expander.Header>
                         <StackPanel>
-                            <TextBlock Classes="h2" Text="Style Settings" />
                             <RadioButton x:Name="ThemeFollowSystemRadioButton" GroupName="ThemeMode" Content="Follow System" Margin="0,0,0,8" IsCheckedChanged="ThemeRadioButton_Changed" />
                             <RadioButton x:Name="ThemeLightRadioButton" GroupName="ThemeMode" Content="Light Mode" Margin="0,0,0,8" IsCheckedChanged="ThemeRadioButton_Changed" />
                             <RadioButton x:Name="ThemeDarkRadioButton" GroupName="ThemeMode" Content="Dark Mode" Margin="0,0,0,8" IsCheckedChanged="ThemeRadioButton_Changed" />
                         </StackPanel>
-                    </Border>
+                    </Expander>
 
                     <!-- ── Volume Overlay ───────────────────────────────────── -->
-                    <Border Classes="card">
+                    <Expander Classes="section">
+                        <Expander.Header><TextBlock Classes="h2" Text="Volume Overlay" Margin="0" /></Expander.Header>
                         <StackPanel>
-                            <TextBlock Classes="h2" Text="Volume Overlay" />
                             <TextBlock Classes="muted" Margin="0,0,0,10"
                                        Text="Shows the channel name and volume level on-screen when you turn an encoder knob." />
                             <CheckBox x:Name="OverlayEnabledCheckBox" Content="Show volume overlay when encoder turns"
@@ -445,12 +439,12 @@
                             <Button x:Name="OverlayPreviewButton" Content="Preview" Click="OverlayPreviewButton_Click"
                                     HorizontalAlignment="Left" />
                         </StackPanel>
-                    </Border>
+                    </Expander>
 
                     <!-- ── Maintenance ──────────────────────────────────────── -->
-                    <Border Classes="card">
+                    <Expander Classes="section">
+                        <Expander.Header><TextBlock Classes="h2" Text="Maintenance" Margin="0" /></Expander.Header>
                         <StackPanel>
-                            <TextBlock Classes="h2" Text="Maintenance" />
                             <WrapPanel>
                                 <Button x:Name="ExportSettingsButton" Content="Export settings…" Margin="0,0,8,0"
                                         ToolTip.Tip="Save a copy of your current settings to a file"
@@ -466,12 +460,12 @@
                             <TextBlock Classes="muted" FontStyle="Italic" Margin="0,8,0,0"
                                        Text="Settings are saved automatically whenever you make a change." />
                         </StackPanel>
-                    </Border>
+                    </Expander>
 
                     <!-- ── Audio backend ────────────────────────────────────── -->
-                    <Border Classes="card">
+                    <Expander Classes="section">
+                        <Expander.Header><TextBlock Classes="h2" Text="Audio Backend" Margin="0" /></Expander.Header>
                         <StackPanel>
-                            <TextBlock Classes="h2" Text="Audio Backend" />
                             <TextBlock Classes="muted" Margin="0,0,0,8"
                                        Text="WASAPI controls Windows app/session volumes directly. VoiceMeeter routes through the VoiceMeeter Remote API (Windows only; requires VoiceMeeter installed and running)." />
                             <RadioButton x:Name="WasapiRadioButton" GroupName="AudioBackend" Content="WASAPI (Windows audio sessions)"
@@ -480,16 +474,7 @@
                                          IsCheckedChanged="AudioBackendRadioButton_Changed" />
                             <TextBlock x:Name="AudioBackendStatusText" Classes="muted" Margin="0,4,0,0" />
                         </StackPanel>
-                    </Border>
-
-                    <!-- ── Not yet ported ───────────────────────────────────── -->
-                    <Border Classes="card">
-                        <StackPanel>
-                            <TextBlock Classes="h2" Text="Coming in later PRs" />
-                            <TextBlock Classes="muted"
-                                       Text="These Setup features depend on subsystems not yet ported to the Avalonia host: global hotkey capture, software updates, and the first-run wizard. They are tracked in the v3 roadmap and land alongside their subsystems." />
-                        </StackPanel>
-                    </Border>
+                    </Expander>
 
                 </StackPanel>
             </ScrollViewer>
@@ -504,7 +489,7 @@
                         <StackPanel>
                             <TextBlock Classes="h2" Text="OLED Display Settings" />
                             <TextBlock Classes="muted" Margin="0,0,0,10"
-                                       Text="These settings drive the controller preview below and are sent to the ESP32 when connected (serial sync ports in a later PR)." />
+                                       Text="These settings drive the controller preview below and are sent to the ESP32 when it's connected." />
 
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                                 <TextBlock Text="Display mode:" VerticalAlignment="Center" Width="160" />
@@ -684,6 +669,10 @@
                                 ToolTip.Tip="Open this session's log file with the default handler" />
                         <TextBlock x:Name="DebugLogHelperStatus" Classes="muted" VerticalAlignment="Center" />
                     </StackPanel>
+                    <CheckBox x:Name="AdvancedDebugLoggingCheckBox" Content="Advanced debug logging"
+                              Margin="0,8,0,0"
+                              ToolTip.Tip="Log verbose per-encoder / per-write serial detail to this session's log file. Off by default; useful when diagnosing a controller issue."
+                              IsCheckedChanged="AppSetupCheckBox_Changed" />
                 </StackPanel>
 
                 <!-- ── Live traffic ─────────────────────────────────────────── -->
