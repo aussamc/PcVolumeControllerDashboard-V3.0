@@ -38,14 +38,25 @@ public sealed class NotificationService : IDisposable
     // StateChanged (serialised by the connection).
     private bool _wasConnected;
 
+    /// <summary>
+    /// Raised when the user clicks a shown notification, so the host can bring the dashboard
+    /// to the foreground. May fire on a background thread — the subscriber marshals to the UI
+    /// thread. Only the Windows toast impl raises it today (Linux/macOS notifications have no
+    /// click-through here).
+    /// </summary>
+    public event Action? NotificationClicked;
+
     public NotificationService(SerialConnectionService connection, SettingsService settings, LogService log)
     {
         _connection = connection;
         _settings = settings;
         _log = log;
         _notifier = CreatePlatformNotifier();
+        _notifier.Activated += OnNotifierActivated;
         _connection.StateChanged += OnConnectionStateChanged;
     }
+
+    private void OnNotifierActivated() => NotificationClicked?.Invoke();
 
     private static INotificationService CreatePlatformNotifier()
     {
@@ -90,5 +101,9 @@ public sealed class NotificationService : IDisposable
         catch (Exception ex) { _log.Warn($"Notification failed: {ex.Message}", "Notify"); }
     }
 
-    public void Dispose() => _connection.StateChanged -= OnConnectionStateChanged;
+    public void Dispose()
+    {
+        _connection.StateChanged -= OnConnectionStateChanged;
+        _notifier.Activated -= OnNotifierActivated;
+    }
 }
