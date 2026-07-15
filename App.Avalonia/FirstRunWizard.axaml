@@ -48,7 +48,10 @@
         </Grid>
 
         <!-- ── Step content (only one panel visible at a time) ─────────────── -->
-        <Panel>
+        <!-- The named inline panels below are the fixed steps; the stream-specific
+             UserControl pages (theme/audio/updates/app-setup) are added to this panel at
+             runtime by the code-behind and toggled the same way. -->
+        <Panel x:Name="StepHostPanel">
 
             <!-- Step 0 — Welcome -->
             <StackPanel x:Name="WelcomePanel">
@@ -58,6 +61,26 @@
                            Text="You can change any of this later from the dashboard, and re-run this wizard from the Setup tab." />
                 <TextBlock Classes="muted" Margin="0,8,0,0"
                            Text="Make sure your PC Volume Controller is plugged in over USB, then click Next to begin." />
+            </StackPanel>
+
+            <!-- Step 1 — Stream chooser (Quick vs Advanced) -->
+            <StackPanel x:Name="StreamChooserPanel" IsVisible="False">
+                <TextBlock Classes="muted"
+                           Text="Choose how much you want to configure now. You can change anything later from the Setup tab." />
+                <RadioButton x:Name="QuickStreamRadio" GroupName="WizardStream" IsChecked="True" Margin="0,10,0,0">
+                    <StackPanel MaxWidth="520">
+                        <TextBlock Text="Quick setup" FontWeight="SemiBold" />
+                        <TextBlock Classes="muted"
+                                   Text="Connect, check the displays, assign your knobs, and pick a couple of preferences. Everything else uses recommended defaults." />
+                    </StackPanel>
+                </RadioButton>
+                <RadioButton x:Name="AdvancedStreamRadio" GroupName="WizardStream" Margin="0,8,0,0">
+                    <StackPanel MaxWidth="520">
+                        <TextBlock Text="Advanced setup" FontWeight="SemiBold" />
+                        <TextBlock Classes="muted"
+                                   Text="Everything in Quick, plus audio backend, theme, and software-update preferences." />
+                    </StackPanel>
+                </RadioButton>
             </StackPanel>
 
             <!-- Step 1 — Connect / pair -->
@@ -86,6 +109,10 @@
                         ToolTip.Tip="Send an identify command so every OLED shows its channel number" />
                 <TextBlock x:Name="WizardIdentifyHintText" Classes="muted"
                            Text="Note the physical position of each numbered display — that's the order the next step maps to apps." />
+                <CheckBox x:Name="WizardAntiBurnCheckBox" Content="Enable anti-burn-in pixel shifting"
+                          Margin="0,14,0,0" IsCheckedChanged="AntiBurn_Changed" />
+                <TextBlock Classes="muted" Margin="24,2,0,0"
+                           Text="Gently shifts the display contents over time to protect the OLEDs. For best display lifetime, leave this enabled." />
             </StackPanel>
 
             <!-- Step 3 — Assign channels -->

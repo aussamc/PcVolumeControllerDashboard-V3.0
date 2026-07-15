@@ -35,6 +35,17 @@ public sealed class FirstRunDefaultsTests
     }
 
     [Fact]
+    public void FreshDefaults_UpdatePrefs_CheckOnApplyOff()
+    {
+        // v3.18: introduced for the wizard's auto-update page. Check on by default,
+        // auto-apply off (opt-in). The v3.19 engine only reads these.
+        var settings = new DashboardSettings();
+
+        settings.AutoCheckForUpdates.Should().BeTrue();
+        settings.AutoApplyUpdates.Should().BeFalse("auto-applying an installer is opt-in");
+    }
+
+    [Fact]
     public void FreshDefaults_OledDisplayMode_IsLargeVolume()
     {
         new DashboardSettings().OledDisplayMode.Should().Be(DisplayModes.LargeVolume);

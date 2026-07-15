@@ -1,0 +1,31 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="PcVolumeControllerDashboard.App.UpdatePrefsWizardPage">
+    <StackPanel x:Name="Root" Spacing="10">
+        <TextBlock Classes="muted"
+                   Text="Keep the dashboard up to date. You can change these any time in Setup." />
+
+        <CheckBox x:Name="AutoCheckBox"
+                  Content="Automatically check for updates"
+                  IsCheckedChanged="OnAutoCheckChanged" />
+
+        <StackPanel Spacing="2">
+            <CheckBox x:Name="AutoApplyBox"
+                      Content="Automatically download &amp; install updates"
+                      IsCheckedChanged="OnAutoApplyChanged" />
+            <TextBlock Classes="muted"
+                       Margin="24,0,0,0"
+                       Text="Downloading and installing happens with a future update; for now this just remembers your choice." />
+        </StackPanel>
+
+        <StackPanel Orientation="Horizontal" Spacing="10">
+            <Button x:Name="CheckNowButton"
+                    Content="Check now"
+                    Click="OnCheckNowClicked" />
+            <TextBlock x:Name="StatusText"
+                       Classes="muted"
+                       VerticalAlignment="Center"
+                       Text="" />
+        </StackPanel>
+    </StackPanel>
+</UserControl>

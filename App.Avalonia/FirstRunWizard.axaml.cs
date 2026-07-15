@@ -4,6 +4,7 @@ using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using Microsoft.Extensions.DependencyInjection;
 using PcVolumeControllerDashboard.App.Services;
 using PcVolumeControllerDashboard.Core;
 using PcVolumeControllerDashboard.Core.Audio;
@@ -12,43 +13,59 @@ namespace PcVolumeControllerDashboard.App;
 
 /// <summary>
 /// First-run setup wizard — a separate top-level window (not a tab) shown once on a
-/// brand-new install (no settings file yet), and re-launchable later. Walks the user
-/// through: welcome → connect/pair the controller → check the OLED displays → map
-/// each knob to an app/device → done.
+/// brand-new install (no settings file yet), and re-launchable later.
 ///
-/// It drives the same shared runtime services as the dashboard (the serial
-/// connection, the audio backend), so anything set up here is live immediately. On
-/// finish (or skip) it marks the wizard complete and raises <see cref="Completed"/>
-/// so the app can open the main dashboard window.
+/// v3.18 overhaul: after Welcome the user picks a <see cref="WizardStream"/> — <b>Quick</b>
+/// (connect → check displays → assign → a couple of preferences) or <b>Advanced</b> (adds
+/// audio-backend, theme, and update-preference pages). The step sequence is built
+/// dynamically per stream: the fixed panels (Welcome / stream chooser / Connect / Identify
+/// / Assign / Done) are declared inline in XAML; the stream-specific pages are
+/// self-contained <see cref="IWizardPage"/> UserControls inserted into the sequence here.
+///
+/// It drives the same shared runtime services as the dashboard (serial connection, audio
+/// backend), so anything set up here is live immediately. On finish (or skip) it marks the
+/// wizard complete and raises <see cref="Completed"/> so the app can open the dashboard.
 /// </summary>
 public partial class FirstRunWizard : Window
 {
-    private const int StepWelcome = 0;
-    private const int StepConnect = 1;
-    private const int StepIdentify = 2;
-    private const int StepAssign = 3;
-    private const int StepDone = 4;
-    private const int LastStep = StepDone;
     private const int ChannelCount = 6;
 
-    private static readonly string[] StepTitles =
+    /// <summary>Which page set the user is walking through.</summary>
+    private enum WizardStream { Quick, Advanced }
+
+    /// <summary>One entry in the (stream-dependent) step sequence.</summary>
+    private sealed class WizardStep
     {
-        "Welcome",
-        "Connect your controller",
-        "Check the displays",
-        "Assign your channels",
-        "All set",
-    };
+        public required string Title { get; init; }
+        public required Control Content { get; init; }
+        /// <summary>Runs when the step becomes active (populate/refresh live data).</summary>
+        public Action? OnShow { get; init; }
+        /// <summary>Runs when navigating forward off the step (persist).</summary>
+        public Action? OnLeave { get; init; }
+    }
 
     private readonly SettingsService? _settings;
     private readonly IAudioBackend? _audio;
     private readonly SerialConnectionService? _connection;
 
-    private readonly StackPanel[] _panels;
     private readonly ComboBox[] _assignCombos = new ComboBox[ChannelCount];
 
+    // Stream-specific pages, built once with the shared services. Both AppSetup variants
+    // exist (Quick shows the condensed 2-toggle page; Advanced the full checkbox set); the
+    // unused ones simply never appear in the active sequence.
+    private AppSetupWizardPage? _appSetupCondensed;
+    private AppSetupWizardPage? _appSetupFull;
+    private ThemeWizardPage? _themePage;
+    private AudioBackendWizardPage? _audioBackendPage;
+    private EncoderFeelWizardPage? _encoderFeelPage;
+    private UpdatePrefsWizardPage? _updatePage;
+
+    private List<WizardStep> _steps = new();
+    private WizardStream _stream = WizardStream.Quick;
     private int _step;
     private bool _completed;
+    // Guards the anti-burn checkbox while it's seeded from settings so seeding doesn't re-save.
+    private bool _initializing;
 
     /// <summary>Raised once when the user finishes or skips the wizard.</summary>
     public event Action? Completed;
@@ -57,7 +74,6 @@ public partial class FirstRunWizard : Window
     public FirstRunWizard()
     {
         InitializeComponent();
-        _panels = new[] { WelcomePanel, ConnectPanel, IdentifyPanel, AssignPanel, DonePanel };
     }
 
     public FirstRunWizard(SettingsService settings, IAudioBackend audio, SerialConnectionService connection) : this()
@@ -68,9 +84,93 @@ public partial class FirstRunWizard : Window
 
         _connection.StateChanged += OnConnectionStateChanged;
 
-        _step = StepWelcome;
+        BuildStreamPages();
+
+        // Seed the anti-burn toggle on the Check-displays page from settings (default on).
+        _initializing = true;
+        WizardAntiBurnCheckBox.IsChecked = _settings.Settings.OledAntiBurnInEnabled;
+        _initializing = false;
+
+        _step = 0;
+        RebuildSteps();
         UpdateStepUi();
     }
+
+    // ── Stream page construction ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Instantiates the stream-specific UserControl pages once and parks them (hidden) in
+    /// the step host panel so they can be shown/hidden alongside the inline panels.
+    /// </summary>
+    private void BuildStreamPages()
+    {
+        if (_settings == null) return;
+
+        var updater = App.Services.GetService<UpdateCheckService>();
+
+        _appSetupCondensed = new AppSetupWizardPage(_settings, condensed: true);
+        _appSetupFull = new AppSetupWizardPage(_settings, condensed: false);
+        _themePage = new ThemeWizardPage(_settings);
+        _encoderFeelPage = new EncoderFeelWizardPage(_settings);
+        if (_audio != null)
+            _audioBackendPage = new AudioBackendWizardPage(_settings, _audio);
+        if (updater != null)
+            _updatePage = new UpdatePrefsWizardPage(_settings, updater, AppInfo.Version);
+
+        foreach (Control page in new Control?[]
+                 {
+                     _appSetupCondensed, _appSetupFull, _themePage, _encoderFeelPage, _audioBackendPage, _updatePage,
+                 }.OfType<Control>())
+        {
+            page.IsVisible = false;
+            StepHostPanel.Children.Add(page);
+        }
+    }
+
+    /// <summary>
+    /// Builds the ordered step sequence for the current <see cref="_stream"/>. The first
+    /// two steps (Welcome, stream chooser) are identical in both streams so the current
+    /// <see cref="_step"/> index stays valid across a rebuild triggered from the chooser.
+    /// </summary>
+    private void RebuildSteps()
+    {
+        var steps = new List<WizardStep>
+        {
+            Step("Welcome", WelcomePanel),
+            Step("Choose your setup", StreamChooserPanel),
+            Step("Connect your controller", ConnectPanel, onShow: UpdateConnectionUi),
+            Step("Check the displays", IdentifyPanel, onShow: UpdateConnectionUi),
+        };
+
+        // Advanced surfaces the audio backend before the channel assignment.
+        if (_stream == WizardStream.Advanced && _audioBackendPage != null)
+            steps.Add(PageStep(_audioBackendPage));
+
+        steps.Add(Step("Assign your channels", AssignPanel,
+            onShow: PopulateAssignCombos, onLeave: ApplyAssignments));
+
+        if (_stream == WizardStream.Advanced)
+        {
+            if (_appSetupFull != null) steps.Add(PageStep(_appSetupFull));
+            if (_themePage != null) steps.Add(PageStep(_themePage));
+            if (_encoderFeelPage != null) steps.Add(PageStep(_encoderFeelPage));
+            if (_updatePage != null) steps.Add(PageStep(_updatePage));
+        }
+        else if (_appSetupCondensed != null)
+        {
+            steps.Add(PageStep(_appSetupCondensed));
+        }
+
+        steps.Add(Step("All set", DonePanel, onShow: UpdateSummary));
+
+        _steps = steps;
+    }
+
+    private WizardStep Step(string title, Control content, Action? onShow = null, Action? onLeave = null)
+        => new() { Title = title, Content = content, OnShow = onShow, OnLeave = onLeave };
+
+    private static WizardStep PageStep(IWizardPage page)
+        => new() { Title = page.Title, Content = (Control)page, OnShow = page.OnShow, OnLeave = page.OnLeave };
 
     // ── Connection status (live) ──────────────────────────────────────────────
 
@@ -103,38 +203,38 @@ public partial class FirstRunWizard : Window
 
     private void UpdateStepUi()
     {
-        StepIndicatorText.Text = $"Step {_step + 1} of {LastStep + 1}";
-        StepTitleText.Text = StepTitles[_step];
+        WizardStep current = _steps[_step];
 
-        for (int i = 0; i < _panels.Length; i++)
-            _panels[i].IsVisible = i == _step;
+        StepIndicatorText.Text = $"Step {_step + 1} of {_steps.Count}";
+        StepTitleText.Text = current.Title;
+
+        // Only the active step's content is visible; hide every other hosted panel/page.
+        foreach (Control child in StepHostPanel.Children.OfType<Control>())
+            child.IsVisible = ReferenceEquals(child, current.Content);
 
         WizardBackButton.IsVisible = _step > 0;
-        WizardSkipButton.IsVisible = _step != LastStep;
-        WizardNextButton.Content = _step == LastStep ? "Finish" : "Next";
+        WizardSkipButton.IsVisible = _step != _steps.Count - 1;
+        WizardNextButton.Content = _step == _steps.Count - 1 ? "Finish" : "Next";
 
-        switch (_step)
-        {
-            case StepConnect:
-            case StepIdentify:
-                UpdateConnectionUi();
-                break;
-            case StepAssign:
-                PopulateAssignCombos();
-                break;
-            case StepDone:
-                UpdateSummary();
-                break;
-        }
+        current.OnShow?.Invoke();
     }
 
     private void Next_Click(object? sender, RoutedEventArgs e)
     {
-        // Persist the channel mapping as we leave the assign step.
-        if (_step == StepAssign)
-            ApplyAssignments();
+        bool leavingStreamChooser = ReferenceEquals(_steps[_step].Content, StreamChooserPanel);
 
-        if (_step == LastStep)
+        // Persist anything the current step batches before moving on.
+        _steps[_step].OnLeave?.Invoke();
+
+        if (leavingStreamChooser)
+        {
+            // Commit the stream choice and rebuild the sequence. Welcome + chooser occupy
+            // the same indices in both streams, so _step stays valid before we advance.
+            _stream = AdvancedStreamRadio.IsChecked == true ? WizardStream.Advanced : WizardStream.Quick;
+            RebuildSteps();
+        }
+
+        if (_step == _steps.Count - 1)
         {
             Complete();
             return;
@@ -173,6 +273,13 @@ public partial class FirstRunWizard : Window
         // identify screen and holds it; normal channel state resumes once the
         // dashboard's poll starts pushing CHSTATE after setup completes.
         _connection?.SendLine(ProtocolCommands.ShowIdent, log: true);
+    }
+
+    private void AntiBurn_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (_initializing || _settings == null) return;
+        _settings.Settings.OledAntiBurnInEnabled = WizardAntiBurnCheckBox.IsChecked == true;
+        _settings.Save();
     }
 
     // ── Assign step ───────────────────────────────────────────────────────────

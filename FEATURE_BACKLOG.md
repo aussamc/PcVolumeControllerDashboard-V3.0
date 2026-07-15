@@ -311,6 +311,15 @@ Done, `FirstRunWizard.axaml.cs:26-41`). Bump **3.17 → 3.18**. Ships as its own
 `feat/v3.18-wizard-overhaul` branch; may internally be >1 PR given size, but one
 user-facing bump.
 
+> **Status (complete on `feat/v3.18-wizard-overhaul`):** the stream backbone (item 16)
+> plus items **5, 12, 13, 14, 17** all shipped — the wizard has a Quick/Advanced chooser and
+> a dynamic per-stream step sequence, with self-contained `IWizardPage` UserControls for
+> Application-Setup (condensed + full), Theme, Audio-backend, **Encoder-Feel (with the live
+> "Try it" demo overlay driven through Core `EncoderMath`, no audio write)**, and
+> Update-prefs. New Core settings `AutoCheckForUpdates`/`AutoApplyUpdates` landed here per
+> the settings-ownership split; the anti-burn-in toggle moved to the Check-displays page
+> (both streams). Advanced is now 11 steps. Both TFMs 0/0; 234 tests green.
+
 **Item 16 — two streams (Quick vs Advanced).** Add a **stream-chooser page** after
 Welcome: two big choices, **"Quick setup" preselected**, "Advanced setup" opt-in.
 Implement as a `_stream` enum gating which panels are inserted into the step sequence
