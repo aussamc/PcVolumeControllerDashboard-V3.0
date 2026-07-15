@@ -140,6 +140,16 @@ public sealed class DashboardSettings
     // "VoiceMeeter" = route volume through VoiceMeeter Remote API.
     public string AudioBackendMode { get; set; } = AudioBackendModes.Wasapi;
 
+    // Software update preferences (v3.18+). Introduced here so the wizard's auto-update
+    // page and the Quick-defaults table can bind them; the v3.19 updater engine only
+    // *reads* these (it must not re-declare them). AutoCheckForUpdates defaults ON (a
+    // background check on launch is low-cost and users expect it); AutoApplyUpdates
+    // defaults OFF (downloading + launching an installer is a deliberate, opt-in action).
+    // Both are independently disableable. Fresh-install and existing users share these
+    // defaults (a missing JSON field deserialises to the initializer value).
+    public bool AutoCheckForUpdates { get; set; } = true;
+    public bool AutoApplyUpdates { get; set; } = false;
+
     public static DashboardSettings CreateDefault()
     {
         return new DashboardSettings

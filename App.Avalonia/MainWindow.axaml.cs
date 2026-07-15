@@ -23,7 +23,8 @@ namespace PcVolumeControllerDashboard.App;
 public partial class MainWindow : Window
 {
     // Shipping dashboard version (bumped per Avalonia-tab milestone).
-    private const string DashboardVersion = "3.17";
+    // Single source of truth lives in AppInfo.Version so the wizard can reuse it.
+    private const string DashboardVersion = AppInfo.Version;
     private const string RequiredProtocolVersion = "2.24";
 
     private readonly SettingsService? _settingsService;
