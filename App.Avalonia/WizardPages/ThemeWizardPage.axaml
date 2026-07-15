@@ -1,5 +1,17 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="PcVolumeControllerDashboard.App.ThemeWizardPage">
-    <StackPanel x:Name="Root" Spacing="6" />
+    <StackPanel x:Name="Root" Spacing="8">
+        <TextBlock Classes="muted"
+                   Text="Pick a look for the dashboard. You can change this any time in Setup." />
+        <RadioButton x:Name="FollowSystemRadio"
+                     GroupName="WizardTheme"
+                     Content="Follow system" />
+        <RadioButton x:Name="LightRadio"
+                     GroupName="WizardTheme"
+                     Content="Light" />
+        <RadioButton x:Name="DarkRadio"
+                     GroupName="WizardTheme"
+                     Content="Dark" />
+    </StackPanel>
 </UserControl>
