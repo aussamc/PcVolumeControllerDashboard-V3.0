@@ -9,5 +9,5 @@ namespace PcVolumeControllerDashboard.App;
 /// </summary>
 internal static class AppInfo
 {
-    public const string Version = "3.19.3";
+    public const string Version = "3.19.4";
 }
