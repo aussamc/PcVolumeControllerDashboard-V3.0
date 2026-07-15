@@ -235,9 +235,9 @@ public partial class App : Application
         services.AddSingleton<Services.GlobalHotkeyManager>();
 
         // Settings: loaded once at startup, shared, persisted on change.
-        services.AddSingleton<Services.SettingsService>(_ =>
+        services.AddSingleton<Services.SettingsService>(sp =>
         {
-            var settings = new Services.SettingsService();
+            var settings = new Services.SettingsService(sp.GetRequiredService<Services.LogService>());
             settings.Load();
             return settings;
         });
