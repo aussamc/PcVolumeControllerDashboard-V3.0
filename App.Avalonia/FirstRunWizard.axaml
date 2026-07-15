@@ -109,6 +109,10 @@
                         ToolTip.Tip="Send an identify command so every OLED shows its channel number" />
                 <TextBlock x:Name="WizardIdentifyHintText" Classes="muted"
                            Text="Note the physical position of each numbered display — that's the order the next step maps to apps." />
+                <CheckBox x:Name="WizardAntiBurnCheckBox" Content="Enable anti-burn-in pixel shifting"
+                          Margin="0,14,0,0" IsCheckedChanged="AntiBurn_Changed" />
+                <TextBlock Classes="muted" Margin="24,2,0,0"
+                           Text="Gently shifts the display contents over time to protect the OLEDs. For best display lifetime, leave this enabled." />
             </StackPanel>
 
             <!-- Step 3 — Assign channels -->

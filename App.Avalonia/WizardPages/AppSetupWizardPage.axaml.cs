@@ -94,17 +94,9 @@ public partial class AppSetupWizardPage : UserControl, IWizardPage
                 () => _settings.Settings.TrayNotificationsEnabled,
                 v => _settings.Settings.TrayNotificationsEnabled = v);
 
-            // Anti-burn-in toggle, set apart with its own disclaimer line.
-            AddCheckBox("Enable anti-burn-in pixel shifting",
-                () => _settings.Settings.OledAntiBurnInEnabled,
-                v => _settings.Settings.OledAntiBurnInEnabled = v,
-                topMargin: 8);
-            Root.Children.Add(new TextBlock
-            {
-                Classes = { "muted" },
-                Margin = new Avalonia.Thickness(24, 0, 0, 0),
-                Text = "For best display lifetime, leave this enabled.",
-            });
+            // Note: the anti-burn-in pixel-shift toggle lives on the wizard's
+            // "Check the displays" page (it's a display control, and that page shows in
+            // both streams), not here.
         }
 
         _initializing = false;

@@ -63,6 +63,8 @@ public partial class FirstRunWizard : Window
     private WizardStream _stream = WizardStream.Quick;
     private int _step;
     private bool _completed;
+    // Guards the anti-burn checkbox while it's seeded from settings so seeding doesn't re-save.
+    private bool _initializing;
 
     /// <summary>Raised once when the user finishes or skips the wizard.</summary>
     public event Action? Completed;
@@ -82,6 +84,11 @@ public partial class FirstRunWizard : Window
         _connection.StateChanged += OnConnectionStateChanged;
 
         BuildStreamPages();
+
+        // Seed the anti-burn toggle on the Check-displays page from settings (default on).
+        _initializing = true;
+        WizardAntiBurnCheckBox.IsChecked = _settings.Settings.OledAntiBurnInEnabled;
+        _initializing = false;
 
         _step = 0;
         RebuildSteps();
@@ -264,6 +271,13 @@ public partial class FirstRunWizard : Window
         // identify screen and holds it; normal channel state resumes once the
         // dashboard's poll starts pushing CHSTATE after setup completes.
         _connection?.SendLine(ProtocolCommands.ShowIdent, log: true);
+    }
+
+    private void AntiBurn_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (_initializing || _settings == null) return;
+        _settings.Settings.OledAntiBurnInEnabled = WizardAntiBurnCheckBox.IsChecked == true;
+        _settings.Save();
     }
 
     // ── Assign step ───────────────────────────────────────────────────────────

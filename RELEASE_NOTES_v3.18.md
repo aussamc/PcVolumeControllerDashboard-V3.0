@@ -17,15 +17,16 @@ first-run experience and adds a couple of new preferences.
   → Done.
 
 - **Advanced stream (10 steps):** the above plus an **Audio backend** page (WASAPI /
-  VoiceMeeter), the full **Application Setup** checkbox page (with the anti-burn-in
-  pixel-shift toggle + disclaimer), a **Theme** page (Follow-system / Light / Dark, applied
-  live), and a **Software updates** page.
+  VoiceMeeter), the full **Application Setup** checkbox page, a **Theme** page
+  (Follow-system / Light / Dark, applied live), and a **Software updates** page.
+
+- The **anti-burn-in pixel-shift** toggle (on by default, with a display-lifetime note)
+  now lives on the **Check displays** page, so it appears in both streams.
 
 ## New wizard pages
 
-- **Application Setup** — mirrors the Setup tab's app toggles; the Advanced page also
-  surfaces "Enable anti-burn-in pixel shifting" (on by default) with a display-lifetime
-  note. "Advanced debug logging" stays on the Debug tab, not in the wizard.
+- **Application Setup** — mirrors the Setup tab's app toggles. "Advanced debug logging"
+  stays on the Debug tab, not in the wizard.
 - **Theme** — pick Follow-system / Light / Dark during setup; applied immediately.
 - **Audio backend** (Advanced only) — choose WASAPI or VoiceMeeter, switched live, with a
   status line showing the active backend and target count.
