@@ -9,19 +9,21 @@ Effort: **S** ≈ <½ day, **M** ≈ ½–2 days, **L** ≈ multi-day.
 
 ---
 
-## v3.15 — Volume overlay enhancements  *(planned)*
+## v3.15 — Volume overlay enhancements  ✅ shipped
 
 Four requested improvements to the on-screen volume overlay
 (`App.Avalonia/VolumeOverlay.cs` + `Services/VolumeOverlayController.cs`, settings in
-`Core/Settings.cs:115-118`). Shipping as **one PR** (`feat/v3.15-overlay-enhancements`)
-with a single version bump **3.14.2 → 3.15**.
+`Core/Settings.cs:115-118`). **Shipped** in PR #72 (`feat/v3.15-overlay-enhancements`,
+commit `8e3b15f`) with the version bump **3.14.2 → 3.15**: O1/O2/O4 all landed
+(the opacity/scale sliders + the "show on all screens" checkbox are live in the Setup
+tab's Volume Overlay card), and O3 was already in place.
 
 | # | Item | Status | Effort | Key files |
 |---|---|---|---|---|
-| O1 | **Transparency slider** — user-set overlay opacity | planned | S | `Core/Settings.cs` (`OverlayOpacity`); `VolumeOverlay.cs` (base opacity + fade); `VolumeOverlayController.cs`; `MainWindow.axaml`/`.axaml.cs` (slider) |
-| O2 | **Size / scale slider** — scale the whole overlay proportionally | planned | S–M | `Core/Settings.cs` (`OverlayScale`); `VolumeOverlay.cs` (Viewbox + scaled dims + positioning); `VolumeOverlayController.cs`; `MainWindow.axaml`/`.axaml.cs` (slider) |
+| O1 | **Transparency slider** — user-set overlay opacity | ✅ shipped | S | `Core/Settings.cs` (`OverlayOpacity`); `VolumeOverlay.cs` (base opacity + fade); `VolumeOverlayController.cs`; `MainWindow.axaml`/`.axaml.cs` (slider) |
+| O2 | **Size / scale slider** — scale the whole overlay proportionally | ✅ shipped | S–M | `Core/Settings.cs` (`OverlayScale`); `VolumeOverlay.cs` (Viewbox + scaled dims + positioning); `VolumeOverlayController.cs`; `MainWindow.axaml`/`.axaml.cs` (slider) |
 | O3 | **Screen position** — Top/Bottom × Left/Center/Right (6) | ✅ already shipped | — | `VolumeOverlay.cs:199-218` (`PositionOnScreen`); combo in `MainWindow.axaml:419-426` |
-| O4 | **Show on all screens** — mirror the overlay on every monitor | planned | M | `Core/Settings.cs` (`OverlayAllScreens`); `VolumeOverlayController.cs` (multi-window); `VolumeOverlay.cs` (per-`Screen` positioning); `MainWindow.axaml`/`.axaml.cs` (checkbox) |
+| O4 | **Show on all screens** — mirror the overlay on every monitor | ✅ shipped | M | `Core/Settings.cs` (`OverlayAllScreens`); `VolumeOverlayController.cs` (multi-window); `VolumeOverlay.cs` (per-`Screen` positioning); `MainWindow.axaml`/`.axaml.cs` (checkbox) |
 
 ### O1 — Transparency slider
 
