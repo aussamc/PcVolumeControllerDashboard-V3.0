@@ -498,12 +498,14 @@ An opt-in crash/diagnostics reporter surfaced in the Setup tab as **"Share Diagn
 upload-endpoint decision is made (see the open dependency at the end). When picked up it
 gets its own version bump.
 
-- **Prereq — global crash handler (now tracked separately, unscheduled):** the crash-log
-  capture layer this reporter needs is the **global crash handler**, which has been
-  **moved out of this batch's timeline** into the unscheduled backlog (see
-  *Global crash handler* below). It's genuinely useful standalone and shouldn't gate the
-  rest of this feature's design; when Share Diagnostics is actually scheduled, land the
-  crash handler first (or alongside) since it has nothing to collect without it.
+- **Prereq — global crash handler (already shipped):** the crash-log capture layer this
+  reporter needs **already exists** — the global crash handler landed as parity item **B2**
+  (`App.Avalonia/CrashHandler.cs`, wired at `App.axaml.cs`): it hooks
+  `Dispatcher.UIThread.UnhandledException` / `AppDomain.UnhandledException` /
+  `TaskScheduler.UnobservedTaskException`, writes a `crash-<timestamp>.log` to the config
+  dir's `logs` folder, and shows a friendly dialog with "copy details". So Share Diagnostics
+  builds directly on it: collect the newest `crash-*.log` + recent `avalonia-*.log`, redact,
+  and offer to upload — no capture layer to build first.
 - **Setting:** `bool ShareDiagnostics` in `Core/Settings.cs`, **default OFF (opt-in)**.
   First-run/Setup shows a clear consent explanation of what's sent and where.
 - **What's collected:** the crash log + recent app log + environment (OS, app version,
@@ -564,13 +566,6 @@ Rough scope to make it real:
 
 Deferred/descoped items that could become future feature work, from the parity audit:
 
-- **Global crash handler** *(parity-audit gap; prereq for Share Diagnostics above)* — the
-  Avalonia host still has **no** unhandled-exception handler (`AppDomain.UnhandledException`
-  / `TaskScheduler.UnobservedTaskException` / the Avalonia dispatcher hook), so a crash just
-  kills the process with no crash log and no dialog — worst when launched from a desktop
-  icon with no console. Wire these to write a crash log (reuse `LogService`) + show a
-  friendly dialog. Useful standalone; it's also the capture layer the deferred **Share
-  Diagnostics** reporter needs, so land it first (or alongside) when that's scheduled.
 - Named **profiles** (F2) — descoped from the port; Core still backs it
   (`ProfileEntry`/`Profiles`/`ActiveProfileName`).
 - **Output-device cycling** — descoped.
