@@ -394,11 +394,17 @@ public static class SettingsRepository
         if (settings.Profiles.All(p => p.Name != settings.ActiveProfileName))
             settings.ActiveProfileName = settings.Profiles[0].Name;
 
-        // Sync Channels from the active profile so ApplySettingsToChannels reads
-        // the profile data, not a stale copy from an older settings field.
+        // Keep the top-level Channels array authoritative and mirror it INTO the active
+        // profile — never the reverse. The Avalonia host is the single UI and edits
+        // settings.Channels directly; named profiles are descoped there, so a profile's
+        // Channels copy is only ever a passive mirror. Overwriting Channels *from* the
+        // profile (the previous direction) silently discarded the user's real mapping
+        // whenever the two diverged — e.g. a settings.json written by an older/WPF-era
+        // binary, a hand-edit, or an import with a stale profile — which reset all channel
+        // mappings to default the first time a new build read the file (i.e. after an update).
         ProfileEntry? activeProfile = settings.Profiles.FirstOrDefault(p => p.Name == settings.ActiveProfileName);
         if (activeProfile != null)
-            settings.Channels = activeProfile.Channels;
+            activeProfile.Channels = settings.Channels;
 
         // v5 → v6: AudioBackendMode introduced (default "WASAPI").
         // Validate the stored value and default to WASAPI if unknown.

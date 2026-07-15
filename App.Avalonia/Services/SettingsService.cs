@@ -64,9 +64,14 @@ public sealed class SettingsService
 
         // Persist if a schema migration ran so the on-disk file is brought current.
         // _lastLogged is still null here, so this save logs nothing (a migration isn't
-        // a user change).
+        // a user change). Snapshot the pre-migration file first (no-op on a fresh install
+        // — Backup early-returns when no file exists) so a bad migration is recoverable
+        // from the setup_backups folder rather than silently overwriting the original.
         if (result.MigrationApplied)
+        {
+            SettingsRepository.Backup("premigration", _log.Log);
             Save();
+        }
 
         _lastLogged = Clone(Settings);
     }

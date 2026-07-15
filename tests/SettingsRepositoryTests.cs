@@ -228,6 +228,37 @@ public sealed class SettingsRepositoryTests : IDisposable
         settings.Profiles[0].Channels.Should().HaveCount(ChannelCount);
     }
 
+    // ── Regression: a stale active profile must never override the real mapping ─────
+
+    // The Avalonia host (the single UI) reads and writes the top-level Channels array;
+    // the active profile's Channels is only a passive mirror. If the two diverge — e.g.
+    // an older/WPF-era file whose profile copy is stale — Normalize must keep the
+    // top-level mapping and re-sync the profile to it, NOT the reverse. Regressing this
+    // reset every channel assignment to default the first time a new build read the file
+    // (i.e. right after an update).
+    [Fact]
+    public void Normalize_StaleProfile_TopLevelChannelMappingWins()
+    {
+        var settings = new DashboardSettings { SettingsVersion = 8 };  // already migrated
+
+        // The user's real mapping lives on the top-level array.
+        settings.Channels = DashboardSettings.CreateDefaultChannels();
+        settings.Channels[1].TargetKey = "PROC:chrome";
+
+        // A stale active profile still carries the default (empty) assignment.
+        settings.Profiles = new List<ProfileEntry>
+        {
+            new ProfileEntry { Name = "Default", Channels = DashboardSettings.CreateDefaultChannels() }
+        };
+        settings.ActiveProfileName = "Default";
+
+        SettingsRepository.Normalize(settings, ChannelCount, MaxSensitivity);
+
+        // The edited mapping survives, and the profile is re-synced to it.
+        settings.Channels[1].TargetKey.Should().Be("PROC:chrome");
+        settings.Profiles[0].Channels[1].TargetKey.Should().Be("PROC:chrome");
+    }
+
     // ── Save / Load roundtrip ─────────────────────────────────────────────────────
 
     [Fact]
