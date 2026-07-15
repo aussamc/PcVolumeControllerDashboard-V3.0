@@ -62,6 +62,10 @@
                             <TextBlock x:Name="UpdateBannerText" TextWrapping="Wrap"
                                        Text="A new version is available." />
                             <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button x:Name="UpdateBannerInstallButton" Content="Download &amp; install"
+                                        IsVisible="False" Classes="accent"
+                                        Click="UpdateBannerInstall_Click"
+                                        ToolTip.Tip="Download the update for your platform and launch the installer" />
                                 <Button x:Name="UpdateBannerViewButton" Content="View release"
                                         Click="UpdateBannerView_Click"
                                         ToolTip.Tip="Open the release page in your browser" />
@@ -72,6 +76,8 @@
                                         Click="UpdateBannerDismiss_Click"
                                         ToolTip.Tip="Hide this until the next check" />
                             </StackPanel>
+                            <TextBlock x:Name="UpdateBannerProgress" Classes="muted" IsVisible="False"
+                                       TextWrapping="Wrap" />
                         </StackPanel>
                     </Border>
 

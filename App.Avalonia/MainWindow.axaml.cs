@@ -950,6 +950,11 @@ public partial class MainWindow : Window
     // ── Auto-update banner (v3.19) ───────────────────────────────────────────────
 
     private UpdateAvailableInfo? _bannerUpdate;
+    private ReleaseAsset? _bannerAsset;             // the asset picked for this platform, or null
+    private UpdatePlatform _bannerPlatform;
+    private string? _downloadedPath;                // verified file on disk for _downloadedVersion
+    private string? _downloadedVersion;
+    private bool _downloading;
 
     // Raised by UpdateOrchestrator on the UI thread; Post keeps us safe even if a future
     // caller raises it off-thread.
@@ -961,6 +966,105 @@ public partial class MainWindow : Window
         _bannerUpdate = info;
         UpdateBannerText.Text = $"Version {info.LatestVersion} is available — you have {DashboardVersion}.";
         UpdateBanner.IsVisible = true;
+
+        // Resolve the download asset for this platform. No asset (macOS / missing) or safe
+        // mode → the banner offers only "View release"; the install button stays hidden.
+        _bannerPlatform = UpdateInstaller.DetectPlatform();
+        _bannerAsset = UpdateAssetSelector.Select(info.Assets, _bannerPlatform);
+
+        bool canInstall = _bannerAsset != null && !_safeMode;
+        UpdateBannerInstallButton.IsVisible = canInstall;
+        if (!canInstall)
+            return;
+
+        if (_downloadedPath != null && _downloadedVersion == info.LatestVersion)
+        {
+            // Already fetched this version (e.g. auto-download finished) → one-click install.
+            UpdateBannerInstallButton.Content = "Install now";
+            UpdateBannerInstallButton.IsEnabled = true;
+            return;
+        }
+
+        UpdateBannerInstallButton.Content = "Download & install";
+        UpdateBannerInstallButton.IsEnabled = !_downloading;
+
+        // "Automatically download & install updates": pre-download in the background so the
+        // user just clicks "Install now". Launching the installer is always an explicit
+        // click — we never run it unprompted.
+        if (_settings.AutoApplyUpdates && !_downloading && _downloadedVersion != info.LatestVersion)
+            _ = DownloadUpdateAsync(applyWhenDone: false);
+    }
+
+    private async void UpdateBannerInstall_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_bannerAsset == null || _bannerUpdate == null)
+            return;
+
+        // A verified download already exists for this version → launch it straight away.
+        if (_downloadedPath != null && _downloadedVersion == _bannerUpdate.LatestVersion)
+        {
+            ApplyDownloadedUpdate();
+            return;
+        }
+        await DownloadUpdateAsync(applyWhenDone: true);
+    }
+
+    private async System.Threading.Tasks.Task DownloadUpdateAsync(bool applyWhenDone)
+    {
+        if (_bannerAsset == null || _bannerUpdate == null || _downloading)
+            return;
+        var installer = App.Services.GetService<UpdateInstaller>();
+        if (installer == null)
+            return;
+
+        _downloading = true;
+        string version = _bannerUpdate.LatestVersion;
+        UpdateBannerInstallButton.IsEnabled = false;
+        UpdateBannerProgress.IsVisible = true;
+        UpdateBannerProgress.Text = "Starting download…";
+
+        var progress = new Progress<double>(p => UpdateBannerProgress.Text = $"Downloading… {p * 100:0}%");
+        UpdateDownloadResult result = await installer.DownloadAsync(_bannerAsset, progress);
+        _downloading = false;
+
+        if (!result.Success)
+        {
+            UpdateBannerProgress.Text = $"Download failed: {result.ErrorMessage} Use “View release” to download it manually.";
+            UpdateBannerInstallButton.Content = "Retry download";
+            UpdateBannerInstallButton.IsEnabled = true;
+            return;
+        }
+
+        _downloadedPath = result.FilePath;
+        _downloadedVersion = version;
+        UpdateBannerProgress.Text = "Downloaded and verified.";
+        UpdateBannerInstallButton.Content = "Install now";
+        UpdateBannerInstallButton.IsEnabled = true;
+
+        if (applyWhenDone)
+            ApplyDownloadedUpdate();
+    }
+
+    private void ApplyDownloadedUpdate()
+    {
+        var installer = App.Services.GetService<UpdateInstaller>();
+        if (installer == null || _downloadedPath == null)
+            return;
+
+        UpdateBannerProgress.IsVisible = true;
+        UpdateBannerProgress.Text = "Launching the installer…";
+
+        if (installer.Apply(_downloadedPath, _bannerPlatform))
+        {
+            // The installer/AppImage will replace the running files — exit cleanly,
+            // bypassing the minimise-to-tray close guard.
+            AllowClose();
+            (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
+        }
+        else
+        {
+            UpdateBannerProgress.Text = "The update was handed to your system package installer.";
+        }
     }
 
     private void UpdateBannerView_Click(object? sender, RoutedEventArgs e) =>

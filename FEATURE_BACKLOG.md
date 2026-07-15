@@ -440,6 +440,21 @@ Builds on the existing manual `UpdateCheckService` (GitHub Releases API,
 `App.Avalonia/Services/UpdateCheckService.cs`) + pure `Core/UpdateCheck.IsNewer`
 comparator. Bump **3.18 → 3.19**.
 
+> **Status (complete on `feat/v3.19-auto-updater-checker`):** both slices shipped. **Part 1
+> (checker automation):** `UpdateOrchestrator` runs a throttled launch check + a 6h timer,
+> gated on `AutoCheckForUpdates` and suppressed under `--safe`; a promptable, non-skipped
+> release raises an in-window banner (View release / Skip / Remind me later) + a desktop
+> notification. Pure `Core/UpdatePolicy` (throttle + skip de-dup) is the testable seam;
+> new `LastUpdateCheckUtc`/`SkippedUpdateVersion` settings persist the bookkeeping. **Part 2
+> (download/apply engine):** `UpdateCheckService` now parses release assets; pure
+> `Core/UpdateAssetSelector` (installer/AppImage/deb by platform) + `Core/AssetDigest`
+> (sha256 parse/compare) drive `UpdateInstaller`, which downloads to temp, verifies size +
+> SHA-256, and launches the installer / new AppImage / `.deb` hand-off (exiting the app when
+> it must replace files). The banner's **Download & install** button shows progress;
+> `AutoApplyUpdates` on pre-downloads for one-click **Install now** (launch stays an
+> explicit click — never a silent self-run). Both TFMs 0/0; 265 tests; download+verify path
+> confirmed live against the real release.
+
 **Scope (per decision): download + one-click apply.**
 
 - **Settings:** `AutoCheckForUpdates` (default on) and `AutoApplyUpdates` (default

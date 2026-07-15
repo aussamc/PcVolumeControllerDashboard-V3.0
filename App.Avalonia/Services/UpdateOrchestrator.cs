@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Threading;
@@ -11,6 +12,9 @@ public sealed class UpdateAvailableInfo
 {
     public string LatestVersion { get; init; } = string.Empty;
     public string ReleaseUrl { get; init; } = UpdateCheckResult.ReleasesPage;
+
+    /// <summary>Release download assets, for the download-and-apply engine (v3.19 part 2).</summary>
+    public IReadOnlyList<ReleaseAsset> Assets { get; init; } = Array.Empty<ReleaseAsset>();
 }
 
 /// <summary>
@@ -118,6 +122,7 @@ public sealed class UpdateOrchestrator : IDisposable
                 {
                     LatestVersion = result.LatestVersion,
                     ReleaseUrl = result.ReleaseUrl,
+                    Assets = result.Assets,
                 };
                 Pending = info;
                 _log.Log($"Update available: version {result.LatestVersion} (you have {_currentVersion}).");

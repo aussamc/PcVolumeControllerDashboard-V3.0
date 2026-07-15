@@ -192,6 +192,10 @@ public partial class App : Application
         // update banner + a desktop notification when a newer release is found.
         services.AddSingleton<Services.UpdateOrchestrator>();
 
+        // Auto-update download-and-apply engine (v3.19): downloads + verifies the release
+        // asset for this platform and launches the installer / AppImage / .deb.
+        services.AddSingleton<Services.UpdateInstaller>();
+
         // Global (system-wide) hotkeys: master volume up/down/mute + show dashboard.
         services.AddSingleton<Services.GlobalHotkeyManager>();
 
