@@ -15,7 +15,7 @@
                       IsCheckedChanged="OnAutoApplyChanged" />
             <TextBlock Classes="muted"
                        Margin="24,0,0,0"
-                       Text="Downloading and installing happens with a future update; for now this just remembers your choice." />
+                       Text="When on, updates download in the background so you can install them with one click. Launching the installer is always your choice." />
         </StackPanel>
 
         <StackPanel Orientation="Horizontal" Spacing="10">

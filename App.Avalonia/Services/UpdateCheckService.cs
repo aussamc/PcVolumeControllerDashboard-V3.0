@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Text.Json;
@@ -25,6 +26,13 @@ public sealed class UpdateCheckResult
 
     /// <summary>Non-null when the check could not complete (network/timeout/parse).</summary>
     public string? ErrorMessage { get; init; }
+
+    /// <summary>
+    /// The downloadable files attached to the latest release (installer / portable exe /
+    /// .deb / AppImage), for the v3.19 download-and-apply engine. Empty when the check
+    /// failed or the release has no assets.
+    /// </summary>
+    public IReadOnlyList<ReleaseAsset> Assets { get; init; } = Array.Empty<ReleaseAsset>();
 
     internal const string OwnerRepo = "aussamc/PcVolumeControllerDashboard-V3.0";
     internal const string ReleasesPage = "https://github.com/" + OwnerRepo + "/releases";
@@ -86,6 +94,7 @@ public sealed class UpdateCheckService
                 UpdateAvailable = UpdateCheck.IsNewer(latestVersion, currentVersion),
                 LatestVersion = latestVersion,
                 ReleaseUrl = releaseUrl,
+                Assets = ParseAssets(doc.RootElement),
             };
         }
         catch (HttpRequestException ex)
@@ -100,5 +109,31 @@ public sealed class UpdateCheckService
         {
             return new UpdateCheckResult { ErrorMessage = ex.Message };
         }
+    }
+
+    /// <summary>
+    /// Parses the release's <c>assets[]</c> into <see cref="ReleaseAsset"/> records
+    /// (name / download URL / size / optional sha256 digest). Tolerant: any asset missing
+    /// a name or URL is skipped, and a missing <c>assets</c> array yields an empty list.
+    /// </summary>
+    private static IReadOnlyList<ReleaseAsset> ParseAssets(JsonElement root)
+    {
+        if (!root.TryGetProperty("assets", out JsonElement assets) || assets.ValueKind != JsonValueKind.Array)
+            return Array.Empty<ReleaseAsset>();
+
+        var list = new List<ReleaseAsset>(assets.GetArrayLength());
+        foreach (JsonElement a in assets.EnumerateArray())
+        {
+            string? name = a.TryGetProperty("name", out JsonElement n) ? n.GetString() : null;
+            string? url = a.TryGetProperty("browser_download_url", out JsonElement u) ? u.GetString() : null;
+            if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(url))
+                continue;
+
+            long size = a.TryGetProperty("size", out JsonElement s) && s.TryGetInt64(out long parsed) ? parsed : 0;
+            string? digest = a.TryGetProperty("digest", out JsonElement d) ? d.GetString() : null;
+
+            list.Add(new ReleaseAsset { Name = name, DownloadUrl = url, Size = size, Digest = digest });
+        }
+        return list;
     }
 }

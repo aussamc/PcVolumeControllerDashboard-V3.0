@@ -17,4 +17,11 @@ public static class NotificationMessages
 
     /// <summary>Body for the "controller disconnected" notification.</summary>
     public static string Disconnected() => "The controller was disconnected.";
+
+    /// <summary>Body for the "update available" notification (v3.19 auto-updater).</summary>
+    public static string UpdateAvailable(string? version)
+    {
+        string v = string.IsNullOrWhiteSpace(version) ? "A new version" : $"Version {version!.Trim()}";
+        return $"{v} of the dashboard is available.";
+    }
 }

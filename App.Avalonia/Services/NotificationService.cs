@@ -77,6 +77,10 @@ public sealed class NotificationService : IDisposable
     public void NotifyStartedMinimized() =>
         Notify("PC Volume Controller", "Dashboard started minimised to tray.");
 
+    /// <summary>Fires the "update available" notification (v3.19 auto-updater call site).</summary>
+    public void NotifyUpdateAvailable(string version) =>
+        Notify("Update available", NotificationMessages.UpdateAvailable(version));
+
     // Gate on the user setting, then show best-effort. The notifier impls (toast /
     // notify-send) are safe to call off the UI thread, so no marshalling is needed.
     private void Notify(string title, string message)

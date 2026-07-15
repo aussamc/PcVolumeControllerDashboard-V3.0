@@ -96,6 +96,12 @@ public partial class App : Application
             else
             {
                 ShowDashboardOnLaunch(desktop, settingsService, log);
+                // Kick off the auto-update checker only on a normal launch — a fresh
+                // install (the first-run path above) just downloaded the latest build,
+                // so there's nothing to prompt about. No-op under --safe. MainWindow is
+                // already built (subscribed to the banner event), so a result found now
+                // still surfaces via UpdateOrchestrator.Pending or the raised event.
+                Services.GetRequiredService<Services.UpdateOrchestrator>().Start();
             }
         }
 
@@ -180,6 +186,15 @@ public partial class App : Application
 
         // Software update check (queries GitHub Releases; manual/user-triggered).
         services.AddSingleton<Services.UpdateCheckService>();
+
+        // Auto-update checker automation (v3.19): background launch + periodic check,
+        // gated on AutoCheckForUpdates and suppressed under --safe. Raises the in-window
+        // update banner + a desktop notification when a newer release is found.
+        services.AddSingleton<Services.UpdateOrchestrator>();
+
+        // Auto-update download-and-apply engine (v3.19): downloads + verifies the release
+        // asset for this platform and launches the installer / AppImage / .deb.
+        services.AddSingleton<Services.UpdateInstaller>();
 
         // Global (system-wide) hotkeys: master volume up/down/mute + show dashboard.
         services.AddSingleton<Services.GlobalHotkeyManager>();

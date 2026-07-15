@@ -150,6 +150,15 @@ public sealed class DashboardSettings
     public bool AutoCheckForUpdates { get; set; } = true;
     public bool AutoApplyUpdates { get; set; } = false;
 
+    // Auto-updater engine bookkeeping (v3.19). Not user-facing toggles — the updater
+    // writes these. LastUpdateCheckUtc stamps the last successful check so the launch
+    // check is throttled (rapid restarts don't re-query GitHub); a default (MinValue)
+    // means "never checked" and always checks. SkippedUpdateVersion remembers a release
+    // the user dismissed with "Skip this version" so it stops prompting until a strictly
+    // newer release appears (whose version no longer matches). See Core UpdatePolicy.
+    public System.DateTime LastUpdateCheckUtc { get; set; }
+    public string SkippedUpdateVersion { get; set; } = string.Empty;
+
     public static DashboardSettings CreateDefault()
     {
         return new DashboardSettings

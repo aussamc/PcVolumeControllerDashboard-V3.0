@@ -8,8 +8,9 @@ namespace PcVolumeControllerDashboard.App;
 /// <summary>
 /// Wizard page for the software-update preferences (v3.18). Binds the
 /// AutoCheckForUpdates / AutoApplyUpdates settings and offers a "Check now" button via
-/// <see cref="UpdateCheckService"/>. Ships as check-only until the v3.19 updater engine
-/// lands — the auto-download/install choice is remembered but not yet acted on.
+/// <see cref="UpdateCheckService"/>. As of v3.19 both preferences are live: the checker
+/// runs in the background and, with auto-apply on, updates pre-download for one-click
+/// install from the dashboard's update banner (see UpdateOrchestrator / UpdateInstaller).
 /// </summary>
 public partial class UpdatePrefsWizardPage : UserControl, IWizardPage
 {
