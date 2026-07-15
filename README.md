@@ -70,7 +70,7 @@ Output is `PcVolumeControllerDashboard.Avalonia.exe` under
 
 ## Firmware
 
-The ESP32 Arduino source is in `Computer_Volume_Controller_v2.26/` (current; v2.26 redesigns the Large Volume Number OLED layout — display-only, the wire protocol is unchanged from v2.25's chip-ID pairing). The previous `Computer_Volume_Controller_v2.25/` and `Computer_Volume_Controller_v2.24/` are retained for reference.
+The ESP32 Arduino source is in `Computer_Volume_Controller_v2.27/` (current; v2.27 adds a 2-second firmware-version splash on boot — display-only, the wire protocol is unchanged from v2.26). The previous `Computer_Volume_Controller_v2.26/`, `Computer_Volume_Controller_v2.25/`, and `Computer_Volume_Controller_v2.24/` are retained for reference.
 
 Flash the firmware via Arduino IDE / Arduino CLI with the ESP32-S3 Arduino core installed, or using esptool directly.
 
@@ -85,8 +85,9 @@ Core/                                   — platform-agnostic domain (serial, se
 Platform.Windows/                       — Windows audio backends (WASAPI + VoiceMeeter) behind the Core seam
 Platform.Linux/                         — Linux audio backend (PipeWire via pw-dump/wpctl) behind the same seam
 tests/                                  — xUnit + FluentAssertions test project
-Computer_Volume_Controller_v2.26/       — ESP32 Arduino firmware source (v2.26, current — Large Volume OLED redesign)
-Computer_Volume_Controller_v2.25/       — previous firmware source (v2.25, retained for reference)
+Computer_Volume_Controller_v2.27/       — ESP32 Arduino firmware source (v2.27, current — boot firmware-version splash)
+Computer_Volume_Controller_v2.26/       — previous firmware source (v2.26, retained for reference)
+Computer_Volume_Controller_v2.25/       — older firmware source (v2.25, retained for reference)
 Computer_Volume_Controller_v2.24/       — older firmware source (v2.24, retained for reference)
 firmware_bin/                           — firmware build output
 ```
