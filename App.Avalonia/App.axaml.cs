@@ -92,6 +92,11 @@ public partial class App : Application
             var hotkeys = Services.GetRequiredService<Services.GlobalHotkeyManager>();
             hotkeys.ShowDashboardRequested += ShowMainWindow;
 
+            // Housekeeping: clear any installer left in the update temp folder by a
+            // previously-applied update or an abandoned download. Best-effort; runs on
+            // every launch (the post-download prune only bounds it mid-session).
+            Services.GetRequiredService<Services.UpdateInstaller>().SweepDownloads();
+
             if (settingsService.IsFirstRun && !startup.SafeMode)
             {
                 // Brand-new install: run the setup wizard first. The MainWindow is
