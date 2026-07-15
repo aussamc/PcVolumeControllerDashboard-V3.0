@@ -699,7 +699,7 @@
                     </StackPanel>
                     <CheckBox x:Name="AdvancedDebugLoggingCheckBox" Content="Advanced debug logging"
                               Margin="0,8,0,0"
-                              ToolTip.Tip="Log verbose per-encoder / per-write serial detail to this session's log file. Off by default; useful when diagnosing a controller issue."
+                              ToolTip.Tip="Persist the full raw serial traffic (every TX/RX line, as shown in the live console below) plus per-encoder volume changes and button-press actions to this session's log file. Off by default — verbose; turn on when diagnosing a controller issue, then share the log."
                               IsCheckedChanged="AppSetupCheckBox_Changed" />
                 </StackPanel>
 

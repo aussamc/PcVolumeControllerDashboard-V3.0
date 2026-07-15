@@ -502,7 +502,10 @@ public sealed class SerialConnectionService : IDisposable
     {
         if (State != SerialConnectionState.Connected) return false;
         Send(line);
-        if (log) _log.Log($"PC -> ESP32: {line}");
+        // The explicit "PC -> ESP32:" line is the always-on record for low-frequency
+        // config pushes. With advanced debug logging on, RaiseTraffic already persists
+        // every TX line (with a "TX" prefix), so skip this to avoid double-logging.
+        if (log && !_settings.Settings.AdvancedDebugLogging) _log.Log($"PC -> ESP32: {line}");
         return true;
     }
 
@@ -513,8 +516,16 @@ public sealed class SerialConnectionService : IDisposable
         RaiseTraffic(outgoing: true, line);
     }
 
+    // Every serial line — sent and received — funnels through here. With advanced debug
+    // logging on, persist the full raw conversation (the same TX/RX the Debug console
+    // shows live) to the log file, so an intermittent hardware/connection issue is
+    // captured in a shareable file rather than evaporating from the live view. Off by
+    // default: this is verbose (includes the per-change STATE/CHSTATE pushes).
     private void RaiseTraffic(bool outgoing, string line)
     {
+        if (_settings.Settings.AdvancedDebugLogging)
+            _log.Log($"{(outgoing ? "TX" : "RX")} {line}");
+
         try { TrafficLogged?.Invoke(new SerialTraffic(DateTime.Now, outgoing, line)); } catch { }
     }
 
