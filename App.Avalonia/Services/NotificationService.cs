@@ -87,7 +87,7 @@ public sealed class NotificationService : IDisposable
     {
         if (!_settings.Settings.TrayNotificationsEnabled) return;
         try { _notifier.Show(title, message); }
-        catch (Exception ex) { _log.Log($"Notification failed: {ex.Message}"); }
+        catch (Exception ex) { _log.Warn($"Notification failed: {ex.Message}", "Notify"); }
     }
 
     public void Dispose() => _connection.StateChanged -= OnConnectionStateChanged;

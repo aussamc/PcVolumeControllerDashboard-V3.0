@@ -105,11 +105,11 @@ public sealed class UpdateInstaller
             if (verifyError != null)
             {
                 TryDelete(path);
-                _log.Log($"Update download rejected: {verifyError}");
+                _log.Warn($"Update download rejected: {verifyError}", "Update");
                 return new UpdateDownloadResult { ErrorMessage = verifyError };
             }
 
-            _log.Log($"Update asset downloaded and verified: {asset.Name}.");
+            _log.Info($"Update asset downloaded and verified: {asset.Name}.", "Update");
             return new UpdateDownloadResult { FilePath = path };
         }
         catch (OperationCanceledException)
@@ -120,7 +120,7 @@ public sealed class UpdateInstaller
         catch (Exception ex)
         {
             TryDelete(path);
-            _log.Log($"Update download failed: {ex.Message}");
+            _log.Error("Update download failed", ex, "Update");
             return new UpdateDownloadResult { ErrorMessage = ex.Message };
         }
     }
@@ -165,18 +165,18 @@ public sealed class UpdateInstaller
             {
                 case UpdatePlatform.Windows:
                     Process.Start(new ProcessStartInfo(filePath) { UseShellExecute = true });
-                    _log.Log("Launched the Windows installer; exiting so it can replace the app.");
+                    _log.Info("Launched the Windows installer; exiting so it can replace the app.", "Update");
                     return true;
 
                 case UpdatePlatform.LinuxAppImage:
                     MakeExecutable(filePath);
                     Process.Start(new ProcessStartInfo(filePath) { UseShellExecute = false });
-                    _log.Log("Launched the new AppImage; exiting the old instance.");
+                    _log.Info("Launched the new AppImage; exiting the old instance.", "Update");
                     return true;
 
                 case UpdatePlatform.LinuxDeb:
                     Process.Start(new ProcessStartInfo("xdg-open", QuoteArg(filePath)) { UseShellExecute = false });
-                    _log.Log("Opened the .deb in the system package installer.");
+                    _log.Info("Opened the .deb in the system package installer.", "Update");
                     return false; // hand-off — the running app can stay up
 
                 default:
@@ -185,7 +185,7 @@ public sealed class UpdateInstaller
         }
         catch (Exception ex)
         {
-            _log.Log($"Update apply failed: {ex.Message}");
+            _log.Error("Update apply failed", ex, "Update");
             return false;
         }
     }
