@@ -172,14 +172,16 @@ build-green; a user-facing batch bumps `3.x`).
   text on the overlay card. See `FEATURE_BACKLOG.md` for per-item design + the
   version-bump chore list.
 
-- **v3.16–v3.20 — UX & lifecycle batch** *(planned 2026-07-14):* an 18-item request
-  spanning first-run defaults (ch2–ch6 start **unassigned**, only ch1 = Master; ch4 label
+- **v3.16–v3.19 — UX & lifecycle batch** *(shipped)*: an 18-item request spanning
+  first-run defaults (ch2–ch6 start **unassigned**, only ch1 = Master; ch4 label
   "Voice Chat"; no pool-by-default), OLED-tab polish + anti-burn-in preview/clip fixes,
   Setup-tab declutter + Debug-tab move, a **two-stream (Quick/Advanced) wizard overhaul**,
-  a **download + one-click auto-updater**, and an opt-in **Share Diagnostics** crash
-  reporter. Sequenced as five bumps (3.16→3.20). Two open external dependencies: the
-  diagnostics **upload endpoint is undecided**, and the Windows installer is **unsigned**
-  (SmartScreen friction for auto-apply). Full per-item design in `FEATURE_BACKLOG.md`.
+  and a **download + one-click auto-updater**. Shipped as four bumps (3.16→3.19). The
+  18th item — an opt-in **Share Diagnostics** crash reporter, originally slated as v3.20 —
+  has been **deferred out of the timeline** (unscheduled) pending the **upload-endpoint
+  decision**; the Windows installer also remains **unsigned** (SmartScreen friction for
+  auto-apply). Full per-item design + the deferred Share Diagnostics plan in
+  `FEATURE_BACKLOG.md`.
 
 Remaining to finish the port:
 
