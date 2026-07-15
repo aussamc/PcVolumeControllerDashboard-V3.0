@@ -124,7 +124,7 @@ Notes:
 
 ## Key constants
 
-- Dashboard version: **3.19** (Avalonia host). Required controller protocol: **2.24**
+- Dashboard version: **3.19.1** (Avalonia host). Required controller protocol: **2.24**
   (firmware v2.26 is backward-compatible — v2.26 is a display-only change over v2.25,
   wire protocol unchanged). Expected channels: **6**.
 - Hardware: v1.4 PCB, ESP32-S3-DevKitC-1-N16R8, SSD1315 OLEDs behind a TCA9548A I2C
@@ -308,14 +308,14 @@ Remaining to finish the port:
      Single-instance mutex, bring-to-front, and run-on-login (HKCU Run key) are
      all faithfully ported and confirmed at parity (correctly Windows-only on
      both hosts). Two real gaps:
-     - **No global crash handler on Avalonia** — WPF wires
-       `DispatcherUnhandledException`/`AppDomain.UnhandledException`/
-       `TaskScheduler.UnobservedTaskException` (`App.xaml.cs:41-59`) to write a
-       crash log (`WriteCrashLog`, `:71-101`) and show a friendly error dialog
-       with a "copy details" option (`ShowCrashDialog`, `:103-136`). Zero
-       equivalent anywhere under `App.Avalonia/` — an unhandled exception on
-       Linux just kills the process with no crash log and no dialog, especially
-       bad when launched from a desktop icon with no attached console.
+     - **No global crash handler on Avalonia** — **RESOLVED (parity B2):** the
+       Avalonia host now has `App.Avalonia/CrashHandler.cs` (wired at
+       `App.axaml.cs`), which hooks `Dispatcher.UIThread.UnhandledException` /
+       `AppDomain.UnhandledException` / `TaskScheduler.UnobservedTaskException`,
+       writes a `crash-<timestamp>.log`, and shows a friendly error dialog with a
+       "copy details" option — parity with WPF's `App.xaml.cs` handler. (Original
+       finding: WPF wired these and Avalonia had zero equivalent, so an unhandled
+       exception just killed the process with no crash log and no dialog.)
      - **No `--safe` diagnostic launch flag on Avalonia** — WPF parses `--safe`
        (`MainWindow.xaml.cs:106-107,273-298`) to disable auto-connect/reconnect/
        audio writes for troubleshooting. No equivalent flag exists in

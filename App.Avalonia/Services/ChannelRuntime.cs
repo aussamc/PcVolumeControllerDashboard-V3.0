@@ -459,6 +459,12 @@ public sealed class ChannelRuntime : IDisposable
 
     private void ExecuteButtonAction(int index, ChannelSettings channel, string action, ButtonPress press)
     {
+        // Advanced debug logging: record every button-press -> action mapping (not just
+        // the NoAction case), so a "my button does nothing / the wrong thing" report shows
+        // what the firmware press actually dispatched to.
+        if (_settings.Settings.AdvancedDebugLogging)
+            _log.Log($"Ch{index + 1} {press.ToString().ToLowerInvariant()}-press -> {action}");
+
         switch (action)
         {
             case ChannelButtonActions.ToggleAssignedMute:
@@ -485,8 +491,7 @@ public sealed class ChannelRuntime : IDisposable
             case ChannelButtonActions.MediaStop:      SendMediaKey(VkMediaStop);      break;
 
             case ChannelButtonActions.NoAction:
-                if (_settings.Settings.AdvancedDebugLogging)
-                    _log.Log($"Ch{index + 1} {press.ToString().ToLowerInvariant()}-press: No action.");
+                // The entry-log above already records this under advanced logging.
                 break;
 
             // Named profiles are descoped from the Avalonia port; a legacy settings
