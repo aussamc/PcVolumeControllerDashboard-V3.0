@@ -1,3 +1,5 @@
+using System;
+
 namespace PcVolumeControllerDashboard.Core;
 
 /// <summary>
@@ -16,4 +18,12 @@ public interface INotificationService
 {
     /// <summary>Shows a notification with a short title and body. Best-effort.</summary>
     void Show(string title, string message);
+
+    /// <summary>
+    /// Raised when the user clicks/activates a shown notification, so the host can bring
+    /// the dashboard to the foreground. May fire on a background thread — subscribers must
+    /// marshal to the UI thread themselves. Impls with no click-through support (Null, and
+    /// Linux <c>notify-send</c>) simply never raise it.
+    /// </summary>
+    event Action? Activated;
 }

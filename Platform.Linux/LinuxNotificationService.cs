@@ -1,3 +1,4 @@
+using System;
 using System.Diagnostics;
 using PcVolumeControllerDashboard.Core;
 
@@ -27,4 +28,10 @@ public sealed class LinuxNotificationService : INotificationService
         psi.ArgumentList.Add(message);
         Process.Start(psi);
     }
+
+    /// <summary>
+    /// Not raised: <c>notify-send</c> is fire-and-forget with no click callback (that would
+    /// need a persistent D-Bus notification server connection, out of scope for this shell-out).
+    /// </summary>
+    public event Action? Activated { add { } remove { } }
 }

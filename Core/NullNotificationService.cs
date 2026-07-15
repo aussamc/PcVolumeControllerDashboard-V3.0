@@ -1,3 +1,5 @@
+using System;
+
 namespace PcVolumeControllerDashboard.Core;
 
 /// <summary>
@@ -7,4 +9,7 @@ namespace PcVolumeControllerDashboard.Core;
 public sealed class NullNotificationService : INotificationService
 {
     public void Show(string title, string message) { }
+
+    /// <summary>Never raised — this impl shows nothing to click.</summary>
+    public event Action? Activated { add { } remove { } }
 }

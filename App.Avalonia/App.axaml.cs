@@ -76,7 +76,11 @@ public partial class App : Application
             Services.GetRequiredService<Services.SleepWakeService>();
             // Activate the notification coordinator before connecting so it's
             // subscribed to the connection state stream (connect/disconnect toasts).
-            Services.GetRequiredService<Services.NotificationService>();
+            // Clicking a notification brings the dashboard to the foreground — the click
+            // can arrive on a background/COM thread, so marshal to the UI thread.
+            var notifications = Services.GetRequiredService<Services.NotificationService>();
+            notifications.NotificationClicked +=
+                () => Avalonia.Threading.Dispatcher.UIThread.Post(ShowMainWindow);
             // --safe (N1): construct the connection (so the UI's Reconnect / port picker
             // still work) but skip auto-connect and the reconnect loop; ChannelRuntime /
             // GlobalHotkeyManager separately suppress audio writes.

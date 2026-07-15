@@ -1,4 +1,5 @@
 #if WINDOWS
+using System;
 using Microsoft.Toolkit.Uwp.Notifications;
 using PcVolumeControllerDashboard.Core;
 
@@ -19,6 +20,25 @@ namespace PcVolumeControllerDashboard.App.Platform;
 /// </summary>
 public sealed class WindowsToastNotificationService : INotificationService
 {
+    /// <summary>
+    /// Raised when the user clicks a toast (its body or the toast itself). Fires on a
+    /// background/COM thread — the coordinator/host marshals to the UI thread. Subscribing
+    /// to <see cref="ToastNotificationManagerCompat.OnActivated"/> is what registers the
+    /// unpackaged-app COM activator, so clicking a toast reaches this running instance.
+    /// </summary>
+    public event Action? Activated;
+
+    public WindowsToastNotificationService()
+    {
+        // Best-effort: if registration isn't available, notifications still show (just
+        // without click-through), so never let this throw into construction.
+        try
+        {
+            ToastNotificationManagerCompat.OnActivated += _ => Activated?.Invoke();
+        }
+        catch { /* click-through unavailable — Show() still works */ }
+    }
+
     public void Show(string title, string message)
     {
         new ToastContentBuilder()
