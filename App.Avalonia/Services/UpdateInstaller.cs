@@ -45,6 +45,9 @@ public sealed class UpdateInstaller
 
     public UpdateInstaller(LogService log) => _log = log;
 
+    /// <summary>The temp folder update installers are downloaded into.</summary>
+    private static string DownloadDir => Path.Combine(Path.GetTempPath(), "PcVolumeController-update");
+
     /// <summary>
     /// Resolves how this build updates itself: Windows installer on the Windows TFM; on the
     /// shared TFM, the AppImage when running from one (the <c>APPIMAGE</c> env var is set)
@@ -76,8 +79,8 @@ public sealed class UpdateInstaller
         string? path = null;
         try
         {
-            path = Path.Combine(Path.GetTempPath(), "PcVolumeController-update", SanitiseName(asset.Name));
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            path = Path.Combine(DownloadDir, SanitiseName(asset.Name));
+            Directory.CreateDirectory(DownloadDir);
 
             using (var request = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, asset.DownloadUrl))
             using (System.Net.Http.HttpResponseMessage response =
@@ -132,24 +135,38 @@ public sealed class UpdateInstaller
     // just-verified file). Best-effort: a locked file (e.g. an installer still running)
     // is skipped, never thrown; the whole pass is wrapped so a cleanup hiccup can't fail
     // an otherwise-good download.
-    private void PruneOldDownloads(string keepPath)
+    private void PruneOldDownloads(string keepPath) =>
+        DeleteStale(Path.GetFileName(keepPath), "Pruned", "prune old");
+
+    /// <summary>
+    /// Clears the update-download temp folder at launch — sweeps an installer left behind
+    /// by an already-applied update or an abandoned/partial download. Best-effort and
+    /// never throws: a file still in use (e.g. the installer that just launched this app
+    /// and hasn't exited yet) is skipped and swept on the next launch. Safe to call on any
+    /// launch (first-run, normal, or <c>--safe</c>).
+    /// </summary>
+    public void SweepDownloads() => DeleteStale(keepFileName: string.Empty, "Swept", "sweep");
+
+    // Shared delete pass over DownloadDir: removes every file except keepFileName (empty =
+    // remove all). Best-effort per file; the whole pass is wrapped so cleanup never throws.
+    private void DeleteStale(string keepFileName, string doneVerb, string failVerb)
     {
         try
         {
-            string dir = Path.GetDirectoryName(keepPath)!;
+            if (!Directory.Exists(DownloadDir)) return;
             int removed = 0;
             foreach (string file in UpdateDownloadCleanup.SelectStale(
-                         Directory.EnumerateFiles(dir), Path.GetFileName(keepPath)))
+                         Directory.EnumerateFiles(DownloadDir), keepFileName))
             {
                 try { File.Delete(file); removed++; }
                 catch { /* best-effort — skip a locked/in-use file */ }
             }
             if (removed > 0)
-                _log.Info($"Pruned {removed} older update download(s) from the temp folder.", "Update");
+                _log.Info($"{doneVerb} {removed} update download(s) from the temp folder.", "Update");
         }
         catch (Exception ex)
         {
-            _log.Warn($"Could not prune old update downloads: {ex.Message}", "Update");
+            _log.Warn($"Could not {failVerb} update downloads: {ex.Message}", "Update");
         }
     }
 
