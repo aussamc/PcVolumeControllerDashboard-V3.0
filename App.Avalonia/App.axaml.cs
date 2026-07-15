@@ -4,6 +4,9 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
 using PcVolumeControllerDashboard.Core;
+// Alias so static references (e.g. SettingsService.SettingsPath) resolve without colliding
+// with the DI-container `Services` property, which shadows the namespace in expressions.
+using AppServices = PcVolumeControllerDashboard.App.Services;
 
 namespace PcVolumeControllerDashboard.App;
 
@@ -47,6 +50,14 @@ public partial class App : Application
             var settingsService = Services.GetRequiredService<Services.SettingsService>();
             var log = Services.GetRequiredService<Services.LogService>();
             DashboardSettings settings = settingsService.Settings;
+
+            // "Advanced debug logging" simply lowers the log threshold to Debug (verbose
+            // serial TX/RX, per-encoder, etc.); read live so toggling it takes effect
+            // without a restart.
+            log.UseDebugWhen(() => settingsService.Settings.AdvancedDebugLogging);
+
+            // Self-describing header so any shared log states what produced it.
+            LogStartupBanner(log, settings, startup);
 
             // Keep the HKCU Run entry in sync with the saved preference each launch
             // (covers the exe being moved/reinstalled). Windows-only; no-op elsewhere.
@@ -141,6 +152,25 @@ public partial class App : Application
         _mainWindow.Show();
         _mainWindow.Activate();
         log.Log("Setup complete — dashboard opened.");
+    }
+
+    /// <summary>
+    /// Writes a self-describing header at the top of each session log (app version, OS,
+    /// runtime, launch mode, audio backend, config path) so a log shared for support is
+    /// unambiguous about what produced it. All at Info level, category "Startup".
+    /// </summary>
+    private static void LogStartupBanner(Services.LogService log, DashboardSettings settings, StartupOptions startup)
+    {
+        log.Info($"==== PC Volume Controller Dashboard v{AppInfo.Version} (Avalonia) ====", "Startup");
+        log.Info($"OS: {System.Runtime.InteropServices.RuntimeInformation.OSDescription} " +
+                 $"({System.Runtime.InteropServices.RuntimeInformation.OSArchitecture})", "Startup");
+        log.Info($"Runtime: {System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription}, " +
+                 $"process arch {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}", "Startup");
+        log.Info($"Mode: {(startup.SafeMode ? "SAFE (--safe)" : "normal")}" +
+                 $"{(startup.ForceDebugTab ? " +debug-tab" : "")}; " +
+                 $"advanced logging {(settings.AdvancedDebugLogging ? "ON" : "off")}; " +
+                 $"audio backend {settings.AudioBackendMode}", "Startup");
+        log.Info($"Config: {AppServices.SettingsService.SettingsPath}", "Startup");
     }
 
     /// <summary>

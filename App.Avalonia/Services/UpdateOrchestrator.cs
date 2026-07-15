@@ -72,7 +72,7 @@ public sealed class UpdateOrchestrator : IDisposable
     {
         if (_startup.SafeMode)
         {
-            _log.Log("Auto-update check suppressed (--safe).");
+            _log.Info("Auto-update check suppressed (--safe).", "Update");
             return;
         }
 
@@ -104,7 +104,7 @@ public sealed class UpdateOrchestrator : IDisposable
             {
                 // Don't stamp LastUpdateCheckUtc on failure, so a transient network error
                 // doesn't push the next attempt a whole throttle window away.
-                _log.Log($"Auto-update check failed: {result.ErrorMessage}");
+                _log.Warn($"Auto-update check failed: {result.ErrorMessage}", "Update");
                 return;
             }
 
@@ -125,14 +125,14 @@ public sealed class UpdateOrchestrator : IDisposable
                     Assets = result.Assets,
                 };
                 Pending = info;
-                _log.Log($"Update available: version {result.LatestVersion} (you have {_currentVersion}).");
+                _log.Info($"Update available: version {result.LatestVersion} (you have {_currentVersion}).", "Update");
                 _notifications.NotifyUpdateAvailable(result.LatestVersion);
                 UpdateAvailable?.Invoke(info);
             });
         }
         catch (Exception ex)
         {
-            _log.Log($"Auto-update check error: {ex.Message}");
+            _log.Error("Auto-update check error", ex, "Update");
         }
         finally
         {
@@ -149,7 +149,7 @@ public sealed class UpdateOrchestrator : IDisposable
         _settings.Settings.SkippedUpdateVersion = version;
         _settings.Save();
         Pending = null;
-        _log.Log($"Update {version} skipped by user.");
+        _log.Info($"Update {version} skipped by user.", "Update");
     }
 
     /// <summary>Clears the pending prompt for this session ("remind me later").</summary>

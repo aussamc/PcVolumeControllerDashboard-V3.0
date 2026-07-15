@@ -134,8 +134,7 @@ public sealed class ChannelRuntime : IDisposable
         if (delta == 0) return;
         if (_safeMode)
         {
-            if (_settings.Settings.AdvancedDebugLogging)
-                _log.Log("Safe mode: encoder event observed but the audio write was skipped.");
+            _log.Debug("Safe mode: encoder event observed but the audio write was skipped.", "Audio");
             return;
         }
         if (!TryResolveChannel(firmwareChannel, out int index, out _)) return;
@@ -335,8 +334,7 @@ public sealed class ChannelRuntime : IDisposable
         {
             if (showOverlay)
                 RaiseVolume(index, channel, result, _audio.GetMuteByKey(key) ?? false);
-            if (s.AdvancedDebugLogging)
-                _log.Log($"Ch{index + 1} {key}: {result}% (step {step}%)");
+            _log.Debug($"Ch{index + 1} {key}: {result}% (step {step}%)", "Audio");
         }
     }
 
@@ -459,11 +457,10 @@ public sealed class ChannelRuntime : IDisposable
 
     private void ExecuteButtonAction(int index, ChannelSettings channel, string action, ButtonPress press)
     {
-        // Advanced debug logging: record every button-press -> action mapping (not just
-        // the NoAction case), so a "my button does nothing / the wrong thing" report shows
+        // Debug logging: record every button-press -> action mapping (not just the
+        // NoAction case), so a "my button does nothing / the wrong thing" report shows
         // what the firmware press actually dispatched to.
-        if (_settings.Settings.AdvancedDebugLogging)
-            _log.Log($"Ch{index + 1} {press.ToString().ToLowerInvariant()}-press -> {action}");
+        _log.Debug($"Ch{index + 1} {press.ToString().ToLowerInvariant()}-press -> {action}", "Audio");
 
         switch (action)
         {
