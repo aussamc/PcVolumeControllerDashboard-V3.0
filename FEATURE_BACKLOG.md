@@ -88,15 +88,15 @@ since the overlay shipped. Fix that copy as part of this PR.
 
 ---
 
-## v3.16–v3.20 — UX & lifecycle batch  *(planned, 2026-07-14)*
+## v3.16–v3.19 — UX & lifecycle batch  *(shipped)*
 
-An 18-item batch of defaults, UX polish, wizard rework, and two new lifecycle
-subsystems (auto-update, crash reporting) requested 2026-07-14. **Nothing here is
-built yet** — this is the plan of record. Grouped into five sequenced version bumps so
-each ships as a small, build-green batch (standing rule #1/#2). Ordering is a proposal;
-items can be re-sliced. The dependency worth respecting: the wizard's update page (v3.18)
-is thin until the updater backend (v3.19) exists — either ship v3.19 first or land the
-wizard page as "check only" and enrich it when v3.19 lands.
+An 18-item batch of defaults, UX polish, wizard rework, and one new lifecycle
+subsystem (auto-update) requested 2026-07-14. **v3.16–v3.19 have all shipped.** It was
+grouped into four sequenced version bumps so each shipped as a small, build-green batch
+(standing rule #1/#2). The 18th item — **Share Diagnostics** (crash logger + upload,
+originally slated as v3.20) — has been **moved out of this timeline** into the unscheduled
+roadmap below, pending the upload-endpoint decision; the version sequence therefore ends
+at v3.19.
 
 **Decisions captured from the 2026-07-14 clarification pass:**
 
@@ -108,9 +108,10 @@ wizard page as "check only" and enrich it when v3.19 lands.
 - **Auto-updater (items 4/14):** scope = **download + one-click apply** (download the
   installer/package in-app and launch it / stage self-replace on restart), with toggles
   to disable the checker and the auto-apply independently. Not full silent self-update.
-- **Share Diagnostics / crash logger (item 18):** design it now with a **pluggable
-  upload endpoint (TBD)**, **opt-in / default OFF**, explicit consent, path/username
-  redaction. Server choice is an **open dependency** — flagged below.
+- **Share Diagnostics / crash logger (item 18):** **deferred out of the timeline**
+  (2026-07-15) — design intent (pluggable upload endpoint TBD, opt-in / default OFF,
+  explicit consent, path/username redaction) is preserved in the unscheduled roadmap
+  below. Server choice is an **open dependency** and blocks the upload half.
 - **Wizard streams (item 16):** a startup chooser with **"Quick setup" preselected**
   and "Advanced setup" opt-in. Quick = fewer pages + opinionated defaults; Advanced =
   the full page set (audio backend, encoder feel, update prefs, etc.).
@@ -140,7 +141,7 @@ wizard page as "check only" and enrich it when v3.19 lands.
 | 16 | Two-stream wizard (Quick vs Advanced) chosen at startup | v3.18 | L |
 | 17 | Audio backend selection in the Advanced wizard stream | v3.18 | S |
 | 4 | Auto-update checker + one-click updater (+ disable toggles) | v3.19 | L |
-| 18 | Share Diagnostics — crash logger with server upload | v3.20 | L |
+| 18 | Share Diagnostics — crash logger with server upload | **deferred** (unscheduled) | L |
 
 ---
 
@@ -490,16 +491,19 @@ checker-automation (S, ships first) from the download/apply engine (M–L).
 
 ---
 
-### v3.20 — Share Diagnostics (crash logger + server upload)  *(item 18)*
+## Share Diagnostics — crash logger + server upload  *(item 18 — unscheduled)*
 
 An opt-in crash/diagnostics reporter surfaced in the Setup tab as **"Share Diagnostics"**.
-Bump **3.19 → 3.20**.
+**Moved out of the v3.16–v3.19 timeline 2026-07-15** — it stays unscheduled until the
+upload-endpoint decision is made (see the open dependency at the end). When picked up it
+gets its own version bump.
 
-- **Prereq — global crash handler:** the Avalonia host currently has **no** unhandled-
-  exception handler (parity-audit gap in CLAUDE.md). First wire
-  `AppDomain.UnhandledException` / `TaskScheduler.UnobservedTaskException` / the Avalonia
-  dispatcher-exception hook to write a crash log (reuse `LogService`) and show a friendly
-  dialog. This is the capture layer the reporter needs — worth doing regardless.
+- **Prereq — global crash handler (now tracked separately, unscheduled):** the crash-log
+  capture layer this reporter needs is the **global crash handler**, which has been
+  **moved out of this batch's timeline** into the unscheduled backlog (see
+  *Global crash handler* below). It's genuinely useful standalone and shouldn't gate the
+  rest of this feature's design; when Share Diagnostics is actually scheduled, land the
+  crash handler first (or alongside) since it has nothing to collect without it.
 - **Setting:** `bool ShareDiagnostics` in `Core/Settings.cs`, **default OFF (opt-in)**.
   First-run/Setup shows a clear consent explanation of what's sent and where.
 - **What's collected:** the crash log + recent app log + environment (OS, app version,
@@ -560,6 +564,13 @@ Rough scope to make it real:
 
 Deferred/descoped items that could become future feature work, from the parity audit:
 
+- **Global crash handler** *(parity-audit gap; prereq for Share Diagnostics above)* — the
+  Avalonia host still has **no** unhandled-exception handler (`AppDomain.UnhandledException`
+  / `TaskScheduler.UnobservedTaskException` / the Avalonia dispatcher hook), so a crash just
+  kills the process with no crash log and no dialog — worst when launched from a desktop
+  icon with no console. Wire these to write a crash log (reuse `LogService`) + show a
+  friendly dialog. Useful standalone; it's also the capture layer the deferred **Share
+  Diagnostics** reporter needs, so land it first (or alongside) when that's scheduled.
 - Named **profiles** (F2) — descoped from the port; Core still backs it
   (`ProfileEntry`/`Profiles`/`ActiveProfileName`).
 - **Output-device cycling** — descoped.
