@@ -53,6 +53,28 @@
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="12">
 
+                    <!-- ── Auto-update banner (v3.19) ───────────────────────── -->
+                    <Border x:Name="UpdateBanner" Classes="card" IsVisible="False"
+                            BorderBrush="{DynamicResource SystemAccentColor}" BorderThickness="1"
+                            Margin="0,0,0,12">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Update available" Classes="h2" />
+                            <TextBlock x:Name="UpdateBannerText" TextWrapping="Wrap"
+                                       Text="A new version is available." />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button x:Name="UpdateBannerViewButton" Content="View release"
+                                        Click="UpdateBannerView_Click"
+                                        ToolTip.Tip="Open the release page in your browser" />
+                                <Button x:Name="UpdateBannerSkipButton" Content="Skip this version"
+                                        Click="UpdateBannerSkip_Click"
+                                        ToolTip.Tip="Stop reminding me about this version until a newer one is released" />
+                                <Button x:Name="UpdateBannerDismissButton" Content="Remind me later"
+                                        Click="UpdateBannerDismiss_Click"
+                                        ToolTip.Tip="Hide this until the next check" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
                     <!-- ── Connection status ────────────────────────────────── -->
                     <Border Classes="card">
                         <StackPanel>

@@ -33,6 +33,8 @@ public partial class MainWindow : Window
     private DeviceStateService? _deviceState;
     // Overlay controller — used to show a live preview while adjusting appearance.
     private readonly VolumeOverlayController? _overlay;
+    // Auto-update checker (v3.19) — drives the update banner + Skip/Remind actions.
+    private readonly UpdateOrchestrator? _updateOrchestrator;
     private readonly ObservableCollection<ChannelRow> _channelRows = new();
     private DispatcherTimer? _channelPollTimer;
     // Assignable-target discovery (Q2): the picker is re-enumerated on a slow cadence
@@ -65,7 +67,7 @@ public partial class MainWindow : Window
         InitializeComponent();
     }
 
-    public MainWindow(SettingsService settingsService, IAudioBackend audioBackend, SerialConnectionService connection, DeviceStateService deviceState, VolumeOverlayController overlay, StartupOptions startup) : this()
+    public MainWindow(SettingsService settingsService, IAudioBackend audioBackend, SerialConnectionService connection, DeviceStateService deviceState, VolumeOverlayController overlay, UpdateOrchestrator updateOrchestrator, StartupOptions startup) : this()
     {
         _settingsService = settingsService;
         _settings = settingsService.Settings;
@@ -73,6 +75,7 @@ public partial class MainWindow : Window
         _connection = connection;
         _deviceState = deviceState;
         _overlay = overlay;
+        _updateOrchestrator = updateOrchestrator;
         _forceDebugTab = startup.ForceDebugTab;
         _safeMode = startup.SafeMode;
 
@@ -83,6 +86,12 @@ public partial class MainWindow : Window
         InitAudioTab();
         InitChannelDetail();
         InitDebugTab();
+
+        // Auto-update banner (v3.19): show it now if a check already found an update
+        // before this window existed, and stay subscribed for later checks.
+        _updateOrchestrator.UpdateAvailable += OnUpdateAvailable;
+        if (_updateOrchestrator.Pending is { } pending)
+            ShowUpdateBanner(pending);
     }
 
     private void Save() => _settingsService?.Save();
@@ -936,6 +945,38 @@ public partial class MainWindow : Window
     private void ViewReleaseButton_Click(object? sender, RoutedEventArgs e)
     {
         Dialogs.OpenUrl(_latestReleaseUrl ?? ProjectUrl);
+    }
+
+    // ── Auto-update banner (v3.19) ───────────────────────────────────────────────
+
+    private UpdateAvailableInfo? _bannerUpdate;
+
+    // Raised by UpdateOrchestrator on the UI thread; Post keeps us safe even if a future
+    // caller raises it off-thread.
+    private void OnUpdateAvailable(UpdateAvailableInfo info) =>
+        Dispatcher.UIThread.Post(() => ShowUpdateBanner(info));
+
+    private void ShowUpdateBanner(UpdateAvailableInfo info)
+    {
+        _bannerUpdate = info;
+        UpdateBannerText.Text = $"Version {info.LatestVersion} is available — you have {DashboardVersion}.";
+        UpdateBanner.IsVisible = true;
+    }
+
+    private void UpdateBannerView_Click(object? sender, RoutedEventArgs e) =>
+        Dialogs.OpenUrl(_bannerUpdate?.ReleaseUrl ?? ProjectUrl);
+
+    private void UpdateBannerSkip_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_bannerUpdate != null)
+            _updateOrchestrator?.SkipVersion(_bannerUpdate.LatestVersion);
+        UpdateBanner.IsVisible = false;
+    }
+
+    private void UpdateBannerDismiss_Click(object? sender, RoutedEventArgs e)
+    {
+        _updateOrchestrator?.DismissPending();
+        UpdateBanner.IsVisible = false;
     }
 
     private void ShowUpdateStatus(string message)
