@@ -110,6 +110,7 @@ public sealed class UpdateInstaller
             }
 
             _log.Info($"Update asset downloaded and verified: {asset.Name}.", "Update");
+            PruneOldDownloads(path);
             return new UpdateDownloadResult { FilePath = path };
         }
         catch (OperationCanceledException)
@@ -122,6 +123,33 @@ public sealed class UpdateInstaller
             TryDelete(path);
             _log.Error("Update download failed", ex, "Update");
             return new UpdateDownloadResult { ErrorMessage = ex.Message };
+        }
+    }
+
+    // After a good download, delete any older installers left in the update folder so
+    // they don't pile up in %TEMP% across releases (each release filename is version-
+    // stamped, so a new download never overwrites the previous one — leaving only the
+    // just-verified file). Best-effort: a locked file (e.g. an installer still running)
+    // is skipped, never thrown; the whole pass is wrapped so a cleanup hiccup can't fail
+    // an otherwise-good download.
+    private void PruneOldDownloads(string keepPath)
+    {
+        try
+        {
+            string dir = Path.GetDirectoryName(keepPath)!;
+            int removed = 0;
+            foreach (string file in UpdateDownloadCleanup.SelectStale(
+                         Directory.EnumerateFiles(dir), Path.GetFileName(keepPath)))
+            {
+                try { File.Delete(file); removed++; }
+                catch { /* best-effort — skip a locked/in-use file */ }
+            }
+            if (removed > 0)
+                _log.Info($"Pruned {removed} older update download(s) from the temp folder.", "Update");
+        }
+        catch (Exception ex)
+        {
+            _log.Warn($"Could not prune old update downloads: {ex.Message}", "Update");
         }
     }
 
