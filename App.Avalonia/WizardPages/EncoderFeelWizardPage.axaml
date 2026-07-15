@@ -1,0 +1,57 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="PcVolumeControllerDashboard.App.EncoderFeelWizardPage">
+    <StackPanel x:Name="Root" Spacing="10">
+        <TextBlock Classes="muted"
+                   Text="Tune how the knobs feel, then try it below. These apply to all channels; you can adjust them later in Setup." />
+
+        <!-- Encoder sensitivity -->
+        <TextBlock Text="Encoder sensitivity" FontWeight="SemiBold" />
+        <StackPanel Orientation="Horizontal" Spacing="10">
+            <Slider x:Name="SensSlider" Minimum="0" Maximum="500" TickFrequency="10"
+                    IsSnapToTickEnabled="True" Width="340" VerticalAlignment="Center" />
+            <TextBlock x:Name="SensValue" VerticalAlignment="Center" Text="50%" />
+        </StackPanel>
+
+        <!-- Acceleration -->
+        <CheckBox x:Name="AccelCheck" Content="Enable volume acceleration (faster turns take bigger steps)"
+                  Margin="0,4,0,0" />
+        <StackPanel x:Name="AccelPresetRow" Orientation="Horizontal" Spacing="8" Margin="24,0,0,0">
+            <TextBlock Text="Acceleration preset:" VerticalAlignment="Center" Width="140" />
+            <ComboBox x:Name="AccelPresetCombo" Width="160">
+                <ComboBoxItem Content="Light" />
+                <ComboBoxItem Content="Medium" />
+                <ComboBoxItem Content="Aggressive" />
+            </ComboBox>
+        </StackPanel>
+
+        <!-- Smoothing -->
+        <CheckBox x:Name="SmoothCheck" Content="Enable volume smoothing (volume eases toward the target)"
+                  Margin="0,4,0,0" />
+        <StackPanel x:Name="SmoothSpeedRow" Orientation="Horizontal" Spacing="8" Margin="24,0,0,0">
+            <TextBlock Text="Smoothing speed:" VerticalAlignment="Center" Width="140" />
+            <ComboBox x:Name="SmoothSpeedCombo" Width="160">
+                <ComboBoxItem Content="Slow" />
+                <ComboBoxItem Content="Normal" />
+                <ComboBoxItem Content="Fast" />
+            </ComboBox>
+        </StackPanel>
+
+        <!-- Try it -->
+        <Border x:Name="TryItArea" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,8,0,0"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                Background="{DynamicResource SystemControlBackgroundListLowBrush}">
+            <StackPanel Spacing="8">
+                <TextBlock Text="Try it" FontWeight="SemiBold" />
+                <TextBlock Classes="muted"
+                           Text="Scroll your mouse wheel here — or use −/+ — to feel the settings. A demo volume popup appears at your overlay position. No audio is changed." />
+                <StackPanel Orientation="Horizontal" Spacing="14" HorizontalAlignment="Center" Margin="0,4,0,0">
+                    <Button x:Name="DemoDownButton" Content="−" Width="48" />
+                    <TextBlock x:Name="DemoValue" Text="50%" FontSize="24" FontWeight="SemiBold"
+                               VerticalAlignment="Center" Width="80" TextAlignment="Center" />
+                    <Button x:Name="DemoUpButton" Content="+" Width="48" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

@@ -57,6 +57,7 @@ public partial class FirstRunWizard : Window
     private AppSetupWizardPage? _appSetupFull;
     private ThemeWizardPage? _themePage;
     private AudioBackendWizardPage? _audioBackendPage;
+    private EncoderFeelWizardPage? _encoderFeelPage;
     private UpdatePrefsWizardPage? _updatePage;
 
     private List<WizardStep> _steps = new();
@@ -110,6 +111,7 @@ public partial class FirstRunWizard : Window
         _appSetupCondensed = new AppSetupWizardPage(_settings, condensed: true);
         _appSetupFull = new AppSetupWizardPage(_settings, condensed: false);
         _themePage = new ThemeWizardPage(_settings);
+        _encoderFeelPage = new EncoderFeelWizardPage(_settings);
         if (_audio != null)
             _audioBackendPage = new AudioBackendWizardPage(_settings, _audio);
         if (updater != null)
@@ -117,7 +119,7 @@ public partial class FirstRunWizard : Window
 
         foreach (Control page in new Control?[]
                  {
-                     _appSetupCondensed, _appSetupFull, _themePage, _audioBackendPage, _updatePage,
+                     _appSetupCondensed, _appSetupFull, _themePage, _encoderFeelPage, _audioBackendPage, _updatePage,
                  }.OfType<Control>())
         {
             page.IsVisible = false;
@@ -151,7 +153,7 @@ public partial class FirstRunWizard : Window
         {
             if (_appSetupFull != null) steps.Add(PageStep(_appSetupFull));
             if (_themePage != null) steps.Add(PageStep(_themePage));
-            // Encoder-Feel "try it" page (item 13) is deferred to a follow-up.
+            if (_encoderFeelPage != null) steps.Add(PageStep(_encoderFeelPage));
             if (_updatePage != null) steps.Add(PageStep(_updatePage));
         }
         else if (_appSetupCondensed != null)

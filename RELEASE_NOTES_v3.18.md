@@ -16,9 +16,10 @@ first-run experience and adds a couple of new preferences.
   channels → a condensed Application-Setup page (Start at login / Start minimized to tray)
   → Done.
 
-- **Advanced stream (10 steps):** the above plus an **Audio backend** page (WASAPI /
+- **Advanced stream (11 steps):** the above plus an **Audio backend** page (WASAPI /
   VoiceMeeter), the full **Application Setup** checkbox page, a **Theme** page
-  (Follow-system / Light / Dark, applied live), and a **Software updates** page.
+  (Follow-system / Light / Dark, applied live), an **Encoder feel** page, and a
+  **Software updates** page.
 
 - The **anti-burn-in pixel-shift** toggle (on by default, with a display-lifetime note)
   now lives on the **Check displays** page, so it appears in both streams.
@@ -30,6 +31,9 @@ first-run experience and adds a couple of new preferences.
 - **Theme** — pick Follow-system / Light / Dark during setup; applied immediately.
 - **Audio backend** (Advanced only) — choose WASAPI or VoiceMeeter, switched live, with a
   status line showing the active backend and target count.
+- **Encoder feel** (Advanced only) — sensitivity / acceleration / smoothing, with a live
+  **"Try it"** panel: scroll the wheel (or −/+) to drive a demo volume popup through the
+  real feel math and feel each setting instantly. No audio is changed.
 - **Software updates** — "Automatically check for updates" (on) and "Automatically
   download & install updates" (off) preferences, plus a **Check now** button. The
   auto-download/install engine arrives in a later release; for now the page checks and
