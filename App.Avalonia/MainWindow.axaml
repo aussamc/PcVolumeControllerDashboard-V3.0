@@ -88,8 +88,14 @@
                     <Border x:Name="ConnectionBanner" Classes="card" Margin="0,0,0,12">
                         <StackPanel Spacing="4">
                             <TextBlock Classes="h2" Text="Controller" Margin="0" />
-                            <TextBlock x:Name="ConnectionStatusText" Text="Disconnected"
-                                       FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <!-- Simple at-a-glance state only. Protocol/chip ID and the
+                                 connect controls live on the Setup tab. -->
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Ellipse x:Name="ConnectionStatusDot" Width="12" Height="12"
+                                         VerticalAlignment="Center" Fill="Gray" />
+                                <TextBlock x:Name="ConnectionStatusText" Text="Disconnected"
+                                           FontWeight="SemiBold" VerticalAlignment="Center" />
+                            </StackPanel>
                             <TextBlock Classes="muted"
                                        Text="Connect, disconnect, and port options are on the Setup tab under “Controller Connection”." />
                         </StackPanel>
@@ -287,6 +293,56 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- ── Controller Connection (top, non-collapsible) ─────────
+                         A pinned card so connection state and controls are always
+                         visible at the top of Setup (v3.22). Shows the full detail —
+                         state, protocol, chip ID — where the Audio tab only shows a
+                         simple Connected/Disconnected. Controls keep their original
+                         x:Names so code-behind wiring is unchanged. -->
+                    <Border Classes="card">
+                        <StackPanel>
+                            <TextBlock Classes="h2" Text="Controller Connection" />
+                            <TextBlock Classes="muted" Margin="0,0,0,10"
+                                       Text="Connect to the controller, or pick a specific serial port. The Audio tab shows a simple Connected/Disconnected at a glance." />
+
+                            <!-- Live status readout: state / protocol / chip ID. -->
+                            <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto" Margin="0,0,0,10">
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="State:" Margin="0,2" />
+                                <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="0,2">
+                                    <Ellipse x:Name="SetupConnStatusDot" Width="12" Height="12" VerticalAlignment="Center" Fill="Gray" />
+                                    <TextBlock x:Name="SetupConnStateText" Text="Disconnected" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Protocol:" Margin="0,2" />
+                                <TextBlock Grid.Row="1" Grid.Column="1" x:Name="SetupConnProtocolText" Text="—" Margin="0,2" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Chip ID:" Margin="0,2" />
+                                <TextBlock Grid.Row="2" Grid.Column="1" x:Name="SetupConnChipText" Text="—" Margin="0,2" />
+                            </Grid>
+                            <TextBlock x:Name="SetupConnWarningText" IsVisible="False" Foreground="OrangeRed"
+                                       TextWrapping="Wrap" Margin="0,0,0,10" />
+
+                            <TextBlock x:Name="SafeModeBanner" IsVisible="False" Foreground="OrangeRed"
+                                       TextWrapping="Wrap" Margin="0,0,0,8"
+                                       Text="Safe mode (--safe): auto-connect and audio-control writes are disabled. Use Reconnect or the port picker below to connect manually." />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button x:Name="ReconnectButton" Content="Reconnect" Click="ReconnectButton_Click"
+                                        ToolTip.Tip="Scan the COM ports and connect to the controller" />
+                                <Button x:Name="DisconnectButton" Content="Disconnect" Click="DisconnectButton_Click"
+                                        ToolTip.Tip="Close the connection and stop auto-reconnecting until you reconnect" />
+                            </StackPanel>
+
+                            <!-- Manual per-port picker (N2): connect to a specific port,
+                                 bypassing auto-detect (useful with a second serial device). -->
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+                                <TextBlock Text="Port:" VerticalAlignment="Center" />
+                                <ComboBox x:Name="PortCombo" Width="160" MinWidth="120"
+                                          DropDownOpened="PortCombo_DropDownOpened"
+                                          ToolTip.Tip="Pick a specific serial port to connect to, bypassing auto-detect" />
+                                <Button x:Name="ConnectPortButton" Content="Connect to port" Click="ConnectToPort_Click"
+                                        ToolTip.Tip="Connect to the selected port instead of auto-detecting the controller" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
                     <!-- ── Application Setup ────────────────────────────────── -->
                     <Expander Classes="section" IsExpanded="True">
                         <Expander.Header><TextBlock Classes="h2" Text="Application Setup" Margin="0" /></Expander.Header>
@@ -317,40 +373,6 @@
                                     HorizontalAlignment="Left"
                                     ToolTip.Tip="Clear the paired controller chip ID so the next connection auto-pairs with any controller"
                                     Click="ForgetControllerButton_Click" />
-                        </StackPanel>
-                    </Expander>
-
-                    <!-- ── Controller Connection ────────────────────────────────
-                         Moved here from the Audio tab (v3.21): connect/disconnect and
-                         the manual per-port picker are one-time setup, and the first-run
-                         wizard already covers them. The Audio tab keeps a read-only
-                         status banner. Controls keep their original x:Names so the
-                         code-behind wiring is unchanged. -->
-                    <Expander Classes="section" IsExpanded="True">
-                        <Expander.Header><TextBlock Classes="h2" Text="Controller Connection" Margin="0" /></Expander.Header>
-                        <StackPanel>
-                            <TextBlock Classes="muted" Margin="0,0,0,8"
-                                       Text="Connect to the controller, or pick a specific serial port. The Audio tab shows the live connection status at a glance." />
-                            <TextBlock x:Name="SafeModeBanner" IsVisible="False" Foreground="OrangeRed"
-                                       TextWrapping="Wrap" Margin="0,0,0,8"
-                                       Text="Safe mode (--safe): auto-connect and audio-control writes are disabled. Use Reconnect or the port picker below to connect manually." />
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Button x:Name="ReconnectButton" Content="Reconnect" Click="ReconnectButton_Click"
-                                        ToolTip.Tip="Scan the COM ports and connect to the controller" />
-                                <Button x:Name="DisconnectButton" Content="Disconnect" Click="DisconnectButton_Click"
-                                        ToolTip.Tip="Close the connection and stop auto-reconnecting until you reconnect" />
-                            </StackPanel>
-
-                            <!-- Manual per-port picker (N2): connect to a specific port,
-                                 bypassing auto-detect (useful with a second serial device). -->
-                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
-                                <TextBlock Text="Port:" VerticalAlignment="Center" />
-                                <ComboBox x:Name="PortCombo" Width="160" MinWidth="120"
-                                          DropDownOpened="PortCombo_DropDownOpened"
-                                          ToolTip.Tip="Pick a specific serial port to connect to, bypassing auto-detect" />
-                                <Button x:Name="ConnectPortButton" Content="Connect to port" Click="ConnectToPort_Click"
-                                        ToolTip.Tip="Connect to the selected port instead of auto-detecting the controller" />
-                            </StackPanel>
                         </StackPanel>
                     </Expander>
 
@@ -391,10 +413,11 @@
                         </StackPanel>
                     </Expander>
 
-                    <!-- ── Encoder Sensitivity ──────────────────────────────── -->
+                    <!-- ── Encoder Setup (sensitivity + feel, merged v3.22) ───── -->
                     <Expander Classes="section">
-                        <Expander.Header><TextBlock Classes="h2" Text="Encoder Sensitivity" Margin="0" /></Expander.Header>
+                        <Expander.Header><TextBlock Classes="h2" Text="Encoder Setup" Margin="0" /></Expander.Header>
                         <StackPanel>
+                            <TextBlock Classes="h3" Text="Sensitivity" Margin="0,0,0,4" />
                             <TextBlock Classes="muted" Margin="0,0,0,10"
                                        Text="Controls how much the volume changes for each encoder click. 50% is the default; higher values allow much faster changes." />
                             <StackPanel Orientation="Horizontal">
@@ -402,13 +425,10 @@
                                 <Slider x:Name="EncoderSensitivitySlider" Minimum="0" Maximum="500" TickFrequency="10" IsSnapToTickEnabled="True" Width="360" VerticalAlignment="Center" />
                                 <TextBlock x:Name="EncoderSensitivityValueText" FontWeight="SemiBold" VerticalAlignment="Center" Margin="8,0,0,0" Text="50%" />
                             </StackPanel>
-                        </StackPanel>
-                    </Expander>
 
-                    <!-- ── Encoder Feel ─────────────────────────────────────── -->
-                    <Expander Classes="section">
-                        <Expander.Header><TextBlock Classes="h2" Text="Encoder Feel" Margin="0" /></Expander.Header>
-                        <StackPanel>
+                            <Separator Margin="0,14,0,10" />
+
+                            <TextBlock Classes="h3" Text="Feel" Margin="0,0,0,4" />
                             <TextBlock Classes="muted" Margin="0,0,0,12"
                                        Text="Volume acceleration scales the step when you turn the encoder quickly. Volume smoothing eases volume to its target over a short time rather than jumping instantly." />
 
@@ -566,52 +586,57 @@
                             <TextBlock Classes="muted" Margin="0,0,0,10"
                                        Text="These settings drive the controller preview below and are sent to the ESP32 when it's connected." />
 
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                                <TextBlock Text="Display mode:" VerticalAlignment="Center" Width="160" />
-                                <ComboBox x:Name="DisplayModeComboBox" Width="260" SelectionChanged="DisplayModeComboBox_SelectionChanged">
-                                    <ComboBoxItem Content="App name + volume" />
-                                    <ComboBoxItem Content="Large volume number" />
-                                    <ComboBoxItem Content="Mute status" />
-                                    <ComboBoxItem Content="App/device name" />
-                                    <ComboBoxItem Content="Simple bar/percentage view" />
-                                </ComboBox>
-                            </StackPanel>
+                            <!-- All rows share a 210px label column and a 260px control
+                                 column so labels and controls line up, with a uniform
+                                 10px gap between rows (v3.22 alignment pass). -->
+                            <StackPanel Spacing="10">
+                                <Grid ColumnDefinitions="210,260,*">
+                                    <TextBlock Grid.Column="0" Text="Display mode:" VerticalAlignment="Center" />
+                                    <ComboBox Grid.Column="1" x:Name="DisplayModeComboBox" HorizontalAlignment="Stretch" SelectionChanged="DisplayModeComboBox_SelectionChanged">
+                                        <ComboBoxItem Content="App name + volume" />
+                                        <ComboBoxItem Content="Large volume number" />
+                                        <ComboBoxItem Content="Mute status" />
+                                        <ComboBoxItem Content="App/device name" />
+                                        <ComboBoxItem Content="Simple bar/percentage view" />
+                                    </ComboBox>
+                                </Grid>
 
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                                <TextBlock Text="Brightness:" VerticalAlignment="Center" Width="210" />
-                                <Slider x:Name="OledBrightnessSlider" Minimum="0" Maximum="100" Width="210" VerticalAlignment="Center" />
-                                <TextBlock x:Name="OledBrightnessValueText" FontWeight="SemiBold" VerticalAlignment="Center" Margin="8,0,0,0" Text="100%" />
-                            </StackPanel>
+                                <Grid ColumnDefinitions="210,260,*">
+                                    <TextBlock Grid.Column="0" Text="Brightness:" VerticalAlignment="Center" />
+                                    <Slider Grid.Column="1" x:Name="OledBrightnessSlider" Minimum="0" Maximum="100" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="2" x:Name="OledBrightnessValueText" FontWeight="SemiBold" VerticalAlignment="Center" Margin="8,0,0,0" Text="100%" />
+                                </Grid>
 
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                                <TextBlock Text="Disconnected sleep timeout:" VerticalAlignment="Center" Width="210" />
-                                <Slider x:Name="OledSleepTimeoutSlider" Minimum="1" Maximum="60" TickFrequency="1" IsSnapToTickEnabled="True" Width="210" VerticalAlignment="Center" />
-                                <TextBlock x:Name="OledSleepTimeoutValueText" FontWeight="SemiBold" VerticalAlignment="Center" Margin="8,0,0,0" Text="2 minute(s)" />
-                            </StackPanel>
+                                <Grid ColumnDefinitions="210,260,*">
+                                    <TextBlock Grid.Column="0" Text="Disconnected sleep timeout:" VerticalAlignment="Center" />
+                                    <Slider Grid.Column="1" x:Name="OledSleepTimeoutSlider" Minimum="1" Maximum="60" TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="2" x:Name="OledSleepTimeoutValueText" FontWeight="SemiBold" VerticalAlignment="Center" Margin="8,0,0,0" Text="2 minute(s)" />
+                                </Grid>
 
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                                <TextBlock Text="Connected idle action:" VerticalAlignment="Center" Width="160" />
-                                <ComboBox x:Name="OledConnectedIdleActionComboBox" Width="260" SelectionChanged="OledConnectedIdleActionComboBox_SelectionChanged">
-                                    <ComboBoxItem Content="Turn off display" />
-                                    <ComboBoxItem Content="Dim brightness to 10%" />
-                                    <ComboBoxItem Content="Dim brightness to 20%" />
-                                    <ComboBoxItem Content="Dim brightness to 30%" />
-                                    <ComboBoxItem Content="Dim brightness to 40%" />
-                                    <ComboBoxItem Content="Dim brightness to 50%" />
-                                    <ComboBoxItem Content="Dim brightness to 60%" />
-                                    <ComboBoxItem Content="Dim brightness to 70%" />
-                                </ComboBox>
-                            </StackPanel>
+                                <Grid ColumnDefinitions="210,260,*">
+                                    <TextBlock Grid.Column="0" Text="Connected idle action:" VerticalAlignment="Center" />
+                                    <ComboBox Grid.Column="1" x:Name="OledConnectedIdleActionComboBox" HorizontalAlignment="Stretch" SelectionChanged="OledConnectedIdleActionComboBox_SelectionChanged">
+                                        <ComboBoxItem Content="Turn off display" />
+                                        <ComboBoxItem Content="Dim brightness to 10%" />
+                                        <ComboBoxItem Content="Dim brightness to 20%" />
+                                        <ComboBoxItem Content="Dim brightness to 30%" />
+                                        <ComboBoxItem Content="Dim brightness to 40%" />
+                                        <ComboBoxItem Content="Dim brightness to 50%" />
+                                        <ComboBoxItem Content="Dim brightness to 60%" />
+                                        <ComboBoxItem Content="Dim brightness to 70%" />
+                                    </ComboBox>
+                                </Grid>
 
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                                <TextBlock Text="Connected idle timeout:" VerticalAlignment="Center" Width="210" />
-                                <Slider x:Name="OledConnectedIdleTimeoutSlider" Minimum="1" Maximum="60" TickFrequency="1" IsSnapToTickEnabled="True" Width="210" VerticalAlignment="Center" />
-                                <TextBlock x:Name="OledConnectedIdleTimeoutValueText" FontWeight="SemiBold" VerticalAlignment="Center" Margin="8,0,0,0" Text="10 minute(s)" />
-                            </StackPanel>
+                                <Grid ColumnDefinitions="210,260,*">
+                                    <TextBlock Grid.Column="0" Text="Connected idle timeout:" VerticalAlignment="Center" />
+                                    <Slider Grid.Column="1" x:Name="OledConnectedIdleTimeoutSlider" Minimum="1" Maximum="60" TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="2" x:Name="OledConnectedIdleTimeoutValueText" FontWeight="SemiBold" VerticalAlignment="Center" Margin="8,0,0,0" Text="10 minute(s)" />
+                                </Grid>
 
-                            <CheckBox x:Name="OledAntiBurnInCheckBox" Content="Enable anti-burn-in pixel shifting"
-                                      ToolTip.Tip="Shifts pixels slightly over time to prevent OLED burn-in"
-                                      IsCheckedChanged="OledAntiBurnInCheckBox_Changed" />
+                                <CheckBox x:Name="OledAntiBurnInCheckBox" Content="Enable anti-burn-in pixel shifting"
+                                          ToolTip.Tip="Shifts pixels slightly over time to prevent OLED burn-in"
+                                          IsCheckedChanged="OledAntiBurnInCheckBox_Changed" />
+                            </StackPanel>
                         </StackPanel>
                     </Border>
 

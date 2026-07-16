@@ -211,26 +211,63 @@ public partial class MainWindow : Window
         bool channelMismatch = state == SerialConnectionState.Connected && _connection != null &&
             _connection.ConnectedChannelCount != SerialConnectionService.ExpectedChannelCount;
 
-        ConnectionStatusText.Text = state switch
+        // ── Audio tab: a simple at-a-glance state word only (no protocol/chip). ──
+        string simpleState = state switch
         {
-            SerialConnectionState.Connected when channelMismatch =>
-                $"Connected — protocol {_connection!.Protocol}, chip {(_connection.ConnectedChipId is { Length: > 0 } c ? c : "(none)")} " +
-                $"— WARNING: controller reports {_connection.ConnectedChannelCount} channel(s), " +
-                $"expected {SerialConnectionService.ExpectedChannelCount}; some channels won't function.",
-            SerialConnectionState.Connected =>
-                $"Connected — protocol {_connection!.Protocol}, chip {(_connection.ConnectedChipId is { Length: > 0 } c ? c : "(none)")}",
-            SerialConnectionState.Identifying => "Identifying controller…",
-            SerialConnectionState.Incompatible => IncompatibleControllerMessage(),
+            SerialConnectionState.Connected => "Connected",
+            SerialConnectionState.Identifying => "Connecting…",
+            SerialConnectionState.Incompatible => "Incompatible controller",
             _ => "Disconnected",
         };
+        ConnectionStatusText.Text = simpleState;
 
-        // Colour the line as a warning for the incompatible-firmware case or a
-        // connected-but-channel-mismatched controller, so the reason something is
-        // wrong stands out; otherwise fall back to the theme's default foreground.
+        // Shared status dot: green = connected, amber = connecting, red = a problem
+        // (incompatible firmware or a channel-count mismatch), grey = idle.
+        IBrush dot = state switch
+        {
+            SerialConnectionState.Connected when channelMismatch => Brushes.OrangeRed,
+            SerialConnectionState.Connected => Brushes.LimeGreen,
+            SerialConnectionState.Identifying => Brushes.Orange,
+            SerialConnectionState.Incompatible => Brushes.OrangeRed,
+            _ => Brushes.Gray,
+        };
+        ConnectionStatusDot.Fill = dot;
+        SetupConnStatusDot.Fill = dot;
+
+        // Colour the Audio state word as a warning only when something's wrong.
         if (state == SerialConnectionState.Incompatible || channelMismatch)
             ConnectionStatusText.Foreground = Brushes.OrangeRed;
         else
             ConnectionStatusText.ClearValue(TextBlock.ForegroundProperty);
+
+        // ── Setup tab: the full detail — state, protocol, chip ID, + a warning. ──
+        SetupConnStateText.Text = simpleState;
+        if (state == SerialConnectionState.Incompatible || channelMismatch)
+            SetupConnStateText.Foreground = Brushes.OrangeRed;
+        else
+            SetupConnStateText.ClearValue(TextBlock.ForegroundProperty);
+
+        bool haveConn = state == SerialConnectionState.Connected && _connection != null;
+        SetupConnProtocolText.Text = haveConn ? $"{_connection!.Protocol}" : "—";
+        SetupConnChipText.Text =
+            haveConn && _connection!.ConnectedChipId is { Length: > 0 } chip ? chip : "—";
+
+        if (channelMismatch)
+        {
+            SetupConnWarningText.Text =
+                $"Controller reports {_connection!.ConnectedChannelCount} channel(s), " +
+                $"expected {SerialConnectionService.ExpectedChannelCount}; some channels won't function.";
+            SetupConnWarningText.IsVisible = true;
+        }
+        else if (state == SerialConnectionState.Incompatible)
+        {
+            SetupConnWarningText.Text = IncompatibleControllerMessage();
+            SetupConnWarningText.IsVisible = true;
+        }
+        else
+        {
+            SetupConnWarningText.IsVisible = false;
+        }
 
         // Reconnect makes sense while disconnected or stuck on incompatible firmware
         // (e.g. after a re-flash); Disconnect while linked/scanning/incompatible.
