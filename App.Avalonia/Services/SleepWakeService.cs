@@ -39,6 +39,7 @@ public sealed class SleepWakeService : IDisposable
         _monitor.SleepRequested += OnSleepRequested;
         _monitor.WakeRequested += OnWakeRequested;
         _connection.StateChanged += OnConnectionStateChanged;
+        _connection.MessageReceived += OnControllerMessage;
         _monitor.Start();
     }
 
@@ -57,6 +58,20 @@ public sealed class SleepWakeService : IDisposable
     private void OnSleepRequested(string reason) => Dispatcher.UIThread.Post(() => ApplySleep(reason));
 
     private void OnWakeRequested(string reason) => Dispatcher.UIThread.Post(() => ApplyWake(reason));
+
+    // Physical controller input (a knob turn / button press, or the controller's own
+    // AWAKE notification) is real user activity — but it arrives over serial, which the
+    // OS idle timer (WindowsPcActivityMonitor's GetLastInputInfo) can't see. Without
+    // this, using only the controller after a PC_IDLE sleep leaves us "asleep" with OLED
+    // pushes suppressed: volume changes but the displays stay dark and are never woken.
+    // Treat any such input as a wake. Cheap no-op while already awake (ApplyWake guards
+    // on _asleep); the pre-check just avoids marshalling on every encoder detent.
+    private void OnControllerMessage(DeviceMessage msg)
+    {
+        if (!_asleep) return; // best-effort fast path; ApplyWake re-checks on the UI thread
+        if (!DeviceActivity.IsControllerUserActivity(msg.Kind)) return;
+        Dispatcher.UIThread.Post(() => ApplyWake("CONTROLLER_INPUT"));
+    }
 
     private void ApplySleep(string reason)
     {
@@ -112,6 +127,7 @@ public sealed class SleepWakeService : IDisposable
         _monitor.SleepRequested -= OnSleepRequested;
         _monitor.WakeRequested -= OnWakeRequested;
         _connection.StateChanged -= OnConnectionStateChanged;
+        _connection.MessageReceived -= OnControllerMessage;
         _monitor.Dispose();
     }
 }

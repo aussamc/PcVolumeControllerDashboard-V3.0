@@ -39,6 +39,32 @@ public sealed record DeviceMessage
 }
 
 /// <summary>
+/// Classifies inbound messages for the host's auto sleep/wake logic.
+/// </summary>
+public static class DeviceActivity
+{
+    /// <summary>
+    /// True when a message means the user is physically operating the controller — a
+    /// knob turn, a button press, or the controller's own local-wake notification
+    /// (<c>AWAKE,…</c>). The host treats this as activity that should wake a sleeping
+    /// controller: controller input arrives over serial and is invisible to the OS
+    /// idle timer (<c>GetLastInputInfo</c>), so without this, using only the knobs
+    /// after a <c>PC_IDLE</c> sleep would leave the OLEDs blanked and their state
+    /// pushes suppressed while volume still changed. Keepalive <c>PONG</c>s, the
+    /// controller's <c>SLEEPING</c> ack, HELLO, debug and error lines are not activity.
+    /// </summary>
+    public static bool IsControllerUserActivity(DeviceMessageKind kind) => kind switch
+    {
+        DeviceMessageKind.EncoderTurn
+            or DeviceMessageKind.ButtonShort
+            or DeviceMessageKind.ButtonLong
+            or DeviceMessageKind.ButtonDouble
+            or DeviceMessageKind.Awake => true,
+        _ => false,
+    };
+}
+
+/// <summary>
 /// Pure parser for the inbound serial line protocol. Platform-neutral and free of
 /// any connection/IO concerns so it can be unit-tested and shared across hosts.
 /// </summary>
