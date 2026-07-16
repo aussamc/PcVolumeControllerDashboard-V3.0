@@ -128,6 +128,21 @@ public sealed class WasapiAudioBackend : IAudioBackend
         _sessionCacheExpiry = DateTime.MinValue;
     }
 
+    /// <summary>
+    /// Picks up a default-device change signalled by the COM callback, on the
+    /// consumer's thread (all device mutation stays single-threaded). Called at
+    /// the top of every public read/write, not just
+    /// <see cref="GetAvailableTargets"/> — a write-only consumer (the
+    /// AudioWriteQueue's dedicated instance) never enumerates targets, and its
+    /// MASTER/MIC writes must still follow the default device.
+    /// </summary>
+    private void EnsureFreshDevices()
+    {
+        if (!_pendingDeviceRefresh) return;
+        _pendingDeviceRefresh = false;
+        RefreshDefaultDevice();
+    }
+
     // ─────────────────────────────────────────── session enumeration ──
 
     /// <summary>
@@ -243,13 +258,7 @@ public sealed class WasapiAudioBackend : IAudioBackend
 
     public IReadOnlyList<AudioTarget> GetAvailableTargets()
     {
-        // Pick up any default-device change signalled by the COM callback, on
-        // this (consumer) thread — keeps all device mutation single-threaded.
-        if (_pendingDeviceRefresh)
-        {
-            _pendingDeviceRefresh = false;
-            RefreshDefaultDevice();
-        }
+        EnsureFreshDevices();
 
         var targets = new List<AudioTarget>();
 
@@ -328,6 +337,7 @@ public sealed class WasapiAudioBackend : IAudioBackend
     {
         try
         {
+            EnsureFreshDevices();
             if (IsMasterKey(key))
                 return _renderDevice?.AudioEndpointVolume.MasterVolumeLevelScalar ?? -1f;
             if (IsMicKey(key))
@@ -351,6 +361,7 @@ public sealed class WasapiAudioBackend : IAudioBackend
     {
         try
         {
+            EnsureFreshDevices();
             // Endpoints are always a valid live target.
             if (IsMasterKey(key) || IsMicKey(key)) return true;
 
@@ -373,6 +384,7 @@ public sealed class WasapiAudioBackend : IAudioBackend
         float v = Math.Clamp(normalizedVolume, 0f, 1f);
         try
         {
+            EnsureFreshDevices();
             if (IsMasterKey(key))
             {
                 if (_renderDevice == null) return false;
@@ -408,6 +420,7 @@ public sealed class WasapiAudioBackend : IAudioBackend
     {
         try
         {
+            EnsureFreshDevices();
             if (IsMasterKey(key))
             {
                 if (_renderDevice == null) return -1;
@@ -453,6 +466,7 @@ public sealed class WasapiAudioBackend : IAudioBackend
     {
         try
         {
+            EnsureFreshDevices();
             if (IsMasterKey(key))
                 return _renderDevice?.AudioEndpointVolume.Mute;
             if (IsMicKey(key))
@@ -472,6 +486,7 @@ public sealed class WasapiAudioBackend : IAudioBackend
     {
         try
         {
+            EnsureFreshDevices();
             if (IsMasterKey(key))
             {
                 if (_renderDevice == null) return false;
@@ -502,6 +517,7 @@ public sealed class WasapiAudioBackend : IAudioBackend
     {
         try
         {
+            EnsureFreshDevices();
             if (IsMasterKey(key))
             {
                 if (_renderDevice == null) return null;
