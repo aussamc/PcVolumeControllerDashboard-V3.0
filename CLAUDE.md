@@ -124,7 +124,7 @@ Notes:
 
 ## Key constants
 
-- Dashboard version: **3.21** (Avalonia host). Required controller protocol: **2.24**
+- Dashboard version: **3.22** (Avalonia host). Required controller protocol: **2.24**
   (firmware v2.28 is backward-compatible — v2.28 nudges the LARGE_VOLUME header down to
   y3 so the anti-burn shift can't wrap it, a display-only change over v2.27; wire protocol
   unchanged). Expected channels: **6**.
