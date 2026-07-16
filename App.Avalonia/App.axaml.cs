@@ -263,6 +263,27 @@ public partial class App : Application
             return backend;
         });
 
+        // Audio write queue: applies volume/mute writes on a dedicated thread with
+        // per-key coalescing, so a slow endpoint driver (network speaker, Bluetooth)
+        // can't stall the UI thread / encoder pipeline. It writes through its own
+        // backend instance (created lazily on the worker thread — COM objects never
+        // cross threads); VoiceMeeter is the exception (its Remote DLL wants one
+        // login per process, and its local in-process calls are fast), so there the
+        // worker writes via the shared backend.
+        services.AddSingleton<global::PcVolumeControllerDashboard.Core.Audio.AudioWriteQueue>(sp =>
+        {
+            var backend = (Audio.SwitchableAudioBackend)sp.GetRequiredService<global::PcVolumeControllerDashboard.Core.Audio.IAudioBackend>();
+            var log = sp.GetRequiredService<Services.LogService>();
+            var queue = new global::PcVolumeControllerDashboard.Core.Audio.AudioWriteQueue(
+                backend,
+                () => backend.CurrentMode == global::PcVolumeControllerDashboard.Core.AudioBackendModes.VoiceMeeter
+                    ? null
+                    : Audio.AudioBackendFactory.Create(backend.CurrentMode, log.Log),
+                log.Log);
+            backend.ModeChanged += queue.ResetWriteBackend;
+            return queue;
+        });
+
         // The shell. Transient so a future "reopen window" can rebuild it.
         services.AddTransient<MainWindow>();
 

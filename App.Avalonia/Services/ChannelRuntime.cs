@@ -33,6 +33,14 @@ public readonly record struct VolumeOverlayInfo(
 /// per-channel state below is touched on the UI thread only. The feel math lives
 /// in Core <see cref="EncoderMath"/>; this class supplies live settings and the
 /// audio writes.
+///
+/// Audio <b>writes</b> go through <see cref="AudioWriteQueue"/> rather than the
+/// backend directly: some endpoints (network speakers, Bluetooth) service a
+/// session-volume write in hundreds of ms, and writing inline on the UI thread
+/// made the knobs, OLEDs and overlay lag by seconds on such devices. The queue
+/// applies writes on its own thread with per-key coalescing; the overlay/OLED
+/// feedback here uses the queue's predicted values, so the UI responds instantly
+/// no matter how slow the device is. Reads stay on the backend (they're cheap).
 /// </summary>
 public sealed class ChannelRuntime : IDisposable
 {
@@ -53,6 +61,7 @@ public sealed class ChannelRuntime : IDisposable
 
     private readonly SerialConnectionService _connection;
     private readonly IAudioBackend _audio;
+    private readonly AudioWriteQueue _writes;
     private readonly SettingsService _settings;
     private readonly LogService _log;
 
@@ -90,10 +99,11 @@ public sealed class ChannelRuntime : IDisposable
     /// </summary>
     public event Action<VolumeOverlayInfo>? VolumeChanged;
 
-    public ChannelRuntime(SerialConnectionService connection, IAudioBackend audio, SettingsService settings, LogService log, StartupOptions startup)
+    public ChannelRuntime(SerialConnectionService connection, IAudioBackend audio, AudioWriteQueue writes, SettingsService settings, LogService log, StartupOptions startup)
     {
         _connection = connection;
         _audio = audio;
+        _writes = writes;
         _settings = settings;
         _log = log;
         _safeMode = startup.SafeMode;
@@ -324,16 +334,19 @@ public sealed class ChannelRuntime : IDisposable
                 // channels otherwise start on the next timer tick.
                 SmoothingTick();
                 RaiseVolume(index, channel, (int)Math.Round(_smoothingTarget[index] * 100),
-                    _audio.GetMuteByKey(key) ?? false);
+                    _writes.GetMute(key) ?? false);
             }
             return;
         }
 
-        int result = _audio.AdjustVolumeByKey(key, deltaPercent, channel.MinVolumePercent, channel.MaxVolumePercent);
+        // Queued write: the returned value is the queue's *prediction* of the
+        // resulting volume, available immediately even when the device itself
+        // takes hundreds of ms to service the write.
+        int result = _writes.AdjustVolume(key, deltaPercent, channel.MinVolumePercent, channel.MaxVolumePercent);
         if (result >= 0)
         {
             if (showOverlay)
-                RaiseVolume(index, channel, result, _audio.GetMuteByKey(key) ?? false);
+                RaiseVolume(index, channel, result, _writes.GetMute(key) ?? false);
             _log.Debug($"Ch{index + 1} {key}: {result}% (step {step}%)", "Audio");
         }
     }
@@ -371,7 +384,9 @@ public sealed class ChannelRuntime : IDisposable
             return true;
         }
 
-        float current = _audio.GetVolumeByKey(key);
+        // Prefer the write queue's predicted volume when writes are still in
+        // flight for this key — a device read would lag behind them.
+        float current = _writes.TryGetPredictedVolume(key) ?? _audio.GetVolumeByKey(key);
         if (current < 0f) return false; // unavailable → caller falls back to direct write
 
         _smoothingCurrent[index] = Math.Clamp(current, lo, hi);
@@ -424,9 +439,11 @@ public sealed class ChannelRuntime : IDisposable
 
             _smoothingCurrent[ch] = next;
 
-            // Write to the key captured when this channel's ramp started (honours pools).
+            // Write to the key captured when this channel's ramp started (honours
+            // pools). Queued latest-value-wins: on a slow device the ~60 Hz ticks
+            // collapse to however many writes the device can actually service.
             if (!string.IsNullOrWhiteSpace(_smoothingKey[ch]))
-                _audio.SetVolumeByKey(_smoothingKey[ch], next);
+                _writes.SetVolume(_smoothingKey[ch], next);
         }
 
         if (!anyActive) StopSmoothingTimer();
@@ -468,11 +485,13 @@ public sealed class ChannelRuntime : IDisposable
             {
                 string muteKey = ChannelTargets.ResolveActiveKey(channel, _audio);
                 if (string.IsNullOrWhiteSpace(muteKey)) return;
-                bool? muted = _audio.ToggleMuteByKey(muteKey);
+                // Queued toggle: the queue knows any still-pending mute value, so
+                // rapid presses alternate correctly even against a slow device.
+                bool? muted = _writes.ToggleMute(muteKey);
                 if (muted != null)
                 {
                     _log.Log($"Ch{index + 1} {muteKey}: {(muted.Value ? "muted" : "unmuted")}");
-                    float v = _audio.GetVolumeByKey(muteKey);
+                    float v = _writes.TryGetPredictedVolume(muteKey) ?? _audio.GetVolumeByKey(muteKey);
                     RaiseVolume(index, channel, v < 0f ? 0 : (int)Math.Round(v * 100), muted.Value, muteToggle: true);
                 }
                 break;
@@ -524,7 +543,7 @@ public sealed class ChannelRuntime : IDisposable
         {
             if (!_smoothingActive[index])
             {
-                float current = _audio.GetVolumeByKey(key);
+                float current = _writes.TryGetPredictedVolume(key) ?? _audio.GetVolumeByKey(key);
                 _smoothingCurrent[index] = current >= 0f ? current : target;
             }
             _smoothingTarget[index] = target;
@@ -535,12 +554,12 @@ public sealed class ChannelRuntime : IDisposable
         }
         else
         {
-            _audio.SetVolumeByKey(key, target);
+            _writes.SetVolume(key, target);
         }
 
         string presetName = string.IsNullOrWhiteSpace(preset.Name) ? $"Preset {presetIndex + 1}" : preset.Name;
         _log.Log($"Ch{index + 1} {key}: applied {presetName} ({preset.VolumePercent}%).");
-        RaiseVolume(index, channel, preset.VolumePercent, _audio.GetMuteByKey(key) ?? false);
+        RaiseVolume(index, channel, preset.VolumePercent, _writes.GetMute(key) ?? false);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

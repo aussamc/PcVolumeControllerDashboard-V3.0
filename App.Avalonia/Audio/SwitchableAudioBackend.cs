@@ -22,6 +22,13 @@ public sealed class SwitchableAudioBackend : IAudioBackend
     public event Action? AvailabilityChanged;
     public event Action? TargetsChanged;
 
+    /// <summary>
+    /// Raised after <see cref="SwitchTo"/> replaces the inner backend. Lets the
+    /// <c>AudioWriteQueue</c> rebuild its dedicated write-backend instance to
+    /// match the new mode.
+    /// </summary>
+    public event Action? ModeChanged;
+
     public SwitchableAudioBackend(Func<string, IAudioBackend> factory, string mode, Action<string>? log = null)
     {
         _factory = factory;
@@ -67,6 +74,7 @@ public sealed class SwitchableAudioBackend : IAudioBackend
         CurrentMode = mode;
         Wire(_inner);
 
+        ModeChanged?.Invoke();
         AvailabilityChanged?.Invoke();
         TargetsChanged?.Invoke();
     }
