@@ -633,7 +633,7 @@ public partial class MainWindow : Window
     }
 
     private void UpdateSensitivityLabel() =>
-        EncoderSensitivityValueText.Text = $"Sensitivity: {(int)Math.Round(EncoderSensitivitySlider.Value)}%";
+        EncoderSensitivityValueText.Text = $"{(int)Math.Round(EncoderSensitivitySlider.Value)}%";
 
     // ── Encoder Feel ───────────────────────────────────────────────────────────
 
@@ -1219,13 +1219,13 @@ public partial class MainWindow : Window
     }
 
     private void UpdateOledBrightnessLabel() =>
-        OledBrightnessValueText.Text = $"Brightness: {(int)Math.Round(OledBrightnessSlider.Value)}%";
+        OledBrightnessValueText.Text = $"{(int)Math.Round(OledBrightnessSlider.Value)}%";
 
     private void UpdateOledSleepTimeoutLabel() =>
-        OledSleepTimeoutValueText.Text = $"Disconnected sleep timeout: {(int)Math.Round(OledSleepTimeoutSlider.Value)} minute(s)";
+        OledSleepTimeoutValueText.Text = $"{(int)Math.Round(OledSleepTimeoutSlider.Value)} minute(s)";
 
     private void UpdateOledConnectedIdleTimeoutLabel() =>
-        OledConnectedIdleTimeoutValueText.Text = $"Connected idle timeout: {(int)Math.Round(OledConnectedIdleTimeoutSlider.Value)} minute(s)";
+        OledConnectedIdleTimeoutValueText.Text = $"{(int)Math.Round(OledConnectedIdleTimeoutSlider.Value)} minute(s)";
 
     /// <summary>
     /// Renders the six OLED previews from the Core <see cref="OledRenderer"/> using

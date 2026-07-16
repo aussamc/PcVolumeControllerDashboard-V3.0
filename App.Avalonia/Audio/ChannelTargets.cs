@@ -48,7 +48,14 @@ public static class ChannelTargets
         !string.IsNullOrWhiteSpace(ch.TargetKey) ||
         (ch.TargetKeys != null && ch.TargetKeys.Exists(k => !string.IsNullOrWhiteSpace(k)));
 
-    /// <summary>True when the channel is in pool mode (has at least one pool entry).</summary>
+    /// <summary>
+    /// True only when the channel is a genuine multi-app pool — i.e. it has <b>two or
+    /// more</b> non-empty target keys. A single entry is just a plain single target
+    /// (the pool degenerates to <see cref="ChannelSettings.TargetKey"/>), so it must not
+    /// render as "(pool)": e.g. a freshly-assigned Master whose lone TargetKey was
+    /// mirrored into TargetKeys is a single target, not a pool.
+    /// </summary>
     public static bool UsesPool(ChannelSettings ch) =>
-        ch.TargetKeys != null && ch.TargetKeys.Exists(k => !string.IsNullOrWhiteSpace(k));
+        ch.TargetKeys != null &&
+        ch.TargetKeys.FindAll(k => !string.IsNullOrWhiteSpace(k)).Count >= 2;
 }

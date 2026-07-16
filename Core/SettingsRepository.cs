@@ -468,14 +468,43 @@ public static class SettingsRepository
             migrated = true;
         }
 
-        // Ongoing: ensure TargetKeys is never null and is consistent with TargetKey.
-        foreach (ChannelSettings ch in settings.Channels)
+        // v8 → v9: the v7→v8 seed mirrored every single TargetKey into TargetKeys, which
+        // made a plainly-assigned channel (e.g. Master) render as a multi-app "pool".
+        // A pool is only meaningful with 2+ entries, so clear a TargetKeys list that is
+        // just the single TargetKey duplicated — restoring clean single-target channels.
+        // Genuine pools (2+ non-empty entries) are left untouched.
+        if (settings.SettingsVersion < 9)
         {
-            ch.TargetKeys ??= new List<string>();
-            if (ch.TargetKeys.Count == 0 && !string.IsNullOrWhiteSpace(ch.TargetKey))
-                ch.TargetKeys.Add(ch.TargetKey);
+            UnseedSingleTargetPools(settings.Channels);
+            foreach (ProfileEntry profile in settings.Profiles ?? new List<ProfileEntry>())
+                UnseedSingleTargetPools(profile.Channels);
+            settings.SettingsVersion = 9;
+            migrated = true;
         }
 
+        // Ongoing: ensure TargetKeys is never null. Do NOT auto-seed it from TargetKey —
+        // a single target is represented by TargetKey alone; TargetKeys is only for a
+        // genuine multi-app pool (2+ entries). Auto-seeding here is what made a single
+        // target present as a pool (see the v8→v9 cleanup above).
+        foreach (ChannelSettings ch in settings.Channels)
+            ch.TargetKeys ??= new List<string>();
+
         return migrated;
+    }
+
+    // Clears a TargetKeys list that is just the single TargetKey duplicated (the v7→v8
+    // seed artefact), so a single-target channel stops presenting as a pool. Genuine
+    // pools (2+ non-empty entries) are preserved.
+    private static void UnseedSingleTargetPools(ChannelSettings[]? channels)
+    {
+        if (channels == null) return;
+        foreach (ChannelSettings ch in channels)
+        {
+            if (ch.TargetKeys == null) continue;
+            List<string> nonEmpty = ch.TargetKeys.FindAll(k => !string.IsNullOrWhiteSpace(k));
+            if (nonEmpty.Count == 1 &&
+                string.Equals(nonEmpty[0], ch.TargetKey, StringComparison.OrdinalIgnoreCase))
+                ch.TargetKeys.Clear();
+        }
     }
 }

@@ -93,15 +93,15 @@ public sealed class OledRendererTests
     {
         var r = new OledRenderer();
         r.RenderLargeVolume("Master", 100, muted: false);
-        // The rule is a full-width lit row at y18; nothing is lit at y21 yet.
-        LitInBand(r, 18, 19).Should().Be(W);
-        LitInBand(r, 21, 22).Should().Be(0);
+        // The rule is a full-width lit row at y20; the gap just below (y23) is clear.
+        LitInBand(r, 20, 21).Should().Be(W);
+        LitInBand(r, 23, 24).Should().Be(0);
 
         r.ApplyDisplayOffset(3);
 
-        // After a 3px downward shift the rule moves to y21; y18 is now clear.
-        LitInBand(r, 21, 22).Should().Be(W, "the rule shifts down by the offset");
-        LitInBand(r, 18, 19).Should().Be(0);
+        // After a 3px downward shift the full-width rule lands at y23; it has left y20.
+        LitInBand(r, 23, 24).Should().Be(W, "the rule shifts down by the offset");
+        LitInBand(r, 20, 21).Should().NotBe(W);
     }
 
     [Fact]
@@ -127,7 +127,7 @@ public sealed class OledRendererTests
 
         bool[] px = r.Pixels.ToArray();
         // In the big-number band the edge columns must stay dark (centred, not
-        // overflowing). The y18 rule spans full width by design, so it's excluded.
+        // overflowing). The y20 rule spans full width by design, but sits above this band.
         for (int y = 26; y < 58; y++)
         {
             px[y * W + 0].Should().BeFalse();

@@ -124,7 +124,7 @@ public sealed class SettingsRepositoryTests : IDisposable
         settings.Profiles.Should().HaveCount(1);
         settings.Profiles[0].Name.Should().Be("Default");
         settings.ActiveProfileName.Should().Be("Default");
-        settings.SettingsVersion.Should().Be(8);
+        settings.SettingsVersion.Should().Be(9);
     }
 
     [Fact]
@@ -133,7 +133,7 @@ public sealed class SettingsRepositoryTests : IDisposable
         // A fully-current settings object should not be flagged as migrated.
         DashboardSettings settings = DashboardSettings.CreateDefault();
         settings.Channels = DashboardSettings.CreateDefaultChannels();
-        settings.SettingsVersion = 8;  // current schema version
+        settings.SettingsVersion = 9;  // current schema version
         settings.Profiles = new List<ProfileEntry>
         {
             new ProfileEntry { Name = "Default", Channels = DashboardSettings.CreateDefaultChannels() }
@@ -170,7 +170,7 @@ public sealed class SettingsRepositoryTests : IDisposable
         // Out-of-range values should be clamped.
         settings.Channels[1].MinVolumePercent.Should().Be(0);
         settings.Channels[1].MaxVolumePercent.Should().Be(100);
-        settings.SettingsVersion.Should().Be(8);
+        settings.SettingsVersion.Should().Be(9);
     }
 
     // ── Normalize — value clamping ────────────────────────────────────────────────
@@ -257,6 +257,53 @@ public sealed class SettingsRepositoryTests : IDisposable
         // The edited mapping survives, and the profile is re-synced to it.
         settings.Channels[1].TargetKey.Should().Be("PROC:chrome");
         settings.Profiles[0].Channels[1].TargetKey.Should().Be("PROC:chrome");
+    }
+
+    // ── Single-target channels must not be seeded into a "pool" (item #4) ───────────
+
+    // A fresh install's Master is a single assigned target (TargetKey="MASTER") with an
+    // empty pool list. Normalize must not auto-seed TargetKeys from TargetKey — doing so
+    // made Master render as a multi-app "(pool)".
+    [Fact]
+    public void Normalize_FreshSingleTargetChannel_LeavesPoolEmpty()
+    {
+        var settings = DashboardSettings.CreateDefault();  // ch1 = MASTER, empty TargetKeys
+
+        SettingsRepository.Normalize(settings, ChannelCount, MaxSensitivity);
+
+        settings.Channels[0].TargetKey.Should().Be("MASTER");
+        settings.Channels[0].TargetKeys.Should().BeEmpty("a single target must not become a pool");
+    }
+
+    // Existing installs already have TargetKeys seeded with the single TargetKey (the
+    // v7→v8 artefact). The v8→v9 migration must clear that 1-entry duplicate so the
+    // channel is a clean single target again.
+    [Fact]
+    public void Normalize_UnseedsSingleTargetPoolFromExistingFile()
+    {
+        var settings = new DashboardSettings { SettingsVersion = 8 };
+        settings.Channels = DashboardSettings.CreateDefaultChannels();
+        settings.Channels[0].TargetKey = "MASTER";
+        settings.Channels[0].TargetKeys = new List<string> { "MASTER" };  // seeded duplicate
+
+        SettingsRepository.Normalize(settings, ChannelCount, MaxSensitivity);
+
+        settings.Channels[0].TargetKeys.Should().BeEmpty("a 1-entry list duplicating TargetKey is not a pool");
+        settings.Channels[0].TargetKey.Should().Be("MASTER");
+    }
+
+    // A genuine multi-app pool (2+ distinct entries) must be preserved untouched.
+    [Fact]
+    public void Normalize_PreservesGenuineMultiAppPool()
+    {
+        var settings = new DashboardSettings { SettingsVersion = 8 };
+        settings.Channels = DashboardSettings.CreateDefaultChannels();
+        settings.Channels[1].TargetKey = "PROC:chrome";
+        settings.Channels[1].TargetKeys = new List<string> { "PROC:chrome", "PROC:firefox" };
+
+        SettingsRepository.Normalize(settings, ChannelCount, MaxSensitivity);
+
+        settings.Channels[1].TargetKeys.Should().Equal("PROC:chrome", "PROC:firefox");
     }
 
     // ── Save / Load roundtrip ─────────────────────────────────────────────────────
