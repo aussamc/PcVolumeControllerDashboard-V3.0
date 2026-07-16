@@ -11,7 +11,7 @@ namespace PcVolumeControllerDashboard.Platform.Windows;
 /// (microphone) endpoints plus per-application sessions.
 ///
 /// Absorbs the WPF host's former <c>AudioService</c> (device enumeration, the
-/// 100 ms session cache, COM-pointer lifetime management) together with the
+/// session cache, COM-pointer lifetime management) together with the
 /// host's session→target resolution, label disambiguation and master/mic
 /// endpoint handling, so the live <c>AudioSessionControl</c> handles never leave
 /// this assembly — callers address everything by <see cref="AudioTarget.Key"/>.
@@ -35,9 +35,18 @@ public sealed class WasapiAudioBackend : IAudioBackend
     // while the UI thread reads it would be a cross-thread COM race.
     private volatile bool _pendingDeviceRefresh;
 
-    private List<AudioSessionControl> _sessionCache = new();
+    // A live session paired with its owning process's name, resolved once when the
+    // session cache is (re)built. Session enumeration on Windows returns every
+    // session since the audio engine started — including expired ones whose process
+    // is long dead — and a Process.GetProcessById on a dead PID throws. Doing that
+    // lookup per session per volume/mute call made every operation slower the
+    // longer the PC had been on; resolving the name once per cache refresh (and
+    // skipping expired sessions entirely) keeps the per-call cost flat.
+    private readonly record struct CachedSession(AudioSessionControl Session, string ProcessName, int ProcessId);
+
+    private List<CachedSession> _sessionCache = new();
     private DateTime _sessionCacheExpiry = DateTime.MinValue;
-    private const int SessionCacheTtlMs = 100;
+    private const int SessionCacheTtlMs = 500;
 
     // Render-endpoint devices enumerated for the current session list. Held alive
     // because the AudioSessionControl objects borrow COM pointers from each
@@ -115,7 +124,7 @@ public sealed class WasapiAudioBackend : IAudioBackend
 
     public void InvalidateCache()
     {
-        _sessionCache = new List<AudioSessionControl>();
+        _sessionCache = new List<CachedSession>();
         _sessionCacheExpiry = DateTime.MinValue;
     }
 
@@ -124,15 +133,20 @@ public sealed class WasapiAudioBackend : IAudioBackend
     /// <summary>
     /// Enumerates active audio sessions across <b>every</b> active render
     /// endpoint (not just the default device), so apps rendering to a non-default
-    /// output are still seen. Cached for <see cref="SessionCacheTtlMs"/> ms to
-    /// avoid hammering <c>RefreshSessions()</c> during volume smoothing.
+    /// output are still seen. Expired sessions (dead processes Windows still
+    /// reports) are skipped, and each surviving session's process name is resolved
+    /// here, once — see <see cref="CachedSession"/>. Cached for
+    /// <see cref="SessionCacheTtlMs"/> ms to avoid hammering
+    /// <c>RefreshSessions()</c> from the UI poll and volume smoothing.
     /// </summary>
-    private List<AudioSessionControl> GetActiveSessions()
+    private List<CachedSession> GetActiveSessions()
     {
         if (DateTime.Now < _sessionCacheExpiry && _sessionCache.Count > 0)
             return _sessionCache;
 
-        var result = new List<AudioSessionControl>();
+        var result = new List<CachedSession>();
+        // One name lookup per unique PID per refresh; null = known-dead PID.
+        var pidNames = new Dictionary<uint, string?>();
 
         DisposeEnumeratedRenderDevices();
 
@@ -152,12 +166,7 @@ public sealed class WasapiAudioBackend : IAudioBackend
                     {
                         AudioSessionManager mgr = device.AudioSessionManager;
                         mgr.RefreshSessions();
-                        SessionCollection sessions = mgr.Sessions;
-                        if (sessions != null)
-                        {
-                            for (int i = 0; i < sessions.Count; i++)
-                                result.Add(sessions[i]);
-                        }
+                        AddLiveSessions(mgr.Sessions, result, pidNames);
                     }
                     catch { /* skip this endpoint, keep enumerating the rest */ }
                 }
@@ -171,12 +180,7 @@ public sealed class WasapiAudioBackend : IAudioBackend
             {
                 AudioSessionManager mgr = _renderDevice.AudioSessionManager;
                 mgr.RefreshSessions();
-                SessionCollection sessions = mgr.Sessions;
-                if (sessions != null)
-                {
-                    for (int i = 0; i < sessions.Count; i++)
-                        result.Add(sessions[i]);
-                }
+                AddLiveSessions(mgr.Sessions, result, pidNames);
             }
             catch { /* returns partial list */ }
         }
@@ -184,6 +188,46 @@ public sealed class WasapiAudioBackend : IAudioBackend
         _sessionCache = result;
         _sessionCacheExpiry = DateTime.Now.AddMilliseconds(SessionCacheTtlMs);
         return result;
+    }
+
+    /// <summary>
+    /// Appends the non-expired sessions of one collection to <paramref name="result"/>,
+    /// tagging each with its process name (skipped when the process can't be
+    /// resolved — a session whose process just died is as good as expired).
+    /// </summary>
+    private static void AddLiveSessions(
+        SessionCollection? sessions, List<CachedSession> result, Dictionary<uint, string?> pidNames)
+    {
+        if (sessions == null) return;
+
+        for (int i = 0; i < sessions.Count; i++)
+        {
+            try
+            {
+                AudioSessionControl session = sessions[i];
+                if (session.State == AudioSessionState.AudioSessionStateExpired)
+                    continue;
+
+                uint pid = session.GetProcessID;
+                if (pid == 0 || session.SimpleAudioVolume == null)
+                    continue;
+
+                if (!pidNames.TryGetValue(pid, out string? name))
+                {
+                    try
+                    {
+                        using Process process = Process.GetProcessById((int)pid);
+                        name = process.ProcessName;
+                    }
+                    catch { name = null; }
+                    pidNames[pid] = name;
+                }
+
+                if (name != null)
+                    result.Add(new CachedSession(session, name, (int)pid));
+            }
+            catch { /* skip this session, keep the rest */ }
+        }
     }
 
     private void DisposeEnumeratedRenderDevices()
@@ -217,9 +261,9 @@ public sealed class WasapiAudioBackend : IAudioBackend
         // process produces more than one session: first instance keeps the bare
         // name ("chrome"), subsequent ones are suffixed ("chrome (2)", …).
         var sessionTargets = new List<AudioTarget>();
-        foreach (AudioSessionControl session in GetActiveSessions())
+        foreach (CachedSession cached in GetActiveSessions())
         {
-            AudioTarget? target = TryCreateTargetFromSession(session);
+            AudioTarget? target = TryCreateTargetFromSession(cached);
             if (target != null)
                 sessionTargets.Add(target);
         }
@@ -237,28 +281,20 @@ public sealed class WasapiAudioBackend : IAudioBackend
         return targets;
     }
 
-    private static AudioTarget? TryCreateTargetFromSession(
-        AudioSessionControl session,
-        string? requiredProcessName = null)
+    private static AudioTarget? TryCreateTargetFromSession(CachedSession cached)
     {
         try
         {
-            uint pidRaw = session.GetProcessID;
-            if (pidRaw == 0 || session.SimpleAudioVolume == null)
-                return null;
-
-            using Process process = Process.GetProcessById((int)pidRaw);
-
-            if (!string.IsNullOrWhiteSpace(requiredProcessName) &&
-                !process.ProcessName.Equals(requiredProcessName, StringComparison.OrdinalIgnoreCase))
+            AudioSessionControl session = cached.Session;
+            if (session.SimpleAudioVolume == null)
                 return null;
 
             return new AudioTarget
             {
-                Key         = $"PROC:{process.ProcessName}",
-                Label       = process.ProcessName,
-                ProcessName = process.ProcessName,
-                ProcessId   = (int)pidRaw,
+                Key         = $"PROC:{cached.ProcessName}",
+                Label       = cached.ProcessName,
+                ProcessName = cached.ProcessName,
+                ProcessId   = cached.ProcessId,
                 IsLive      = true,
                 Volume      = Math.Clamp((int)Math.Round(session.SimpleAudioVolume.Volume * 100), 0, 100),
                 Muted       = session.SimpleAudioVolume.Mute,
@@ -276,19 +312,10 @@ public sealed class WasapiAudioBackend : IAudioBackend
     {
         string processName = key.StartsWith("PROC:", StringComparison.OrdinalIgnoreCase) ? key[5..] : key;
 
-        foreach (AudioSessionControl session in GetActiveSessions())
+        foreach (CachedSession cached in GetActiveSessions())
         {
-            bool matches;
-            try
-            {
-                uint pidRaw = session.GetProcessID;
-                if (pidRaw == 0 || session.SimpleAudioVolume == null) continue;
-                using Process process = Process.GetProcessById((int)pidRaw);
-                matches = process.ProcessName.Equals(processName, StringComparison.OrdinalIgnoreCase);
-            }
-            catch { continue; }
-
-            if (matches) yield return session;
+            if (cached.ProcessName.Equals(processName, StringComparison.OrdinalIgnoreCase))
+                yield return cached.Session;
         }
     }
 
