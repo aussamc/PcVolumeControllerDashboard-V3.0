@@ -269,11 +269,16 @@
                                 <Button x:Name="CheckUpdatesButton" Content="Check for updates"
                                         Click="CheckUpdatesButton_Click"
                                         ToolTip.Tip="Query GitHub for a newer release of the dashboard" />
+                                <Button x:Name="UpdateInstallButton" Content="Download &amp; install" IsVisible="False"
+                                        Classes="accent"
+                                        Click="UpdateInstall_Click"
+                                        ToolTip.Tip="Download the update for your platform and launch the installer" />
                                 <Button x:Name="ViewReleaseButton" Content="View release" IsVisible="False"
                                         Click="ViewReleaseButton_Click"
                                         ToolTip.Tip="Open the release page in your browser" />
                             </StackPanel>
                             <TextBlock x:Name="UpdateStatusText" Classes="muted" Margin="0,8,0,0" IsVisible="False" />
+                            <TextBlock x:Name="UpdateInstallProgress" Classes="muted" Margin="0,6,0,0" IsVisible="False" />
                         </StackPanel>
                     </Border>
 

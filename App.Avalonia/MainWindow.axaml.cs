@@ -916,6 +916,12 @@ public partial class MainWindow : Window
 
         CheckUpdatesButton.IsEnabled = false;
         ViewReleaseButton.IsVisible = false;
+        // Reset the install affordances for a fresh check (unless a download is in flight).
+        if (!_downloading)
+        {
+            UpdateInstallButton.IsVisible = false;
+            UpdateInstallProgress.IsVisible = false;
+        }
         ShowUpdateStatus("Checking for updates…");
 
         UpdateCheckResult result = await service.CheckAsync(DashboardVersion);
@@ -933,6 +939,21 @@ public partial class MainWindow : Window
             _latestReleaseUrl = result.ReleaseUrl;
             ViewReleaseButton.IsVisible = true;
             ShowUpdateStatus($"Update available: version {result.LatestVersion} (you have {DashboardVersion}).");
+
+            // Offer an in-app Download & install button right here in the Software Updates
+            // box (parity with the auto-check banner). PrepareInstall resolves the asset for
+            // this platform and reveals the button; if there's no installable package
+            // (e.g. macOS) or we're in --safe mode, the button stays hidden and the user
+            // falls back to "View release".
+            var info = new UpdateAvailableInfo
+            {
+                LatestVersion = result.LatestVersion,
+                ReleaseUrl = result.ReleaseUrl,
+                Assets = result.Assets,
+            };
+            if (!PrepareInstall(info))
+                ShowUpdateStatus($"Update available: version {result.LatestVersion} (you have {DashboardVersion}). " +
+                                 "No installable package for your platform — use “View release”.");
         }
         else
         {
@@ -963,39 +984,75 @@ public partial class MainWindow : Window
 
     private void ShowUpdateBanner(UpdateAvailableInfo info)
     {
-        _bannerUpdate = info;
         UpdateBannerText.Text = $"Version {info.LatestVersion} is available — you have {DashboardVersion}.";
         UpdateBanner.IsVisible = true;
 
-        // Resolve the download asset for this platform. No asset (macOS / missing) or safe
-        // mode → the banner offers only "View release"; the install button stays hidden.
+        // No installable asset (macOS / missing) or safe mode → offer only "View release".
+        if (!PrepareInstall(info))
+            return;
+
+        // "Automatically download & install updates": pre-download in the background so the
+        // user just clicks "Install now". Launching the installer is always an explicit
+        // click — we never run it unprompted.
+        bool alreadyDownloaded = _downloadedPath != null && _downloadedVersion == info.LatestVersion;
+        if (_settings.AutoApplyUpdates && !_downloading && !alreadyDownloaded)
+            _ = DownloadUpdateAsync(applyWhenDone: false);
+    }
+
+    // Resolves the download asset for `info` on this platform and wires the shared install
+    // affordances — the banner button AND the Software Updates box button — to match.
+    // Returns false (both install buttons hidden) when there's no installable package for
+    // this platform or we're in --safe mode; the caller falls back to "View release".
+    private bool PrepareInstall(UpdateAvailableInfo info)
+    {
+        _bannerUpdate = info;
         _bannerPlatform = UpdateInstaller.DetectPlatform();
         _bannerAsset = UpdateAssetSelector.Select(info.Assets, _bannerPlatform);
 
         bool canInstall = _bannerAsset != null && !_safeMode;
         UpdateBannerInstallButton.IsVisible = canInstall;
+        UpdateInstallButton.IsVisible = canInstall;
         if (!canInstall)
-            return;
+            return false;
 
         if (_downloadedPath != null && _downloadedVersion == info.LatestVersion)
-        {
             // Already fetched this version (e.g. auto-download finished) → one-click install.
-            UpdateBannerInstallButton.Content = "Install now";
-            UpdateBannerInstallButton.IsEnabled = true;
-            return;
-        }
+            SetInstallContent("Install now", enabled: true);
+        else
+            SetInstallContent("Download & install", enabled: !_downloading);
 
-        UpdateBannerInstallButton.Content = "Download & install";
-        UpdateBannerInstallButton.IsEnabled = !_downloading;
-
-        // "Automatically download & install updates": pre-download in the background so the
-        // user just clicks "Install now". Launching the installer is always an explicit
-        // click — we never run it unprompted.
-        if (_settings.AutoApplyUpdates && !_downloading && _downloadedVersion != info.LatestVersion)
-            _ = DownloadUpdateAsync(applyWhenDone: false);
+        return true;
     }
 
-    private async void UpdateBannerInstall_Click(object? sender, RoutedEventArgs e)
+    // The banner and the Software Updates box share one install flow, so their buttons and
+    // progress text always show the same state regardless of which one the user clicked.
+    private void SetInstallContent(string content, bool enabled)
+    {
+        UpdateBannerInstallButton.Content = content;
+        UpdateBannerInstallButton.IsEnabled = enabled;
+        UpdateInstallButton.Content = content;
+        UpdateInstallButton.IsEnabled = enabled;
+    }
+
+    private void SetInstallEnabled(bool enabled)
+    {
+        UpdateBannerInstallButton.IsEnabled = enabled;
+        UpdateInstallButton.IsEnabled = enabled;
+    }
+
+    private void SetInstallProgress(string text)
+    {
+        UpdateBannerProgress.IsVisible = true;
+        UpdateBannerProgress.Text = text;
+        UpdateInstallProgress.IsVisible = true;
+        UpdateInstallProgress.Text = text;
+    }
+
+    private async void UpdateBannerInstall_Click(object? sender, RoutedEventArgs e) => await InstallClickedAsync();
+
+    private async void UpdateInstall_Click(object? sender, RoutedEventArgs e) => await InstallClickedAsync();
+
+    private async System.Threading.Tasks.Task InstallClickedAsync()
     {
         if (_bannerAsset == null || _bannerUpdate == null)
             return;
@@ -1019,27 +1076,24 @@ public partial class MainWindow : Window
 
         _downloading = true;
         string version = _bannerUpdate.LatestVersion;
-        UpdateBannerInstallButton.IsEnabled = false;
-        UpdateBannerProgress.IsVisible = true;
-        UpdateBannerProgress.Text = "Starting download…";
+        SetInstallEnabled(false);
+        SetInstallProgress("Starting download…");
 
-        var progress = new Progress<double>(p => UpdateBannerProgress.Text = $"Downloading… {p * 100:0}%");
+        var progress = new Progress<double>(p => SetInstallProgress($"Downloading… {p * 100:0}%"));
         UpdateDownloadResult result = await installer.DownloadAsync(_bannerAsset, progress);
         _downloading = false;
 
         if (!result.Success)
         {
-            UpdateBannerProgress.Text = $"Download failed: {result.ErrorMessage} Use “View release” to download it manually.";
-            UpdateBannerInstallButton.Content = "Retry download";
-            UpdateBannerInstallButton.IsEnabled = true;
+            SetInstallProgress($"Download failed: {result.ErrorMessage} Use “View release” to download it manually.");
+            SetInstallContent("Retry download", enabled: true);
             return;
         }
 
         _downloadedPath = result.FilePath;
         _downloadedVersion = version;
-        UpdateBannerProgress.Text = "Downloaded and verified.";
-        UpdateBannerInstallButton.Content = "Install now";
-        UpdateBannerInstallButton.IsEnabled = true;
+        SetInstallProgress("Downloaded and verified.");
+        SetInstallContent("Install now", enabled: true);
 
         if (applyWhenDone)
             ApplyDownloadedUpdate();
@@ -1051,8 +1105,7 @@ public partial class MainWindow : Window
         if (installer == null || _downloadedPath == null)
             return;
 
-        UpdateBannerProgress.IsVisible = true;
-        UpdateBannerProgress.Text = "Launching the installer…";
+        SetInstallProgress("Launching the installer…");
 
         if (installer.Apply(_downloadedPath, _bannerPlatform))
         {
@@ -1063,7 +1116,7 @@ public partial class MainWindow : Window
         }
         else
         {
-            UpdateBannerProgress.Text = "The update was handed to your system package installer.";
+            SetInstallProgress("The update was handed to your system package installer.");
         }
     }
 
