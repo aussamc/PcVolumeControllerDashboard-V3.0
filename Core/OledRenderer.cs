@@ -334,15 +334,17 @@ namespace PcVolumeControllerDashboard.Core
 
         /// <summary>
         /// Mode: Large volume number. Mirrors the firmware LARGE_VOLUME branch
-        /// (v2.26): channel name at size 2, a rule at y18, then a size-4 value.
-        /// There is no separate mute strip — when muted, the big number is
-        /// replaced by the word "MUTE"; when unmuted, the volume number returns.
+        /// (v2.28): channel name at size 2 (drawn at y3), a rule at y20, then a
+        /// size-4 value at y26. There is no separate mute strip — when muted, the
+        /// big number is replaced by the word "MUTE"; when unmuted, the volume
+        /// number returns. The header sits at y3 (not y0) so all content is within
+        /// rows 3..60, leaving a top margin the anti-burn shift can't wrap.
         /// </summary>
         public void RenderLargeVolume(string label, int volume, bool muted)
         {
             ClearDisplay();
-            DrawCenteredSmall(label, 0, 2);
-            DrawHLine(0, 18, 128);
+            DrawCenteredSmall(label, 3, 2);
+            DrawHLine(0, 20, 128);
             string bigText = muted ? "MUTE" : $"{volume}%";
             DrawString(bigText, (128 - TextWidth(bigText, 4)) / 2, 26, 4);
         }

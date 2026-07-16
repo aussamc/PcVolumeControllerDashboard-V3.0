@@ -307,15 +307,6 @@
                                     HorizontalAlignment="Left"
                                     ToolTip.Tip="Clear the paired controller chip ID so the next connection auto-pairs with any controller"
                                     Click="ForgetControllerButton_Click" />
-
-                            <Separator Margin="0,8,0,8" />
-                            <TextBlock Text="Setup Wizard" FontWeight="SemiBold" Margin="0,0,0,4" />
-                            <TextBlock Classes="muted" Margin="0,0,0,8"
-                                       Text="Re-run the guided setup to reconnect, check the displays, and re-map your channels." />
-                            <Button x:Name="RunSetupWizardButton" Content="Run setup wizard again"
-                                    HorizontalAlignment="Left"
-                                    ToolTip.Tip="Open the first-run setup wizard again"
-                                    Click="RunSetupWizardButton_Click" />
                         </StackPanel>
                     </Expander>
 
@@ -362,8 +353,11 @@
                         <StackPanel>
                             <TextBlock Classes="muted" Margin="0,0,0,10"
                                        Text="Controls how much the volume changes for each encoder click. 50% is the default; higher values allow much faster changes." />
-                            <Slider x:Name="EncoderSensitivitySlider" Minimum="0" Maximum="500" TickFrequency="10" IsSnapToTickEnabled="True" Width="420" HorizontalAlignment="Left" />
-                            <TextBlock x:Name="EncoderSensitivityValueText" FontWeight="SemiBold" Margin="0,8,0,0" Text="Sensitivity: 50%" />
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Sensitivity:" VerticalAlignment="Center" Width="110" />
+                                <Slider x:Name="EncoderSensitivitySlider" Minimum="0" Maximum="500" TickFrequency="10" IsSnapToTickEnabled="True" Width="360" VerticalAlignment="Center" />
+                                <TextBlock x:Name="EncoderSensitivityValueText" FontWeight="SemiBold" VerticalAlignment="Center" Margin="8,0,0,0" Text="50%" />
+                            </StackPanel>
                         </StackPanel>
                     </Expander>
 
@@ -487,6 +481,15 @@
                             <TextBlock x:Name="SettingsIoStatusText" Classes="muted" Margin="0,8,0,0" IsVisible="False" />
                             <TextBlock Classes="muted" FontStyle="Italic" Margin="0,8,0,0"
                                        Text="Settings are saved automatically whenever you make a change." />
+
+                            <Separator Margin="0,12,0,10" />
+                            <TextBlock Text="Setup Wizard" FontWeight="SemiBold" Margin="0,0,0,4" />
+                            <TextBlock Classes="muted" Margin="0,0,0,8"
+                                       Text="Re-run the guided setup to reconnect, check the displays, and re-map your channels." />
+                            <Button x:Name="RunSetupWizardButton" Content="Run setup wizard again"
+                                    HorizontalAlignment="Left"
+                                    ToolTip.Tip="Open the first-run setup wizard again"
+                                    Click="RunSetupWizardButton_Click" />
                         </StackPanel>
                     </Expander>
 
@@ -530,11 +533,17 @@
                                 </ComboBox>
                             </StackPanel>
 
-                            <TextBlock x:Name="OledBrightnessValueText" FontWeight="SemiBold" Margin="0,0,0,4" Text="Brightness: 100%" />
-                            <Slider x:Name="OledBrightnessSlider" Minimum="0" Maximum="100" Width="420" HorizontalAlignment="Left" Margin="12,0,0,10" />
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                <TextBlock Text="Brightness:" VerticalAlignment="Center" Width="210" />
+                                <Slider x:Name="OledBrightnessSlider" Minimum="0" Maximum="100" Width="210" VerticalAlignment="Center" />
+                                <TextBlock x:Name="OledBrightnessValueText" FontWeight="SemiBold" VerticalAlignment="Center" Margin="8,0,0,0" Text="100%" />
+                            </StackPanel>
 
-                            <TextBlock x:Name="OledSleepTimeoutValueText" FontWeight="SemiBold" Margin="0,0,0,4" Text="Disconnected sleep timeout: 2 minute(s)" />
-                            <Slider x:Name="OledSleepTimeoutSlider" Minimum="1" Maximum="60" TickFrequency="1" IsSnapToTickEnabled="True" Width="420" HorizontalAlignment="Left" Margin="12,0,0,14" />
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                <TextBlock Text="Disconnected sleep timeout:" VerticalAlignment="Center" Width="210" />
+                                <Slider x:Name="OledSleepTimeoutSlider" Minimum="1" Maximum="60" TickFrequency="1" IsSnapToTickEnabled="True" Width="210" VerticalAlignment="Center" />
+                                <TextBlock x:Name="OledSleepTimeoutValueText" FontWeight="SemiBold" VerticalAlignment="Center" Margin="8,0,0,0" Text="2 minute(s)" />
+                            </StackPanel>
 
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                                 <TextBlock Text="Connected idle action:" VerticalAlignment="Center" Width="160" />
@@ -550,8 +559,11 @@
                                 </ComboBox>
                             </StackPanel>
 
-                            <TextBlock x:Name="OledConnectedIdleTimeoutValueText" FontWeight="SemiBold" Margin="0,0,0,4" Text="Connected idle timeout: 10 minute(s)" />
-                            <Slider x:Name="OledConnectedIdleTimeoutSlider" Minimum="1" Maximum="60" TickFrequency="1" IsSnapToTickEnabled="True" Width="420" HorizontalAlignment="Left" Margin="12,0,0,14" />
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                <TextBlock Text="Connected idle timeout:" VerticalAlignment="Center" Width="210" />
+                                <Slider x:Name="OledConnectedIdleTimeoutSlider" Minimum="1" Maximum="60" TickFrequency="1" IsSnapToTickEnabled="True" Width="210" VerticalAlignment="Center" />
+                                <TextBlock x:Name="OledConnectedIdleTimeoutValueText" FontWeight="SemiBold" VerticalAlignment="Center" Margin="8,0,0,0" Text="10 minute(s)" />
+                            </StackPanel>
 
                             <CheckBox x:Name="OledAntiBurnInCheckBox" Content="Enable anti-burn-in pixel shifting"
                                       ToolTip.Tip="Shifts pixels slightly over time to prevent OLED burn-in"
