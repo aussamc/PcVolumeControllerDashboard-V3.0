@@ -320,7 +320,7 @@ public static class SettingsRepository
         settings.OledBrightnessPercent = Math.Clamp(
             settings.OledBrightnessPercent <= 0 ? 100 : settings.OledBrightnessPercent, 0, 100);
         settings.OledSleepTimeoutMinutes = Math.Clamp(
-            settings.OledSleepTimeoutMinutes <= 0 ? 2 : settings.OledSleepTimeoutMinutes, 1, 60);
+            settings.OledSleepTimeoutMinutes <= 0 ? 3 : settings.OledSleepTimeoutMinutes, 1, 60);
         settings.OledConnectedIdleTimeoutMinutes = Math.Clamp(
             settings.OledConnectedIdleTimeoutMinutes <= 0 ? 10 : settings.OledConnectedIdleTimeoutMinutes, 1, 60);
 

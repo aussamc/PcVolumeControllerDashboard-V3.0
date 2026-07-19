@@ -91,7 +91,9 @@ public sealed class DashboardSettings
     // users keep their saved mode (Normalize only fills a blank one, see SettingsRepository).
     public string OledDisplayMode { get; set; } = DisplayModes.LargeVolume;
     public int OledBrightnessPercent { get; set; } = 100;
-    public int OledSleepTimeoutMinutes { get; set; } = 2;
+    // 3 min matches the firmware's own no-dashboard default (v2.29), so the sleep
+    // behaviour is the same whether or not the dashboard has pushed OLEDCFG yet.
+    public int OledSleepTimeoutMinutes { get; set; } = 3;
     public string OledConnectedIdleAction { get; set; } = OledIdleActions.DimTo30;
     public int OledConnectedIdleTimeoutMinutes { get; set; } = 10;
     public bool OledAntiBurnInEnabled { get; set; } = true;
