@@ -24,6 +24,10 @@ internal static class WindowsGlue
     private const string SingleInstanceMutexName = "Global\\PcVolumeControllerDashboard_9F4A2C1B";
     private const string StartupRegistryName = "PcVolumeControllerDashboard";
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    // Task Manager / Settings > Startup Apps records an enable/disable flag per Run
+    // entry here. An odd first byte means "disabled" — and while it's set, Windows
+    // ignores the Run value entirely, so our entry silently never launches.
+    private const string StartupApprovedKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
     private const int SwRestore = 9;
 
     private static Mutex? _instanceMutex;
@@ -91,8 +95,14 @@ internal static class WindowsGlue
 
     /// <summary>
     /// Adds or removes the HKCU Run entry so the app launches at login. Idempotent.
+    /// When <paramref name="userInitiated"/> is true (the Setup checkbox / wizard
+    /// toggle), enabling also clears any "disabled" state Task Manager / Startup
+    /// Apps recorded for the entry — otherwise the Run value exists but Windows
+    /// ignores it and the app never launches at login. The passive per-launch
+    /// re-sync leaves a Task-Manager disable in place (the user set it in the OS;
+    /// don't fight it silently) and just logs the conflict.
     /// </summary>
-    public static void ApplyRunOnStartup(bool enabled, Action<string>? log = null)
+    public static void ApplyRunOnStartup(bool enabled, Action<string>? log = null, bool userInitiated = false)
     {
         try
         {
@@ -113,10 +123,28 @@ internal static class WindowsGlue
                 }
                 key.SetValue(StartupRegistryName, $"\"{exePath}\"");
                 log?.Invoke($"Run-on-startup enabled: {exePath}");
+
+                if (IsStartupEntryDisabledByWindows())
+                {
+                    if (userInitiated)
+                    {
+                        ClearStartupApprovedState();
+                        log?.Invoke("Cleared the Windows Startup-Apps 'disabled' flag for the startup entry.");
+                    }
+                    else
+                    {
+                        log?.Invoke("Run-on-startup is enabled in settings but the entry is DISABLED in " +
+                                    "Windows Startup Apps (Task Manager > Startup). Re-enable it there, or " +
+                                    "toggle 'Start program at login' off and on in Setup.");
+                    }
+                }
             }
             else
             {
                 key.DeleteValue(StartupRegistryName, throwOnMissingValue: false);
+                // Drop the stale approved-state record too so a future enable
+                // starts from a clean (enabled-by-default) slate.
+                ClearStartupApprovedState();
                 log?.Invoke("Run-on-startup disabled.");
             }
         }
@@ -125,10 +153,35 @@ internal static class WindowsGlue
             log?.Invoke($"Run-on-startup error: {ex.Message}");
         }
     }
+
+    /// <summary>True if Task Manager / Startup Apps has recorded our entry as disabled.</summary>
+    private static bool IsStartupEntryDisabledByWindows()
+    {
+        try
+        {
+            using RegistryKey? key = Registry.CurrentUser.OpenSubKey(StartupApprovedKeyPath);
+            return key?.GetValue(StartupRegistryName) is byte[] { Length: > 0 } data && (data[0] & 0x01) != 0;
+        }
+        catch { return false; }
+    }
+
+    /// <summary>
+    /// Removes the StartupApproved record for our entry. No record = enabled, so
+    /// deleting is the format-agnostic way to clear a "disabled" flag.
+    /// </summary>
+    private static void ClearStartupApprovedState()
+    {
+        try
+        {
+            using RegistryKey? key = Registry.CurrentUser.OpenSubKey(StartupApprovedKeyPath, writable: true);
+            key?.DeleteValue(StartupRegistryName, throwOnMissingValue: false);
+        }
+        catch { /* best-effort */ }
+    }
 #else
     public static bool TryAcquireSingleInstance() => true;
     public static void ReleaseSingleInstance() { }
     public static void BringExistingInstanceToFront() { }
-    public static void ApplyRunOnStartup(bool enabled, Action<string>? log = null) { }
+    public static void ApplyRunOnStartup(bool enabled, Action<string>? log = null, bool userInitiated = false) { }
 #endif
 }

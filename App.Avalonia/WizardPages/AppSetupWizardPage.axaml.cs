@@ -122,7 +122,7 @@ public partial class AppSetupWizardPage : UserControl, IWizardPage
             _settings.Save();
             // Idempotent; re-applying the run-on-login registry entry for any app-setup
             // change matches MainWindow and keeps the "Start at login" toggle honest.
-            Platform.WindowsGlue.ApplyRunOnStartup(_settings.Settings.StartWithWindows);
+            Platform.WindowsGlue.ApplyRunOnStartup(_settings.Settings.StartWithWindows, userInitiated: true);
         };
         Root.Children.Add(box);
     }
