@@ -588,7 +588,9 @@ public partial class MainWindow : Window
 
         // Apply the run-on-login registry entry to match the toggle (Windows; no-op
         // elsewhere). Idempotent, so running it for any app-setup change is fine.
-        Platform.WindowsGlue.ApplyRunOnStartup(_settings.StartWithWindows);
+        // userInitiated: an explicit toggle here also clears a Task-Manager
+        // "disabled" flag on the startup entry, which otherwise silently wins.
+        Platform.WindowsGlue.ApplyRunOnStartup(_settings.StartWithWindows, userInitiated: true);
     }
 
     private async void ForgetControllerButton_Click(object? sender, RoutedEventArgs e)
