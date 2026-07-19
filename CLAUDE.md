@@ -25,7 +25,7 @@ reached feature parity — the Avalonia host is the single UI going forward.
 | `Platform.Windows/` | `net10.0-windows` | Windows-only implementations behind Core seams: WASAPI + VoiceMeeter audio backends. |
 | `Platform.Linux/` | `net10.0` | Linux audio backend behind the same seam: `PipeWireAudioBackend` (shells out to `pw-dump`/`wpctl`). Also referenced on macOS builds (shared TFM), but `AudioBackendFactory` only instantiates it at runtime on Linux. |
 | `tests/` (`PcVolumeControllerDashboard.Tests.csproj`) | `net10.0-windows` | xUnit + FluentAssertions. Tests Core (pure logic) + Windows platform pieces. |
-| `Computer_Volume_Controller_v2.28/` | Arduino | Current ESP32 firmware (`.ino`). `v2.27/`/`v2.26/`/`v2.25/`/`v2.24/` kept for reference. |
+| `Computer_Volume_Controller_v2.29/` | Arduino | Current ESP32 firmware (`.ino`). `v2.28/`/`v2.27/`/`v2.26/`/`v2.25/`/`v2.24/` kept for reference. |
 | `PcVolumeControllerDashboard.slnx` | | Solution file (Core + App.Avalonia + Platform.Windows/Linux + tests). |
 
 Namespaces: Core = `PcVolumeControllerDashboard.Core`; Avalonia host =
@@ -124,10 +124,12 @@ Notes:
 
 ## Key constants
 
-- Dashboard version: **3.22.1** (Avalonia host). Required controller protocol: **2.24**
-  (firmware v2.28 is backward-compatible — v2.28 nudges the LARGE_VOLUME header down to
-  y3 so the anti-burn shift can't wrap it, a display-only change over v2.27; wire protocol
-  unchanged). Expected channels: **6**.
+- Dashboard version: **3.22.5** (Avalonia host). Required controller protocol: **2.24**
+  (firmware v2.29 is backward-compatible — v2.29 makes serial TX non-blocking, adds a
+  loop-task watchdog, and raises the default no-dashboard sleep to 3 min so the
+  disconnected-sleep countdown can't be starved when the PC shuts down with the
+  dashboard still connected; wire protocol unchanged since v2.24). Expected
+  channels: **6**.
 - Hardware: v1.4 PCB, ESP32-S3-DevKitC-1-N16R8, SSD1315 OLEDs behind a TCA9548A I2C
   mux. GPIO/OLED layout is final — see the firmware source.
 
