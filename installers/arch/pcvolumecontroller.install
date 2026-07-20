@@ -1,0 +1,33 @@
+## Post-install notes. pacman reloads udev rules itself via its hooks, so the
+## only thing worth saying is what to do when the uaccess rule doesn't match.
+
+_notes() {
+    cat <<'EOF'
+
+  PC Volume Controller Dashboard installed. Launch it from your menu or with
+  `pcvolumecontroller`.
+
+  Serial access: a udev rule tags the controller with `uaccess`, so your local
+  session gets an ACL on /dev/ttyACM* automatically — replug the controller if
+  it was already connected. No group membership needed.
+
+  That rule matches Espressif's USB vendor ID (0x303a). If `lsusb` shows your
+  board behind a UART bridge instead (Silicon Labs, WCH, FTDI) it won't match,
+  and the port will fail to open. Fall back to the group route:
+
+      sudo usermod -aG uucp $USER     # `uucp`, not `dialout`, on Arch
+      # then log out and back in
+
+  Audio needs pipewire + wireplumber; without wireplumber's `wpctl` the app can
+  read volumes but not change them.
+
+EOF
+}
+
+post_install() {
+    _notes
+}
+
+post_upgrade() {
+    _notes
+}

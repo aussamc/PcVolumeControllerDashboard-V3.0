@@ -1,0 +1,55 @@
+# Maintainer: aussamc <noreply@github.com>
+#
+# Template — installers/arch/build.sh renders @VERSION@/@SHA256@ into a real
+# PKGBUILD. Don't edit the rendered copy; edit this and re-run that script.
+#
+# A -bin package: the upstream release ships a self-contained .NET publish, so
+# there is nothing to compile here, only to lay out.
+
+pkgname=pcvolumecontroller-bin
+_pkgname=pcvolumecontroller
+_exe=PcVolumeControllerDashboard.Avalonia
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc="Dashboard for the PC Volume Controller — a rotary-encoder + OLED hardware volume controller (ESP32-S3)"
+arch=('x86_64')
+url="https://github.com/aussamc/PcVolumeControllerDashboard-V3.0"
+# No LICENSE file upstream yet; switch to the SPDX id once one lands.
+license=('LicenseRef-unknown')
+
+# The .NET runtime is bundled, so these are only the native libs Avalonia and
+# the BCL dlopen() at runtime. icu is the one people forget — .NET's globalization
+# stack needs the system ICU even in a self-contained publish.
+depends=('fontconfig' 'libx11' 'libice' 'libsm' 'libglvnd' 'icu' 'hicolor-icon-theme')
+optdepends=('pipewire: audio backend (reads the graph via pw-dump)'
+            'wireplumber: wpctl — required for volume/mute writes')
+
+provides=("$_pkgname")
+conflicts=("$_pkgname")
+install="$_pkgname.install"
+
+# Stripping a self-contained .NET publish can corrupt the bundled native hosts,
+# and there are no upstream debug symbols to split out.
+options=('!strip' '!debug')
+
+source=("$_pkgname-$pkgver-linux-x64.tar.gz::$url/releases/download/v$pkgver/$_pkgname-$pkgver-linux-x64.tar.gz")
+sha256sums=('@SHA256@')
+
+package() {
+    cd "$srcdir/$_pkgname-$pkgver"
+
+    # The app lives in /opt — a self-contained publish is a single opaque tree of
+    # ~200 runtime files that has no business being scattered through /usr.
+    install -d "$pkgdir/opt/$_pkgname"
+    cp -a app/. "$pkgdir/opt/$_pkgname/"
+    chmod +x "$pkgdir/opt/$_pkgname/$_exe"
+
+    install -d "$pkgdir/usr/bin"
+    ln -s "/opt/$_pkgname/$_exe" "$pkgdir/usr/bin/$_pkgname"
+
+    install -Dm644 "$_pkgname.desktop" "$pkgdir/usr/share/applications/$_pkgname.desktop"
+    install -Dm644 "$_pkgname.png" "$pkgdir/usr/share/icons/hicolor/32x32/apps/$_pkgname.png"
+
+    # uaccess tag for the controller's /dev/ttyACM* node — see the rule's comments.
+    install -Dm644 "99-$_pkgname.rules" "$pkgdir/usr/lib/udev/rules.d/99-$_pkgname.rules"
+}

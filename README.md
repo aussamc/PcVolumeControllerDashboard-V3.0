@@ -46,6 +46,34 @@ Settings are saved to `%APPDATA%\PcVolumeController\settings.json` and restored 
 
 ---
 
+## Installing on Linux
+
+Each release carries four Linux artifacts. Pick by distro:
+
+| Distro | Artifact | Install |
+|---|---|---|
+| Arch, CachyOS, Manjaro, EndeavourOS | `pcvolumecontroller-bin-<version>-1-x86_64.pkg.tar.zst` | `sudo pacman -U <file>` |
+| Debian, Ubuntu, Mint, Pop!_OS | `pcvolumecontroller_<version>_amd64.deb` | `sudo apt install ./<file>` |
+| Anything else | `PcVolumeControllerDashboard-<version>-x86_64.AppImage` | `chmod +x` and run (needs `fuse2`, or pass `--appimage-extract-and-run`) |
+| Packagers | `pcvolumecontroller-<version>-linux-x64.tar.gz` | the raw self-contained publish |
+
+The `.pkg.tar.zst` and `.deb` both install a udev rule that tags the controller
+with `uaccess`, so your local session gets access to `/dev/ttyACM*` automatically
+— no `uucp`/`dialout` group membership and no re-login. Replug the controller
+after installing. The rule matches Espressif's USB vendor ID (`0x303a`); if
+`lsusb` shows your board behind a UART bridge chip instead, fall back to
+`sudo usermod -aG uucp $USER` (`uucp` on Arch, `dialout` on Debian) and re-login.
+The AppImage installs nothing system-wide, so it always needs the group route.
+
+Audio needs **pipewire** and **wireplumber** — without wireplumber's `wpctl` the
+app can read volumes but not change them. Global hotkeys are Windows-only for now.
+
+The Arch package is built by CI from the release tarball; the `PKGBUILD` it was
+built from is attached to the release alongside it, and lives in
+`installers/arch/PKGBUILD.in`.
+
+---
+
 ## Building
 
 The app is the Avalonia host, which multi-targets — build the TFM for your OS:

@@ -1,0 +1,15 @@
+# PC Volume Controller — serial-port access without group juggling.
+#
+# The controller is an ESP32-S3 speaking native USB CDC, so it enumerates under
+# Espressif's vendor ID (0x303a) as /dev/ttyACM*. Distros disagree on which group
+# owns that node (uucp on Arch, dialout on Debian/Ubuntu/Fedora), and either way
+# the user has to log out and back in for the membership to take effect.
+#
+# TAG+="uaccess" sidesteps all of it: systemd-logind grants an ACL on the device
+# to whoever owns the active local session, applied the moment it's plugged in.
+# Remote/SSH sessions deliberately don't get it.
+#
+# Scoped to the Espressif VID only. Boards wired through a generic UART bridge
+# (CP210x, CH34x, FTDI) enumerate under the bridge vendor's ID instead and won't
+# match — those still need the group route. `lsusb` will tell you which you have.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", TAG+="uaccess"
