@@ -164,6 +164,60 @@ public sealed class OledRendererTests
     }
 
     [Fact]
+    public void Font_DrawsDescendersOnRow8_LikeAdafruitGfx()
+    {
+        // The real Adafruit glcdfont uses bit 7 (the 8th glyph row) for the
+        // descenders of g/p/q/y and the comma; the firmware's drawChar draws all
+        // 8 rows. The status line sits at y54, so a descender must light row 61
+        // (previously the renderer used a wrong font table and only drew 7 rows).
+        var r = new OledRenderer();
+        r.RenderAppVolume("Master", 50, false, "gypq");
+
+        LitInBand(r, 61, 62).Should().BeGreaterThan(0,
+            "descenders in the y54 status line reach row 61 (y + 7) on the device");
+    }
+
+    [Fact]
+    public void RenderBarPercent_BarWidthMatchesArduinoMapTruncation()
+    {
+        // Firmware: map(99, 0, 100, 0, 108) = 99*108/100 = 106 (integer division).
+        // Math.Round would give 107 — the preview must truncate like the device.
+        var r = new OledRenderer();
+        r.RenderBarPercent("Game", 99, false);
+
+        // Row 31 crosses the filled bar: 2 outline pixels (x8, x119) plus the
+        // fill starting at x10 and spanning exactly barWidth columns.
+        bool[] px = r.Pixels.ToArray();
+        int lit = 0;
+        for (int x = 0; x < W; x++)
+            if (px[31 * W + x]) lit++;
+        lit.Should().Be(106 + 2, "the fill is 106px wide (Arduino map truncation) plus the two outline pixels");
+    }
+
+    [Fact]
+    public void DrawString_RendersOneGlyphPerUtf8Byte_LikeTheDevice()
+    {
+        // The ESP32 draws one glyph per raw serial byte, so a 2-byte UTF-8 char
+        // ("é" = 0xC3 0xA9) occupies two 6px cells and centres accordingly.
+        // MUTE_STATUS centres the label at y40: 2 bytes → 12px wide → x58..69.
+        var r = new OledRenderer();
+        r.RenderMuteStatus("é", 40, false);
+
+        bool litInsideCell = false;
+        bool litOutsideCell = false;
+        bool[] px = r.Pixels.ToArray();
+        for (int y = 40; y < 48; y++)
+            for (int x = 0; x < W; x++)
+            {
+                if (!px[y * W + x]) continue;
+                if (x >= 58 && x < 70) litInsideCell = true;
+                else litOutsideCell = true;
+            }
+        litInsideCell.Should().BeTrue("the two glyph cells span x58..x69 when width is counted per byte");
+        litOutsideCell.Should().BeFalse("nothing of the label renders outside the two byte-cells");
+    }
+
+    [Fact]
     public void RenderLargeVolume_BigTextStaysWithinPanelWidth()
     {
         // Widest realistic value is "100%" (4 chars) at size 4 = 4*6*4 = 96px <= 128,

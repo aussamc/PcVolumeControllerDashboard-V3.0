@@ -1361,6 +1361,15 @@ public partial class MainWindow : Window
                 status = "—";
             }
 
+            // The device renders the protocol-processed values, not the raw ones:
+            // DeviceStateService pushes MakeProtocolSafeLabel(label/status) (commas
+            // stripped, trimmed, 18-char cap, empty → "Unknown") and the firmware
+            // constrains volume to 0..100 — mirror both so the preview shows
+            // exactly what the OLEDs show.
+            label = ProtocolMapping.MakeProtocolSafeLabel(label);
+            status = ProtocolMapping.MakeProtocolSafeLabel(status);
+            vol = Math.Clamp(vol, 0, 100);
+
             // Per-channel OLED mode override, else the global mode.
             string mode = i < _settings.Channels.Length && !string.IsNullOrEmpty(_settings.Channels[i].OledDisplayMode)
                 ? _settings.Channels[i].OledDisplayMode
