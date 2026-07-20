@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using Microsoft.Win32;
+using PcVolumeControllerDashboard.Core;
 #endif
 
 namespace PcVolumeControllerDashboard.App.Platform;
@@ -101,6 +102,15 @@ internal static class WindowsGlue
     /// ignores it and the app never launches at login. The passive per-launch
     /// re-sync leaves a Task-Manager disable in place (the user set it in the OS;
     /// don't fight it silently) and just logs the conflict.
+    ///
+    /// The passive re-sync also refuses to record a transient process location (see
+    /// <see cref="StartupPathPolicy"/>): an updater-staged build running from temp, or
+    /// a dev build running from bin\Debug, would otherwise overwrite a perfectly good
+    /// installed-path entry with one that stops resolving as soon as that folder is
+    /// swept or rebuilt — leaving the app silently not starting at the next logon. A
+    /// user-initiated toggle still writes whatever it is running from (an explicit
+    /// action shouldn't silently do nothing) but warns when the location looks
+    /// transient.
     /// </summary>
     public static void ApplyRunOnStartup(bool enabled, Action<string>? log = null, bool userInitiated = false)
     {
@@ -121,6 +131,22 @@ internal static class WindowsGlue
                     log?.Invoke("Could not determine app path for run-on-startup.");
                     return;
                 }
+
+                if (StartupPathPolicy.IsTransientLocation(exePath, System.IO.Path.GetTempPath()))
+                {
+                    if (!userInitiated)
+                    {
+                        log?.Invoke("Run-on-startup left unchanged: this build is running from a " +
+                                    $"temporary location ({exePath}) that won't exist at the next " +
+                                    "logon, so the existing startup entry was kept.");
+                        return;
+                    }
+
+                    log?.Invoke($"Run-on-startup set to a temporary location ({exePath}). It will stop " +
+                                "working once that folder is cleaned up — re-enable it from the " +
+                                "installed copy to point it somewhere permanent.");
+                }
+
                 key.SetValue(StartupRegistryName, $"\"{exePath}\"");
                 log?.Invoke($"Run-on-startup enabled: {exePath}");
 
