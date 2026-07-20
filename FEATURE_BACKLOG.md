@@ -575,14 +575,15 @@ Deferred/descoped items that could become future feature work, from the parity a
 - **Linux/Wayland global hotkeys** — no cross-DE API; harder than audio was.
 - **macOS**: notarized `.dmg`, master-volume audio backend, notifications (no-op today).
 - **Code-signing** the Windows installer.
-- **Software-jitter anti-burn-in** *(future firmware; follow-up to v3.16 items 10/11)* —
-  today the firmware anti-burn uses hardware `SETDISPLAYOFFSET` (a vertical 0–3px shift
-  that **wraps**); v3.16 item 11 worked around the wrap by reserving a 3-row bottom margin
-  in every display mode (`OledRenderer.AntiBurnMaxOffset`). The cleaner long-term fix is to
-  replace the hardware offset with a small **2-D software jitter** (±1–2px x/y walk within a
-  reserved 1–2px border) applied in the firmware drawing helpers, so content is **clipped,
-  never wrapped**, and no per-mode margin bookkeeping is needed. Better burn-in coverage
-  (horizontal + vertical drift) too. Cost: threads the offset through ~30 draw calls in all
-  modes on both the firmware and the Core `OledRenderer` preview, kept pixel-synchronized;
-  needs a reflash + hardware look. Deferred from v3.16 in favour of the margin fix (option
-  1) 2026-07-14.
+- ~~**Software-jitter anti-burn-in**~~ — **SHIPPED as v3.23 / firmware v2.31**
+  (2026-07-20, `feat/v3.23-software-jitter-antiburn`): the hardware `SETDISPLAYOFFSET`
+  shift (vertical-only, wrapped) is replaced by a **2-D software jitter** — the drawing
+  origin walks a 3×3 grid of 0–2px x/y offsets, one adjacent step every 30 s (full cycle
+  4.5 min), content clipped never wrapped. Every screen keeps base content within
+  x0..125/y0..61 (`OledRenderer.AntiBurnJitterMax`); persistent screens (incl. the
+  "Waiting for PC" splash) redraw when the jitter steps. The pre-jitter fit audit also
+  fixed the DISPLAY TEST bottom line (y56→y54, was overrunning the row-60 reserve) and
+  LARGE_VOLUME's size-2 header (now truncated to 10 chars; 18-char labels ran off-panel).
+  Core `OledRenderer` mirrors it pixel-for-pixel (`SetAntiBurnJitter` /
+  `AntiBurnJitterForStep`); the old wrap-based `ApplyDisplayOffset`/`AntiBurnMaxOffset`
+  were removed. Needs the usual reflash + on-device visual check.

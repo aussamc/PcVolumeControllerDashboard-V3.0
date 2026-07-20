@@ -1361,12 +1361,36 @@ public partial class MainWindow : Window
                 status = "—";
             }
 
+            // The device renders the protocol-processed values, not the raw ones:
+            // DeviceStateService pushes MakeProtocolSafeLabel(label/status) (commas
+            // stripped, trimmed, 18-char cap, empty → "Unknown") and the firmware
+            // constrains volume to 0..100 — mirror both so the preview shows
+            // exactly what the OLEDs show.
+            label = ProtocolMapping.MakeProtocolSafeLabel(label);
+            status = ProtocolMapping.MakeProtocolSafeLabel(status);
+            vol = Math.Clamp(vol, 0, 100);
+
             // Per-channel OLED mode override, else the global mode.
             string mode = i < _settings.Channels.Length && !string.IsNullOrEmpty(_settings.Channels[i].OledDisplayMode)
                 ? _settings.Channels[i].OledDisplayMode
                 : globalMode;
 
             var renderer = new OledRenderer();
+
+            // Mirror the controller's anti-burn-in jitter (firmware v2.31): the
+            // same 3×3 walk on the same 30 s cadence, but on the PC wall-clock —
+            // the device and PC clocks aren't phase-synced, so this reproduces the
+            // shifting behaviour rather than the exact same pixel at the exact same
+            // instant. Must be set before rendering (it offsets each draw). The
+            // poll re-renders ~10x/sec while this tab shows, so the offset drifts
+            // over time just like the hardware.
+            if (_settings.OledAntiBurnInEnabled)
+            {
+                (int dx, int dy) = OledRenderer.AntiBurnJitterForStep(
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / OledRenderer.AntiBurnJitterPeriodMs);
+                renderer.SetAntiBurnJitter(dx, dy);
+            }
+
             switch (mode)
             {
                 case DisplayModes.LargeVolume:     renderer.RenderLargeVolume(label, vol, muted); break;
@@ -1376,24 +1400,9 @@ public partial class MainWindow : Window
                 default:                           renderer.RenderAppVolume(label, vol, muted, status); break;
             }
 
-            // Mirror the controller's anti-burn-in shift so the preview matches the
-            // device. The poll re-renders ~10x/sec while this tab shows, so the offset
-            // drifts over time just like the hardware.
-            if (_settings.OledAntiBurnInEnabled)
-                renderer.ApplyDisplayOffset(AntiBurnPreviewOffset());
-
             images[i].Source = OledImage.Build(renderer);
         }
     }
-
-    /// <summary>
-    /// The current anti-burn-in vertical offset (0..3px), mirroring the firmware's
-    /// cadence of <c>(millis() / 30000) % 4</c> but on the PC wall-clock. The device
-    /// and PC clocks aren't phase-synced, so this reproduces the same shifting
-    /// behaviour rather than the exact same pixel at the exact same instant.
-    /// </summary>
-    private static int AntiBurnPreviewOffset() =>
-        (int)((DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 30000L) % 4L);
 
     private static string DisplayModeName(string mode) => mode switch
     {
