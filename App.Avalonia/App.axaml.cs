@@ -24,6 +24,22 @@ public partial class App : Application
     // minimise-to-tray close guard.
     private MainWindow? _mainWindow;
 
+    // Re-entrancy guard for GetOrCreateMainWindow: the MainWindow constructor's
+    // WASAPI enumeration blocks on STA COM calls that pump the message queue, so a
+    // second tray click / hotkey / notification click can re-enter while the first
+    // construction is still running and _mainWindow is still null — without the
+    // guard each re-entry builds and shows another dashboard window.
+    private bool _buildingMainWindow;
+
+    // A show request that arrived re-entrantly while the window was being built
+    // (e.g. a tray click during the start-minimized construction). Replayed once
+    // construction finishes so the click isn't silently swallowed.
+    private bool _showRequestedDuringBuild;
+
+    // Set while the first-run wizard is on screen so "show dashboard" requests
+    // focus the wizard instead of building the dashboard next to it.
+    private FirstRunWizard? _wizard;
+
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
     public override void OnFrameworkInitializationCompleted()
@@ -110,7 +126,12 @@ public partial class App : Application
                 // while only the wizard is shown.
                 log.Log("First run detected — showing the setup wizard.");
                 var wizard = Services.GetRequiredService<FirstRunWizard>();
-                wizard.Completed += () => ShowDashboardAfterSetup(desktop, log);
+                _wizard = wizard;
+                wizard.Completed += () =>
+                {
+                    _wizard = null;
+                    ShowDashboardAfterSetup(desktop, log);
+                };
                 wizard.Show();
             }
             else
@@ -138,7 +159,8 @@ public partial class App : Application
                                        Services.SettingsService settingsService, Services.LogService log)
     {
         DashboardSettings settings = settingsService.Settings;
-        _mainWindow = Services.GetRequiredService<MainWindow>();
+        MainWindow? window = GetOrCreateMainWindow();
+        if (window == null) return;
 
         if (settings.StartMinimizedToTray && settings.MinimizeToTray)
         {
@@ -146,7 +168,7 @@ public partial class App : Application
             Services.GetRequiredService<Services.NotificationService>().NotifyStartedMinimized();
         }
         else
-            desktop.MainWindow = _mainWindow;
+            desktop.MainWindow = window;
     }
 
     /// <summary>
@@ -156,10 +178,11 @@ public partial class App : Application
     /// </summary>
     private void ShowDashboardAfterSetup(IClassicDesktopStyleApplicationLifetime desktop, Services.LogService log)
     {
-        _mainWindow ??= Services.GetRequiredService<MainWindow>();
-        desktop.MainWindow = _mainWindow;
-        _mainWindow.Show();
-        _mainWindow.Activate();
+        MainWindow? window = GetOrCreateMainWindow();
+        if (window == null) return;
+        desktop.MainWindow = window;
+        window.Show();
+        window.Activate();
         log.Log("Setup complete — dashboard opened.");
     }
 
@@ -334,11 +357,60 @@ public partial class App : Application
 
     private void ShowMainWindow()
     {
-        _mainWindow ??= Services.GetRequiredService<MainWindow>();
-        _mainWindow.Show();
-        _mainWindow.ShowInTaskbar = true;
-        if (_mainWindow.WindowState == WindowState.Minimized)
-            _mainWindow.WindowState = WindowState.Normal;
-        _mainWindow.Activate();
+        // While the first-run wizard is up, "show dashboard" means the wizard —
+        // building the dashboard beside it would start the channel poll (whose
+        // CHSTATE pushes overwrite the wizard's OLED identify screens) and put a
+        // second window on screen.
+        if (_wizard != null)
+        {
+            _wizard.Activate();
+            return;
+        }
+
+        MainWindow? window = GetOrCreateMainWindow();
+        if (window == null)
+        {
+            // Construction already in progress further up the stack — remember the
+            // request; GetOrCreateMainWindow replays it when the window exists.
+            _showRequestedDuringBuild = true;
+            return;
+        }
+        window.Show();
+        window.ShowInTaskbar = true;
+        if (window.WindowState == WindowState.Minimized)
+            window.WindowState = WindowState.Normal;
+        window.Activate();
+    }
+
+    /// <summary>
+    /// The single path that constructs the dashboard window. Returns the existing
+    /// instance when one is alive, or null when a construction is already in
+    /// progress further up the stack (see <see cref="_buildingMainWindow"/>) —
+    /// callers must treat null as "someone else is handling it", never build their
+    /// own. This is what guarantees at most one dashboard window per process.
+    /// </summary>
+    private MainWindow? GetOrCreateMainWindow()
+    {
+        if (_mainWindow != null) return _mainWindow;
+        if (_buildingMainWindow) return null;
+
+        _buildingMainWindow = true;
+        try
+        {
+            _mainWindow = Services.GetRequiredService<MainWindow>();
+        }
+        finally
+        {
+            _buildingMainWindow = false;
+        }
+
+        if (_showRequestedDuringBuild)
+        {
+            _showRequestedDuringBuild = false;
+            // Post rather than call: let the outer caller finish its own handling
+            // of the fresh window first (e.g. setting desktop.MainWindow).
+            Avalonia.Threading.Dispatcher.UIThread.Post(ShowMainWindow);
+        }
+        return _mainWindow;
     }
 }
