@@ -21,6 +21,11 @@ namespace PcVolumeControllerDashboard.Core
 
         private readonly bool[] _pixels = new bool[W * H];
 
+        // Anti-burn-in 2-D jitter offset (firmware v2.31). Applied to every drawn
+        // pixel, mirroring the firmware offsetting every draw call by (dx, dy).
+        private int _jitterX;
+        private int _jitterY;
+
         /// <summary>
         /// Raw 128×64 monochrome buffer, row-major (index = y * Width + x).
         /// true = lit pixel. Hosts read this to build a platform bitmap.
@@ -232,6 +237,10 @@ namespace PcVolumeControllerDashboard.Core
 
         private void SetPixel(int x, int y)
         {
+            x += _jitterX;
+            y += _jitterY;
+            // Clip at the panel edge exactly like the Adafruit GFX library —
+            // jittered content is clipped, never wrapped (firmware v2.31).
             if (x < 0 || x >= W || y < 0 || y >= H) return;
             _pixels[y * W + x] = true;
         }
@@ -324,11 +333,11 @@ namespace PcVolumeControllerDashboard.Core
         {
             ClearDisplay();
             DrawCenteredSmall(label, 0, 1);
-            DrawHLine(0, 12, 128);
+            DrawHLine(0, 12, 126);
             string volumeText = $"{volume}%";
             DrawString(volumeText, (128 - TextWidth(volumeText, 2)) / 2, 22, 2);
             DrawCenteredSmall(muted ? "Muted" : "Unmuted", 46, 1);
-            // Bottom line at y54 (not y56) so it ends at row 60 — see AntiBurnMaxOffset.
+            // Bottom line at y54 (not y56) so it ends at row 60 — see AntiBurnJitterMax.
             DrawCenteredSmall(status, 54, 1);
         }
 
@@ -338,13 +347,17 @@ namespace PcVolumeControllerDashboard.Core
         /// size-4 value at y26. There is no separate mute strip — when muted, the
         /// big number is replaced by the word "MUTE"; when unmuted, the volume
         /// number returns. The header sits at y3 (not y0) so all content is within
-        /// rows 3..60, leaving a top margin the anti-burn shift can't wrap.
+        /// rows 3..60, leaving a top margin clear of the anti-burn jitter. The
+        /// header is truncated to 10 chars (12 px/char at size 2) so it can't run
+        /// past the 128 px panel — labels arrive up to 18 chars (firmware v2.31).
         /// </summary>
         public void RenderLargeVolume(string label, int volume, bool muted)
         {
             ClearDisplay();
-            DrawCenteredSmall(label, 3, 2);
-            DrawHLine(0, 20, 128);
+            string header = label ?? string.Empty;
+            if (header.Length > 10) header = header[..10];
+            DrawCenteredSmall(header, 3, 2);
+            DrawHLine(0, 20, 126);
             string bigText = muted ? "MUTE" : $"{volume}%";
             DrawString(bigText, (128 - TextWidth(bigText, 4)) / 2, 26, 4);
         }
@@ -363,7 +376,7 @@ namespace PcVolumeControllerDashboard.Core
         {
             ClearDisplay();
             DrawCenteredSmall($"CHANNEL {channelNum}", 0, 1);
-            DrawHLine(0, 12, 128);
+            DrawHLine(0, 12, 126);
             DrawCenteredSmall(label, 24, 1);
             DrawCenteredSmall(status, 40, 1);
             DrawCenteredSmall($"{volume}%", 54, 1);
@@ -374,12 +387,12 @@ namespace PcVolumeControllerDashboard.Core
         {
             ClearDisplay();
             DrawCenteredSmall(label, 0, 1);
-            DrawHLine(0, 12, 128);
+            DrawHLine(0, 12, 126);
             DrawRect(8, 28, 112, 14);
             int barWidth = (int)Math.Round(Math.Clamp(volume, 0, 100) / 100.0 * 108);
             if (barWidth > 0) FillRect(10, 30, barWidth, 10);
             // Both bottom lines lifted (y46/y54, not y48/y56) so the last row ends at
-            // 60 and the anti-burn shift never wraps — see AntiBurnMaxOffset.
+            // 60, clear of the anti-burn jitter — see AntiBurnJitterMax.
             DrawCenteredSmall($"{volume}%", 46, 1);
             DrawCenteredSmall(muted ? "Muted" : "Unmuted", 54, 1);
         }
@@ -387,33 +400,55 @@ namespace PcVolumeControllerDashboard.Core
         // ── Anti-burn-in ─────────────────────────────────────────────────────────
 
         /// <summary>
-        /// Maximum downward pixel shift the firmware's anti-burn-in cycle applies
-        /// (SETDISPLAYOFFSET steps 0..3). Every render mode keeps its content within
-        /// rows 0..(Height-1-AntiBurnMaxOffset) = 0..60 so that a full shift never
-        /// pushes a lit pixel into the wrap zone (item 11).
+        /// Maximum jitter offset per axis (firmware v2.31): the drawing origin
+        /// walks a 3×3 grid of (0..2, 0..2) pixel offsets. Every render mode keeps
+        /// its base content within x0..(Width-1-AntiBurnJitterMax) = x0..125 and
+        /// y0..(Height-1-AntiBurnJitterMax) = y0..61 so a full jitter never clips
+        /// a lit pixel. (Replaces the pre-v2.31 hardware SETDISPLAYOFFSET wrap and
+        /// its AntiBurnMaxOffset bottom-margin rule.)
         /// </summary>
-        public const int AntiBurnMaxOffset = 3;
+        public const int AntiBurnJitterMax = 2;
+
+        /// <summary>Number of positions in the firmware's jitter walk (3×3 grid).</summary>
+        public const int AntiBurnJitterSteps = 9;
 
         /// <summary>
-        /// Mirrors the firmware's hardware anti-burn-in shift (SSD1306
-        /// SETDISPLAYOFFSET): the whole framebuffer is shifted down by
-        /// <paramref name="offset"/> rows, wrapping at the bottom exactly as the
-        /// device does. Call after a Render* method so the on-screen preview matches
-        /// the physical display. <paramref name="offset"/> is taken modulo Height.
-        /// Because every mode reserves the bottom <see cref="AntiBurnMaxOffset"/> rows,
-        /// a 0..AntiBurnMaxOffset shift only ever wraps empty rows.
+        /// Interval between jitter steps in milliseconds — mirrors the firmware's
+        /// <c>BURN_JITTER_PERIOD_MS</c> (one step every 30 s; full 9-position cycle
+        /// every 4.5 min).
         /// </summary>
-        public void ApplyDisplayOffset(int offset)
+        public const long AntiBurnJitterPeriodMs = 30000;
+
+        // The firmware's walk order (BURN_JITTER_X/Y): perimeter clockwise, then
+        // centre; centre→origin is a diagonal neighbour so the loop closes
+        // without a jump.
+        private static readonly (int Dx, int Dy)[] JitterWalk =
         {
-            offset = ((offset % H) + H) % H;
-            if (offset == 0) return;
-            bool[] shifted = new bool[_pixels.Length];
-            for (int r = 0; r < H; r++)
-            {
-                int dst = (r + offset) % H;
-                Array.Copy(_pixels, r * W, shifted, dst * W, W);
-            }
-            Array.Copy(shifted, _pixels, _pixels.Length);
+            (0, 0), (1, 0), (2, 0), (2, 1), (2, 2), (1, 2), (0, 2), (0, 1), (1, 1),
+        };
+
+        /// <summary>
+        /// The jitter offset for a given step counter (typically wall-clock ms /
+        /// <see cref="AntiBurnJitterPeriodMs"/>), mirroring the firmware's
+        /// <c>updateAntiBurnInJitter</c> table lookup.
+        /// </summary>
+        public static (int Dx, int Dy) AntiBurnJitterForStep(long step)
+        {
+            long i = step % AntiBurnJitterSteps;
+            if (i < 0) i += AntiBurnJitterSteps;
+            return JitterWalk[i];
+        }
+
+        /// <summary>
+        /// Sets the anti-burn-in jitter offset applied to everything drawn after
+        /// the call (offsets each pixel, exactly as the firmware offsets each draw
+        /// call). Call before a Render* method so the preview matches the device;
+        /// content shifted past the panel edge is clipped, never wrapped.
+        /// </summary>
+        public void SetAntiBurnJitter(int dx, int dy)
+        {
+            _jitterX = dx;
+            _jitterY = dy;
         }
 
     }

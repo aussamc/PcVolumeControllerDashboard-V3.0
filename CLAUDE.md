@@ -25,7 +25,7 @@ reached feature parity — the Avalonia host is the single UI going forward.
 | `Platform.Windows/` | `net10.0-windows` | Windows-only implementations behind Core seams: WASAPI + VoiceMeeter audio backends. |
 | `Platform.Linux/` | `net10.0` | Linux audio backend behind the same seam: `PipeWireAudioBackend` (shells out to `pw-dump`/`wpctl`). Also referenced on macOS builds (shared TFM), but `AudioBackendFactory` only instantiates it at runtime on Linux. |
 | `tests/` (`PcVolumeControllerDashboard.Tests.csproj`) | `net10.0-windows` | xUnit + FluentAssertions. Tests Core (pure logic) + Windows platform pieces. |
-| `Computer_Volume_Controller_v2.30/` | Arduino | Current ESP32 firmware (`.ino`). `v2.29/`/`v2.28/`/`v2.27/`/`v2.26/`/`v2.25/`/`v2.24/` kept for reference. |
+| `Computer_Volume_Controller_v2.31/` | Arduino | Current ESP32 firmware (`.ino`). `v2.30/`/`v2.29/`/`v2.28/`/`v2.27/`/`v2.26/`/`v2.25/`/`v2.24/` kept for reference. |
 | `PcVolumeControllerDashboard.slnx` | | Solution file (Core + App.Avalonia + Platform.Windows/Linux + tests). |
 
 Namespaces: Core = `PcVolumeControllerDashboard.Core`; Avalonia host =
@@ -124,8 +124,14 @@ Notes:
 
 ## Key constants
 
-- Dashboard version: **3.22.5** (Avalonia host). Required controller protocol: **2.24**
-  (firmware v2.30 is backward-compatible — v2.30 replaces the per-display-mode
+- Dashboard version: **3.23** (Avalonia host). Required controller protocol: **2.24**
+  (firmware v2.31 is backward-compatible — v2.31 replaces the hardware
+  `SETDISPLAYOFFSET` anti-burn-in shift (vertical-only, wrapped) with a 2-D software
+  jitter: the drawing origin walks a 3×3 grid of 0–2px x/y offsets, one adjacent step
+  every 30s, clipped never wrapped; every screen keeps base content within
+  x0..125/y0..61 so a full jitter never clips a lit pixel, and Core's `OledRenderer`
+  preview mirrors it pixel-for-pixel (`SetAntiBurnJitter`/`AntiBurnJitterForStep`);
+  v2.30 replaced the per-display-mode
   disconnected layouts with one unified "Disconnected" + firmware-version screen;
   v2.29 made serial TX non-blocking, added a loop-task watchdog, and raised the
   default no-dashboard sleep to 3 min so the disconnected-sleep countdown can't be
