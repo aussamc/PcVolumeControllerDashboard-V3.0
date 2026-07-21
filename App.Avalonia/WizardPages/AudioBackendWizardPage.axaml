@@ -2,19 +2,18 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="PcVolumeControllerDashboard.App.AudioBackendWizardPage">
     <StackPanel x:Name="Root" Spacing="6">
-        <TextBlock Classes="muted"
-                   Text="Choose how volume is routed. WASAPI works for most setups; pick VoiceMeeter only if you use it." />
+        <!-- Radio content and the two notes are set in code-behind: they name the
+             concrete backend for the running OS (see Audio/AudioBackendLabels). -->
+        <TextBlock x:Name="ChoiceDescriptionText" Classes="muted" />
         <RadioButton x:Name="WasapiRadio"
                      GroupName="AudioBackend"
-                     Content="Windows audio (WASAPI)"
                      Checked="AudioBackendRadio_Changed"
                      Unchecked="AudioBackendRadio_Changed" />
         <RadioButton x:Name="VoiceMeeterRadio"
                      GroupName="AudioBackend"
-                     Content="VoiceMeeter"
                      Checked="AudioBackendRadio_Changed"
                      Unchecked="AudioBackendRadio_Changed" />
-        <TextBlock Classes="muted" Text="VoiceMeeter is Windows-only." />
+        <TextBlock x:Name="VoiceMeeterNoteText" Classes="muted" />
         <TextBlock x:Name="StatusText" Classes="muted" />
     </StackPanel>
 </UserControl>

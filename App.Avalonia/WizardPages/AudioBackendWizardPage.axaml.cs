@@ -23,6 +23,23 @@ public partial class AudioBackendWizardPage : UserControl, IWizardPage
     public AudioBackendWizardPage()
     {
         InitializeComponent();
+        ApplyPlatformLabels();
+    }
+
+    /// <summary>
+    /// Names the radios after the backend this OS actually uses, and disables the
+    /// VoiceMeeter option where its Windows-only API doesn't exist. Disabled rather
+    /// than hidden so the page doesn't silently change shape across platforms —
+    /// VoiceMeeterNoteText says why it's greyed out.
+    /// </summary>
+    private void ApplyPlatformLabels()
+    {
+        ChoiceDescriptionText.Text = AudioBackendLabels.ChoiceDescription;
+        WasapiRadio.Content        = AudioBackendLabels.SystemBackend;
+        VoiceMeeterRadio.Content   = "VoiceMeeter";
+        VoiceMeeterNoteText.Text   = AudioBackendLabels.VoiceMeeterNote;
+
+        VoiceMeeterRadio.IsEnabled = AudioBackendLabels.VoiceMeeterSupported;
     }
 
     public AudioBackendWizardPage(SettingsService settings, IAudioBackend audio) : this()
@@ -49,7 +66,12 @@ public partial class AudioBackendWizardPage : UserControl, IWizardPage
         _initializing = true;
         try
         {
-            bool voiceMeeter = _settings.Settings.AudioBackendMode == AudioBackendModes.VoiceMeeter;
+            // A settings file written on Windows (or carried over by import) can name
+            // VoiceMeeter on a machine that has no VoiceMeeter. The factory already
+            // ignores the mode off-Windows, so the backend is correct either way —
+            // this just stops the UI claiming a backend that isn't running.
+            bool voiceMeeter = _settings.Settings.AudioBackendMode == AudioBackendModes.VoiceMeeter
+                               && AudioBackendLabels.VoiceMeeterSupported;
             VoiceMeeterRadio.IsChecked = voiceMeeter;
             WasapiRadio.IsChecked = !voiceMeeter;
         }

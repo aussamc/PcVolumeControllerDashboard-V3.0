@@ -43,6 +43,19 @@ public sealed class PipeWireAudioBackend : IAudioBackend
 
     public string BackendName => "PipeWire";
 
+    /// <summary>
+    /// Reads come from the <c>pw-dump</c> snapshot, so a <c>wpctl set-volume</c> that
+    /// has already returned isn't visible here until the next refresh lands. Budget
+    /// two intervals: one for the refresh that may have started just before the write,
+    /// one for the refresh that actually observes it, plus the <c>pw-dump</c> exec.
+    ///
+    /// This must not be under-reported. A fast encoder turn produces detents every
+    /// ~10–20 ms; if <see cref="AudioWriteQueue"/> stops trusting its prediction
+    /// before the snapshot catches up, the next detent re-seeds from a value up to a
+    /// full interval old and the volume jumps backwards mid-turn.
+    /// </summary>
+    public int ReadStalenessMs => RefreshIntervalMs * 2;
+
     public bool IsAvailable => _isAvailable;
 
     public event Action? AvailabilityChanged;
