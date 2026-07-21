@@ -522,8 +522,13 @@ public partial class MainWindow : Window
         UpdatePairedControllerLabel();
         UpdateHotkeyLabels();
 
-        WasapiRadioButton.IsChecked      = _settings.AudioBackendMode != AudioBackendModes.VoiceMeeter;
-        VoiceMeeterRadioButton.IsChecked = _settings.AudioBackendMode == AudioBackendModes.VoiceMeeter;
+        ApplyAudioBackendPlatformLabels();
+        // Off-Windows a saved VoiceMeeter mode can't be honoured (the factory falls back),
+        // so don't show it as the selected backend — see ApplyAudioBackendPlatformLabels.
+        bool voiceMeeterSelected = _settings.AudioBackendMode == AudioBackendModes.VoiceMeeter
+                                   && Audio.AudioBackendLabels.VoiceMeeterSupported;
+        WasapiRadioButton.IsChecked      = !voiceMeeterSelected;
+        VoiceMeeterRadioButton.IsChecked = voiceMeeterSelected;
         UpdateAudioBackendStatus();
 
         EncoderSensitivitySlider.Value = Math.Clamp(_settings.EncoderSensitivityPercent, 0, 500);
@@ -630,6 +635,23 @@ public partial class MainWindow : Window
     }
 
     // ── Audio backend ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Names the backend radios after what this OS actually runs and disables the
+    /// VoiceMeeter option where its Windows-only API is absent. Mirrors the wizard's
+    /// AudioBackendWizardPage.ApplyPlatformLabels — both read Audio/AudioBackendLabels
+    /// so the two screens can't describe the same setting differently.
+    /// </summary>
+    private void ApplyAudioBackendPlatformLabels()
+    {
+        AudioBackendDescriptionText.Text = Audio.AudioBackendLabels.VoiceMeeterSupported
+            ? "WASAPI controls Windows app/session volumes directly. VoiceMeeter routes through the VoiceMeeter Remote API (Windows only; requires VoiceMeeter installed and running)."
+            : $"{Audio.AudioBackendLabels.SystemBackend} controls per-app and device volumes directly. VoiceMeeter is a Windows-only application and can't be selected here.";
+
+        WasapiRadioButton.Content      = Audio.AudioBackendLabels.SystemBackendShort;
+        VoiceMeeterRadioButton.Content = "VoiceMeeter";
+        VoiceMeeterRadioButton.IsEnabled = Audio.AudioBackendLabels.VoiceMeeterSupported;
+    }
 
     private void AudioBackendRadioButton_Changed(object? sender, RoutedEventArgs e)
     {

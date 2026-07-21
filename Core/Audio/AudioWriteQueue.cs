@@ -22,8 +22,13 @@ namespace PcVolumeControllerDashboard.Core.Audio;
 ///
 /// Callers get instant feedback from a per-key <b>predicted</b> volume/mute —
 /// seeded from a real read when a key goes busy, advanced locally per queued op,
-/// and discarded once the key's writes drain (the next op re-seeds from the
-/// device, so any prediction drift self-corrects at the first idle moment).
+/// and discarded once the key's writes drain <i>and</i>
+/// <see cref="IAudioBackend.ReadStalenessMs"/> has elapsed (the next op then
+/// re-seeds from the device, so any prediction drift self-corrects at the first
+/// idle moment). The extra hold matters on backends whose reads lag their writes:
+/// dropping the prediction the instant the queue empties re-seeds the following
+/// detent from a pre-write value, which reads as the volume jumping backwards
+/// part-way through a fast turn.
 ///
 /// Thread model: the worker owns a <b>dedicated backend instance</b> from
 /// <paramref name="writeBackendFactory"/> (created lazily on the worker thread,
@@ -55,10 +60,19 @@ public sealed class AudioWriteQueue : IDisposable
     private readonly Dictionary<string, PendingWrite> _pending = new(StringComparer.OrdinalIgnoreCase);
     private readonly Queue<string> _order = new();
 
-    // Predicted state per key while it has pending/in-flight writes. Removed once
-    // the key drains, so idle keys always re-seed from a fresh device read.
+    // Predicted state per key while it has pending/in-flight writes, and for
+    // IAudioBackend.ReadStalenessMs afterwards — see _predictionHoldUntil.
     private readonly Dictionary<string, int> _predictedPercent = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, bool> _predictedMute = new(StringComparer.OrdinalIgnoreCase);
+
+    // When a key's writes drain, its prediction is kept until this tick rather than
+    // dropped immediately. On a backend whose reads lag writes (PipeWire serves reads
+    // from a periodically-refreshed pw-dump snapshot), re-seeding the moment the queue
+    // empties pulls a pre-write value: during a fast encoder turn the next detent then
+    // lands on a base up to a full refresh interval stale and the volume jumps
+    // backwards. Holding the prediction across that window keeps consecutive detents
+    // building on each other. A key absent from this map has a live prediction.
+    private readonly Dictionary<string, long> _predictionHoldUntil = new(StringComparer.OrdinalIgnoreCase);
 
     private string? _inFlightKey;
     private bool _recreateBackend;
@@ -93,6 +107,8 @@ public sealed class AudioWriteQueue : IDisposable
         lock (_gate)
         {
             if (_disposed) return -1;
+
+            ExpireStalePredictions(key);
 
             int basePercent = _predictedPercent.TryGetValue(key, out int predicted)
                 ? predicted
@@ -157,6 +173,7 @@ public sealed class AudioWriteQueue : IDisposable
         bool? current;
         lock (_gate)
         {
+            ExpireStalePredictions(key);
             current = _predictedMute.TryGetValue(key, out bool queued) ? queued : null;
         }
         current ??= _shared.GetMuteByKey(key);
@@ -175,8 +192,25 @@ public sealed class AudioWriteQueue : IDisposable
     {
         lock (_gate)
         {
+            ExpireStalePredictions(key);
             return _predictedPercent.TryGetValue(key, out int percent) ? percent / 100f : null;
         }
+    }
+
+    /// <summary>
+    /// Drops a drained key's prediction once its hold window has passed, so reads
+    /// take over again and any drift self-corrects at the first idle moment. Called
+    /// under <c>_gate</c> before every prediction lookup — lazy expiry, so no timer
+    /// is needed and an idle key costs nothing.
+    /// </summary>
+    private void ExpireStalePredictions(string key)
+    {
+        if (!_predictionHoldUntil.TryGetValue(key, out long holdUntil)) return;
+        if (Environment.TickCount64 < holdUntil) return;
+
+        _predictionHoldUntil.Remove(key);
+        _predictedPercent.Remove(key);
+        _predictedMute.Remove(key);
     }
 
     /// <summary>
@@ -187,6 +221,7 @@ public sealed class AudioWriteQueue : IDisposable
     {
         lock (_gate)
         {
+            ExpireStalePredictions(key);
             if (_predictedMute.TryGetValue(key, out bool queued)) return queued;
         }
         return _shared.GetMuteByKey(key);
@@ -227,6 +262,10 @@ public sealed class AudioWriteQueue : IDisposable
 
     private PendingWrite GetOrEnqueuePending(string key)
     {
+        // The key is busy again, so its prediction is live rather than winding down —
+        // clear any hold started by a previous drain.
+        _predictionHoldUntil.Remove(key);
+
         if (_pending.TryGetValue(key, out PendingWrite? op)) return op;
 
         op = new PendingWrite();
@@ -295,12 +334,22 @@ public sealed class AudioWriteQueue : IDisposable
             lock (_gate)
             {
                 _inFlightKey = null;
-                // Drop the prediction once the key is fully flushed — the device
-                // now reflects it, so the next op re-seeds from a real read.
+                // The key is flushed, but the device may not *read back* as flushed
+                // yet. Start the hold window instead of dropping the prediction now;
+                // ExpireStalePredictions drops it once reads can be trusted again.
                 if (!_pending.ContainsKey(key))
                 {
-                    _predictedPercent.Remove(key);
-                    _predictedMute.Remove(key);
+                    int staleness = Math.Max(0, backend.ReadStalenessMs);
+                    if (staleness == 0)
+                    {
+                        _predictedPercent.Remove(key);
+                        _predictedMute.Remove(key);
+                        _predictionHoldUntil.Remove(key);
+                    }
+                    else
+                    {
+                        _predictionHoldUntil[key] = Environment.TickCount64 + staleness;
+                    }
                 }
                 Monitor.PulseAll(_gate);
             }

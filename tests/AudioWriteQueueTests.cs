@@ -264,11 +264,89 @@ public class AudioWriteQueueTests : IDisposable
     /// writes recorded, with an optional gate that blocks write calls until
     /// released (simulating a slow device driver).
     /// </summary>
+    // ── Stale-read backends (PipeWire) ─────────────────────────────────────────
+
+    /// <summary>
+    /// Regression: on a backend whose reads lag its writes, consecutive detents must
+    /// keep building on the prediction rather than re-seeding from a pre-write read.
+    ///
+    /// Reproduces the reported "fast turns are erratic" bug on Linux. The queue used
+    /// to drop its prediction the instant a key drained, so the next detent seeded
+    /// from pw-dump's snapshot — up to 300 ms stale, roughly 8 detents at the
+    /// measured turn rate — and the volume visibly jumped backwards mid-turn.
+    /// </summary>
+    [Fact]
+    public void Consecutive_adjusts_do_not_re_seed_from_a_stale_read_while_within_the_staleness_window()
+    {
+        _shared.StalenessMs = 300;
+        _writeBackend.StalenessMs = 300;
+        _shared.Volume = 0.50f;   // the snapshot is frozen here: it never observes our writes
+        AudioWriteQueue queue = CreateQueue();
+
+        int first = queue.AdjustVolume("MASTER", 6, 0, 100);
+        first.Should().Be(56);
+
+        // Let the write fully drain, exactly as it would between two fast detents.
+        queue.WaitForDrain(WaitMs).Should().BeTrue();
+
+        // The stale read still says 50 %. Without the hold window this returns 56
+        // again (50 + 6) — the backwards jump the user sees.
+        int second = queue.AdjustVolume("MASTER", 6, 0, 100);
+        second.Should().Be(62, "the second detent must build on the prediction, not the stale read");
+
+        queue.WaitForDrain(WaitMs).Should().BeTrue();
+        queue.AdjustVolume("MASTER", 6, 0, 100).Should().Be(68);
+    }
+
+    /// <summary>
+    /// The hold is bounded: once the staleness window passes, reads take over again
+    /// so an externally-changed volume (another app, the system mixer) is picked up.
+    /// </summary>
+    [Fact]
+    public void Prediction_is_dropped_once_the_staleness_window_expires()
+    {
+        _shared.StalenessMs = 40;
+        _writeBackend.StalenessMs = 40;
+        _shared.Volume = 0.50f;
+        AudioWriteQueue queue = CreateQueue();
+
+        queue.AdjustVolume("MASTER", 6, 0, 100).Should().Be(56);
+        queue.WaitForDrain(WaitMs).Should().BeTrue();
+
+        // Something else moved the volume while we were idle.
+        _shared.Volume = 0.20f;
+        Thread.Sleep(120);   // comfortably past the 40 ms window
+
+        queue.AdjustVolume("MASTER", 6, 0, 100).Should().Be(26, "an expired prediction must defer to the device");
+    }
+
+    /// <summary>
+    /// A backend reporting no staleness (WASAPI: reads are authoritative the moment a
+    /// write returns) keeps the original drop-on-drain behaviour, so Windows is
+    /// unaffected by the hold window.
+    /// </summary>
+    [Fact]
+    public void Zero_staleness_backend_re_seeds_from_the_device_immediately()
+    {
+        _shared.StalenessMs = 0;
+        _writeBackend.StalenessMs = 0;
+        _shared.Volume = 0.50f;
+        AudioWriteQueue queue = CreateQueue();
+
+        queue.AdjustVolume("MASTER", 6, 0, 100).Should().Be(56);
+        queue.WaitForDrain(WaitMs).Should().BeTrue();
+
+        // Read still reports 50 %; with no staleness declared the queue trusts it.
+        queue.AdjustVolume("MASTER", 6, 0, 100).Should().Be(56);
+    }
+
     private sealed class FakeAudioBackend : IAudioBackend
     {
         public float Volume = 0.5f;
         public bool? Muted = false;
         public volatile bool BlockWrites;
+        /// <summary>Simulates a backend whose reads lag its writes (PipeWire's pw-dump snapshot).</summary>
+        public int StalenessMs;
         public bool Disposed;
         public int InitialiseCount;
 
@@ -294,6 +372,7 @@ public class AudioWriteQueueTests : IDisposable
         }
 
         public string BackendName => "Fake";
+        public int ReadStalenessMs => StalenessMs;
         public bool IsAvailable => true;
         public event Action? AvailabilityChanged { add { } remove { } }
         public event Action? TargetsChanged { add { } remove { } }

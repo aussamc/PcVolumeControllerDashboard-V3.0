@@ -19,6 +19,20 @@ public interface IAudioBackend : IDisposable
     /// <summary>Human-readable backend name shown in diagnostics (e.g. "WASAPI", "VoiceMeeter").</summary>
     string BackendName { get; }
 
+    /// <summary>
+    /// How long a read can keep reporting a pre-write value after a write to the
+    /// same key has completed, in milliseconds. Zero (the default) means reads are
+    /// authoritative the instant a write returns — true of any backend that queries
+    /// the device directly, such as WASAPI.
+    ///
+    /// Backends that serve reads from a periodically-refreshed cache must report
+    /// their worst-case lag here. <see cref="AudioWriteQueue"/> uses it to decide
+    /// how long to keep trusting its own predicted value in preference to a read:
+    /// dropping the prediction too early re-seeds the next write from a stale value
+    /// and the volume visibly jumps backwards mid-turn.
+    /// </summary>
+    int ReadStalenessMs => 0;
+
     /// <summary>True when the backend is reachable and responding to API calls.</summary>
     bool IsAvailable { get; }
 

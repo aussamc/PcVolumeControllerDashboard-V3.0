@@ -141,14 +141,14 @@ Notes:
 
 ## Key constants
 
-- Dashboard version: **3.23.6** (Avalonia host). Expected channels: **6**.
+- Dashboard version: **3.24.0** (Avalonia host). Expected channels: **6**.
 - **Two firmware numbers, don't conflate them** (same split as the compatibility
   tables — see `VERSION_COMPATIBILITY.md`):
   - *Minimum protocol* — **2.24** (`SerialConnectionService.MinProtocol`). The
     handshake floor: anything below is rejected outright. Only moves if the wire
     format itself changes, which it hasn't since v2.24.
   - *Matching firmware* — **v2.31** (`Computer_Volume_Controller_v2.31/`). What
-    3.23.x was built and tested against. Older-but-accepted firmware connects fine
+    3.24.x was built and tested against. Older-but-accepted firmware connects fine
     and loses features silently, so this is the number to quote to a user.
 - **v2.31 anti-burn-in is mirrored in Core**, so it's the one firmware detail that
   constrains host code: the drawing origin walks a 3×3 grid of 0–2px x/y offsets, one
