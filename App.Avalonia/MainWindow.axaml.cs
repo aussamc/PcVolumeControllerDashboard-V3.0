@@ -1070,6 +1070,13 @@ public partial class MainWindow : Window
         _bannerPlatform = UpdateInstaller.DetectPlatform();
         _bannerAsset = UpdateAssetSelector.Select(info.Assets, _bannerPlatform);
 
+        // Which medium was resolved, and what it matched. The failure mode this guards
+        // against is silent and platform-specific (an Arch box being offered a .deb), so
+        // a user report should not require reasoning about the detection from scratch.
+        App.Services.GetService<LogService>()?.Info(
+            $"Update {info.LatestVersion}: install medium {_bannerPlatform}, " +
+            $"asset {(_bannerAsset?.Name ?? "(none matched)")}.", "Update");
+
         bool canInstall = _bannerAsset != null && !_safeMode;
         UpdateBannerInstallButton.IsVisible = canInstall;
         UpdateInstallButton.IsVisible = canInstall;
@@ -1177,7 +1184,11 @@ public partial class MainWindow : Window
         }
         else
         {
-            SetInstallProgress("The update was handed to your system package installer.");
+            // The Arch path installs in place rather than handing a file off, so it needs
+            // its own wording — and a restart is what actually completes it.
+            SetInstallProgress(_bannerPlatform == UpdatePlatform.LinuxArch
+                ? "Installing… approve the password prompt, then restart the dashboard."
+                : "The update was handed to your system package installer.");
         }
     }
 
