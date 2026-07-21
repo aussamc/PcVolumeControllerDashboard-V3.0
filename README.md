@@ -70,7 +70,13 @@ Output is `PcVolumeControllerDashboard.Avalonia.exe` under
 
 ## Firmware
 
-The ESP32 Arduino source is in `Computer_Volume_Controller_v2.30/` (current; v2.30 replaces the per-display-mode disconnected layouts with one unified "Disconnected" + firmware-version screen — display-only, the wire protocol is unchanged since v2.24). The previous `Computer_Volume_Controller_v2.29/` and older versioned folders are retained for reference.
+The ESP32 Arduino source is in `Computer_Volume_Controller_v2.31/` — the only firmware
+kept in the repo. v2.31 replaces the hardware anti-burn-in display shift with a 2-D software
+jitter that the dashboard's OLED preview mirrors pixel-for-pixel; the wire protocol is
+unchanged since v2.24. Older firmware versions were removed to keep a single source of
+truth — recover one from git history if you need it, and see
+[VERSION_COMPATIBILITY.md](VERSION_COMPATIBILITY.md) for which firmware matches which
+dashboard release.
 
 Flash the firmware via Arduino IDE / Arduino CLI with the ESP32-S3 Arduino core installed, or using esptool directly.
 
@@ -85,9 +91,7 @@ Core/                                   — platform-agnostic domain (serial, se
 Platform.Windows/                       — Windows audio backends (WASAPI + VoiceMeeter) behind the Core seam
 Platform.Linux/                         — Linux audio backend (PipeWire via pw-dump/wpctl) behind the same seam
 tests/                                  — xUnit + FluentAssertions test project
-Computer_Volume_Controller_v2.30/       — ESP32 Arduino firmware source (v2.30, current — unified disconnected screen)
-Computer_Volume_Controller_v2.29/       — previous firmware source (v2.29, retained for reference)
-Computer_Volume_Controller_v2.24..28/   — older firmware sources (retained for reference)
+Computer_Volume_Controller_v2.31/       — ESP32 Arduino firmware source (current; the only version kept)
 firmware_bin/                           — firmware build output
 ```
 
@@ -98,11 +102,25 @@ firmware_bin/                           — firmware build output
 
 ## Version compatibility
 
-Five most recent releases shown below. For the complete history, see
+Two different numbers matter. **Minimum protocol** is the oldest firmware the dashboard
+will handshake with at all — it has sat at v2.24 since the wire protocol stopped
+changing. **Matching firmware** is the firmware whose feature set that release was built
+and tested against; older-but-accepted firmware connects fine but loses controller-side
+features. Flash the matching firmware.
+
+Most recent releases shown below. For the complete history, the per-firmware feature
+ladder, and what you lose by staying on older firmware, see
 [VERSION_COMPATIBILITY.md](VERSION_COMPATIBILITY.md).
 
-| Dashboard | Required firmware protocol | Hardware       |
-|-----------|---------------------------|----------------|
+| Dashboard | Minimum protocol | Matching firmware | Hardware |
+|---|---|---|---|
+| v3.23 – v3.23.4 | v2.24 | **v2.31** | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
+| v3.22.5 | v2.24 | v2.30 | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
+| v3.20 – v3.22.4 | v2.24 | v2.28 | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
+| v3.19.2 – v3.19.6 | v2.24 | v2.27 | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
+| v3.16 – v3.19.1 | v2.24 | v2.26 | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
+
+-----------|---------------------------|----------------|
 | v3.23.4   | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v3.23.3   | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v3.23.2   | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
