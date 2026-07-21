@@ -311,15 +311,10 @@ public sealed class SettingsRepositoryTests : IDisposable
     [Fact]
     public void Load_MissingFile_ReturnsDefaultSettings()
     {
-        // Point SettingsRepository to a path that doesn't exist by temporarily
-        // overriding %APPDATA%.  Instead we call Normalize + check the Load
-        // result type.  Since Load calls GetPath() which uses %APPDATA%, we
-        // exercise the public static interface through Save/Load below.
-
-        // If the settings file doesn't exist, Load should return defaults.
-        string settingsPath = SettingsRepository.GetPath();
-        if (File.Exists(settingsPath))
-            return;  // skip: settings file exists on this machine
+        // Runs against an empty temp config directory, so the settings file is
+        // genuinely absent and Load must fall back to defaults.
+        using TestConfigDirectory.Scope scope = TestConfigDirectory.CreateScope();
+        File.Exists(SettingsRepository.GetPath()).Should().BeFalse();
 
         SettingsRepository.LoadResult result = SettingsRepository.Load(ChannelCount, MaxSensitivity);
 
@@ -331,6 +326,10 @@ public sealed class SettingsRepositoryTests : IDisposable
     [Fact]
     public void Save_ThenLoad_PreservesActiveProfileName()
     {
+        // Writes through the real Save/Load entry points — pinned to a temp config
+        // directory so it can never touch the developer's live settings.json.
+        using TestConfigDirectory.Scope scope = TestConfigDirectory.CreateScope();
+
         // Save a settings object with a known profile name, then re-load it.
         DashboardSettings original = DashboardSettings.CreateDefault();
         original.SettingsVersion = 7;
@@ -353,10 +352,50 @@ public sealed class SettingsRepositoryTests : IDisposable
     public void Save_LoggerCalledOnError_DoesNotThrow()
     {
         // Providing a null logger should never throw.
+        using TestConfigDirectory.Scope scope = TestConfigDirectory.CreateScope();
         DashboardSettings settings = DashboardSettings.CreateDefault();
 
         Action act = () => SettingsRepository.Save(settings, logger: null);
         act.Should().NotThrow();
+    }
+
+    // ── Config-directory redirection ──────────────────────────────────────────────
+
+    [Fact]
+    public void ConfigDirectory_IsRedirected_ForTheWholeTestRun()
+    {
+        // Regression guard: the module initializer must have moved the config
+        // directory off the real per-user location before any test ran. Without it,
+        // the Save/Load tests above overwrite the developer's live settings.json —
+        // the actual cause of "the update wiped my channel assignments".
+        string liveDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "PcVolumeController");
+
+        SettingsRepository.ConfigDirectoryOverride.Should().NotBeNullOrWhiteSpace();
+        SettingsRepository.GetConfigDirectory().Should().NotBe(liveDir);
+        SettingsRepository.GetPath().Should().NotBe(Path.Combine(liveDir, "settings.json"));
+        SettingsRepository.GetBackupDirectory().Should().NotBe(Path.Combine(liveDir, "setup_backups"));
+    }
+
+    [Fact]
+    public void ConfigDirectory_HonoursEnvironmentVariable_WhenNoOverrideSet()
+    {
+        string? savedOverride = SettingsRepository.ConfigDirectoryOverride;
+        string? savedEnv = Environment.GetEnvironmentVariable(SettingsRepository.ConfigDirectoryEnvVar);
+        try
+        {
+            SettingsRepository.ConfigDirectoryOverride = null;
+            Environment.SetEnvironmentVariable(SettingsRepository.ConfigDirectoryEnvVar, _tempDir);
+
+            SettingsRepository.GetConfigDirectory().Should().Be(_tempDir);
+            SettingsRepository.GetPath().Should().Be(Path.Combine(_tempDir, "settings.json"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(SettingsRepository.ConfigDirectoryEnvVar, savedEnv);
+            SettingsRepository.ConfigDirectoryOverride = savedOverride;
+        }
     }
 
     // ── Channel linking ───────────────────────────────────────────────────────────

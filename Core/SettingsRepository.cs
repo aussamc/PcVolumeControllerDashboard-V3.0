@@ -14,17 +14,42 @@ public static class SettingsRepository
 {
     // ── Path helpers ─────────────────────────────────────────────────────────────
 
-    public static string GetPath()
+    /// <summary>
+    /// Environment variable that redirects the whole per-user config directory
+    /// (settings.json, setup_backups/, logs/, diagnostics/ — everything is derived
+    /// from <see cref="GetPath"/>). Set it to run against a throwaway directory
+    /// without touching the real installation's settings.
+    /// </summary>
+    public const string ConfigDirectoryEnvVar = "PCVOLUMECONTROLLER_CONFIG_DIR";
+
+    /// <summary>
+    /// In-process override of the per-user config directory, taking precedence over
+    /// <see cref="ConfigDirectoryEnvVar"/>. Null (the default) = the real per-OS user
+    /// config dir. The test suite sets this to a temp directory before any test runs:
+    /// several tests exercise the real Save/Load entry points, and without a redirect
+    /// they overwrite the developer's own live settings.json (which is exactly how
+    /// channel mappings kept "vanishing after an update" — a `dotnet test` run, not the
+    /// installer, was resetting them).
+    /// </summary>
+    public static string? ConfigDirectoryOverride { get; set; }
+
+    /// <summary>The per-user config directory: override → env var → per-OS default.</summary>
+    public static string GetConfigDirectory()
     {
+        if (!string.IsNullOrWhiteSpace(ConfigDirectoryOverride))
+            return ConfigDirectoryOverride!;
+
+        string? fromEnv = Environment.GetEnvironmentVariable(ConfigDirectoryEnvVar);
+        if (!string.IsNullOrWhiteSpace(fromEnv))
+            return fromEnv!;
+
         string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        return Path.Combine(appData, "PcVolumeController", "settings.json");
+        return Path.Combine(appData, "PcVolumeController");
     }
 
-    public static string GetBackupDirectory()
-    {
-        string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        return Path.Combine(appData, "PcVolumeController", "setup_backups");
-    }
+    public static string GetPath() => Path.Combine(GetConfigDirectory(), "settings.json");
+
+    public static string GetBackupDirectory() => Path.Combine(GetConfigDirectory(), "setup_backups");
 
     // ── Load result ──────────────────────────────────────────────────────────────
 

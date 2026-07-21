@@ -68,19 +68,31 @@ Notes:
   output** — if a `--no-build` run seems to execute old code, rebuild that TFM
   explicitly (or clean `App.Avalonia/bin` + `obj`). Building the `.csproj` directly
   emits to `bin/Debug/<tfm>/`; solution builds emit to `bin/x64/Debug/<tfm>/`.
-- Some settings tests touch the real user config path — run tests with `APPDATA`
-  (Windows) / `XDG_CONFIG_HOME`-equivalent redirected to a temp dir if you don't want
-  to read the live `settings.json`.
+- The test suite **never touches the live user config** (v3.23.4): a module initializer
+  in `tests/TestConfigDirectory.cs` points `SettingsRepository.ConfigDirectoryOverride`
+  at a temp dir before any test runs. Before that fix, a `dotnet test` run overwrote the
+  developer's own `settings.json` with a fixture — which looked like an update losing the
+  user's settings. Any new test that calls the real `SettingsRepository.Save`/`Load` is
+  covered automatically; don't remove that initializer.
+- To point a *running* dashboard at a throwaway config dir, set
+  `PCVOLUMECONTROLLER_CONFIG_DIR` — settings, backups, logs, and diagnostics all follow it.
 
 ## Standing rules
 
 1. **PRs only** — never commit directly to `main`. Branch `feat/v3.x-...` (features)
    or `fix/v3.x.y-...` (bug fixes). Work in small, build-green PRs.
-2. **Versioning** — major/user-facing change bumps `3.x` (e.g. `3.9 → 3.10`); minor
-   fix bumps `3.x.y`. On a bump, update **all** of: `DashboardVersion` in the Avalonia
-   host's `MainWindow` code, `<Version>/<AssemblyVersion>/<FileVersion>` in the Avalonia
-   csproj, the README compatibility table, and `RELEASE_NOTES_vX.Y.md` (remove the
-   superseded notes file). Infra-only PRs don't bump.
+2. **Versioning** — always **three components, `MAJOR.FEATURE.FIX`**, never two.
+   - `MAJOR` (the leading `3`) — reserved for a whole-product generation.
+   - `FEATURE` (middle) — a user-facing feature or change batch. Bumping it **resets
+     `FIX` to 0**: `3.23.4 → 3.24.0`.
+   - `FIX` (last) — a bug fix or other minor change that isn't its own release:
+     `3.23.3 → 3.23.4`.
+
+   Never write a bare `3.24` — it is `3.24.0` everywhere (code, csproj, tags, docs,
+   release-notes filenames). On a bump, update **all** of: `AppInfo.Version` in the
+   Avalonia host, `<Version>/<AssemblyVersion>/<FileVersion>` in the Avalonia csproj,
+   the README + `VERSION_COMPATIBILITY.md` tables, and `RELEASE_NOTES_vX.Y.Z.md`
+   (remove the superseded notes file). Infra-only PRs don't bump.
 3. **The WPF host has been retired** (removed in the v3.x WPF-retirement PR). The
    Avalonia host is the single UI — there is no second host to keep in sync.
 4. **Serial channel indices are always 0-based (0–5) on the wire; always 1-based
@@ -124,7 +136,7 @@ Notes:
 
 ## Key constants
 
-- Dashboard version: **3.23** (Avalonia host). Required controller protocol: **2.24**
+- Dashboard version: **3.23.4** (Avalonia host). Required controller protocol: **2.24**
   (firmware v2.31 is backward-compatible — v2.31 replaces the hardware
   `SETDISPLAYOFFSET` anti-burn-in shift (vertical-only, wrapped) with a 2-D software
   jitter: the drawing origin walks a 3×3 grid of 0–2px x/y offsets, one adjacent step
