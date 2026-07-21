@@ -41,7 +41,7 @@ repo; older firmware is available from git history at the tag/commit that introd
 
 | Dashboard | Minimum protocol | Matching firmware | Hardware |
 |---|---|---|---|
-| v3.24.0 | v2.24 | **v2.31** | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
+| v3.24 – v3.24.1 | v2.24 | **v2.31** | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v3.23 – v3.23.6 | v2.24 | v2.31 | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v3.22.5 | v2.24 | v2.30 | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v3.20 – v3.22.4 | v2.24 | v2.28 | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |

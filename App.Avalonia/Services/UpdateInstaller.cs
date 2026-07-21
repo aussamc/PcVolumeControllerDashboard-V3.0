@@ -25,14 +25,15 @@ public sealed class UpdateDownloadResult
 /// v3.19 download-and-apply engine. Resolves the running <see cref="UpdatePlatform"/>,
 /// downloads the release asset the pure <see cref="UpdateAssetSelector"/> picks into a
 /// temp file, verifies its size and (when the API provides one) its SHA-256, then applies
-/// it by launching the platform installer / new AppImage / .deb hand-off. Applying an
+/// it by launching the platform installer, the new AppImage, a pacman install on Arch, or
+/// a .deb hand-off elsewhere on Linux. Applying an
 /// installer that replaces the running files means the app must exit, so
 /// <see cref="Apply"/> returns whether the caller should shut down; the caller wires that
 /// to the desktop lifetime.
 ///
 /// Scope is "download + one-click apply" (per the roadmap): the download can be automatic
 /// (AutoApplyUpdates), but launching the installer is always an explicit user action — we
-/// never silently run an installer / UAC prompt behind the user's back. macOS has no
+/// never silently run an installer / UAC or polkit prompt behind the user's back. macOS has no
 /// signed artifact yet (<see cref="UpdatePlatform.Unsupported"/>) — callers fall back to
 /// opening the release page.
 /// </summary>
@@ -50,8 +51,9 @@ public sealed class UpdateInstaller
 
     /// <summary>
     /// Resolves how this build updates itself: Windows installer on the Windows TFM; on the
-    /// shared TFM, the AppImage when running from one (the <c>APPIMAGE</c> env var is set)
-    /// else the .deb on Linux; Unsupported on macOS.
+    /// shared TFM, the AppImage when running from one (the <c>APPIMAGE</c> env var is set),
+    /// else the pacman package on Arch and its derivatives or the .deb on other Linux;
+    /// Unsupported on macOS.
     /// </summary>
     public static UpdatePlatform DetectPlatform()
     {
@@ -60,11 +62,65 @@ public sealed class UpdateInstaller
 #else
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
+            // Running from an AppImage wins regardless of distro: the app updates itself
+            // by replacing that file, and the host package manager isn't involved.
             string? appImage = Environment.GetEnvironmentVariable("APPIMAGE");
-            return string.IsNullOrEmpty(appImage) ? UpdatePlatform.LinuxDeb : UpdatePlatform.LinuxAppImage;
+            if (!string.IsNullOrEmpty(appImage))
+                return UpdatePlatform.LinuxAppImage;
+
+            return IsArchFamily() ? UpdatePlatform.LinuxArch : UpdatePlatform.LinuxDeb;
         }
         return UpdatePlatform.Unsupported; // macOS: no signed artifact yet
 #endif
+    }
+
+    /// <summary>
+    /// True on Arch and its derivatives, read from <c>/etc/os-release</c>.
+    ///
+    /// Distro rather than install-method detection, deliberately: someone who unpacked
+    /// the tarball by hand on Arch is still better served by the pacman package than by
+    /// a .deb. <c>ID_LIKE=arch</c> is what covers the derivatives (CachyOS, EndeavourOS,
+    /// Manjaro, Garuda), since each sets its own <c>ID</c>.
+    ///
+    /// Everything that isn't Arch keeps falling through to the .deb, which is only
+    /// correct for Debian/Ubuntu — an RPM distro has the same "wrong package" problem
+    /// this method fixes for Arch, and needs its own artifact before it can be detected.
+    /// </summary>
+    private static bool IsArchFamily()
+    {
+        try
+        {
+            const string osRelease = "/etc/os-release";
+            if (!File.Exists(osRelease)) return false;
+
+            foreach (string line in File.ReadLines(osRelease))
+            {
+                if (TryReadOsReleaseValue(line, "ID", out string id) &&
+                    id.Equals("arch", StringComparison.OrdinalIgnoreCase))
+                    return true;
+
+                if (TryReadOsReleaseValue(line, "ID_LIKE", out string like) &&
+                    like.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                        .Any(t => t.Equals("arch", StringComparison.OrdinalIgnoreCase)))
+                    return true;
+            }
+        }
+        catch
+        {
+            // Unreadable os-release just means "not detected as Arch" — fall back to
+            // the previous behaviour rather than failing the update check.
+        }
+        return false;
+    }
+
+    // os-release values may be bare or quoted (ID=arch / ID_LIKE="arch").
+    private static bool TryReadOsReleaseValue(string line, string key, out string value)
+    {
+        value = string.Empty;
+        if (!line.StartsWith(key + "=", StringComparison.Ordinal)) return false;
+
+        value = line[(key.Length + 1)..].Trim().Trim('"', '\'');
+        return value.Length > 0;
     }
 
     /// <summary>
@@ -223,6 +279,20 @@ public sealed class UpdateInstaller
                     Process.Start(new ProcessStartInfo("xdg-open", QuoteArg(filePath)) { UseShellExecute = false });
                     _log.Info("Opened the .deb in the system package installer.", "Update");
                     return false; // hand-off — the running app can stay up
+
+                case UpdatePlatform.LinuxArch:
+                    // pacman needs root, and a GUI app has no terminal to prompt in.
+                    // pkexec raises the desktop's polkit dialog and runs the install
+                    // itself, so this genuinely installs rather than handing the file
+                    // off somewhere. Not waited on: the password prompt is modal to the
+                    // user, not to us, and blocking here would freeze the UI behind it.
+                    Process.Start(new ProcessStartInfo("pkexec",
+                        $"pacman -U --noconfirm {QuoteArg(filePath)}") { UseShellExecute = false });
+                    _log.Info("Installing the Arch package via pkexec pacman -U.", "Update");
+                    // Stay running: pacman replaces files under a live process safely on
+                    // Linux, and exiting now would leave the polkit prompt orphaned with
+                    // no way to report success. The user restarts to pick up the new build.
+                    return false;
 
                 default:
                     return false;

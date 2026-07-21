@@ -16,6 +16,14 @@ public enum UpdatePlatform
     Windows,
     LinuxAppImage,
     LinuxDeb,
+
+    /// <summary>
+    /// Arch and its derivatives (CachyOS, EndeavourOS, Manjaro, …) — the
+    /// <c>.pkg.tar.zst</c> built by <c>installers/arch/build.sh</c>, installed with
+    /// <c>pacman -U</c>. Without this, an Arch box falls through to
+    /// <see cref="LinuxDeb"/> and gets handed a Debian package it cannot install.
+    /// </summary>
+    LinuxArch,
 }
 
 /// <summary>
@@ -28,6 +36,7 @@ public enum UpdatePlatform
 /// <item>Windows portable — <c>PcVolumeControllerDashboard.Avalonia.exe</c></item>
 /// <item>Linux AppImage — <c>PcVolumeControllerDashboard-&lt;ver&gt;-x86_64.AppImage</c></item>
 /// <item>Linux Debian — <c>pcvolumecontroller_&lt;ver&gt;_amd64.deb</c></item>
+/// <item>Arch package — <c>pcvolumecontroller-bin-&lt;ver&gt;-1-x86_64.pkg.tar.zst</c></item>
 /// </list>
 /// </summary>
 public static class UpdateAssetSelector
@@ -57,6 +66,12 @@ public static class UpdateAssetSelector
 
             case UpdatePlatform.LinuxDeb:
                 return assets.FirstOrDefault(a => EndsWith(a.Name, ".deb"));
+
+            case UpdatePlatform.LinuxArch:
+                // Matched on the full compound extension: the release also carries a
+                // plain .tar.gz, and ".zst" alone would be ambiguous if that ever
+                // changes compression.
+                return assets.FirstOrDefault(a => EndsWith(a.Name, ".pkg.tar.zst"));
 
             default:
                 return null;
