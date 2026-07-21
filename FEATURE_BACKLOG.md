@@ -7,6 +7,13 @@ rule #1 (`feat/v3.x-…`); a user-facing batch bumps `3.x`.
 
 Effort: **S** ≈ <½ day, **M** ≈ ½–2 days, **L** ≈ multi-day.
 
+> **File paths in shipped sections are as-of-writing, not current.** Entries are kept as
+> the design record for how a decision was reached, so their references are deliberately
+> *not* rewritten as the code moves. In particular, only the current firmware
+> (`Computer_Volume_Controller_v2.31/`) is kept in the repo — every older
+> `Computer_Volume_Controller_v2.2x/` path below is dead, and the line numbers wouldn't
+> map onto v2.31 anyway. Recover an old `.ino` from git history if you need to read one.
+
 ---
 
 ## v3.15 — Volume overlay enhancements  ✅ shipped
@@ -175,8 +182,10 @@ size 1 @ y56:
 
 - **Core preview** — `Core/OledRenderer.cs:335` `RenderLargeVolume` (custom 5×7 font,
   `DrawString(..., size)` integer multiplier).
-- **ESP32 firmware** — `Computer_Volume_Controller_v2.25.ino:337-347`, the
-  `LARGE_VOLUME` branch (Adafruit GFX 6×8 font, `setTextSize()`).
+- **ESP32 firmware** — `Computer_Volume_Controller_v2.25.ino:337-347` *(removed from the
+  repo; v2.25 is in git history)*, the `LARGE_VOLUME` branch (Adafruit GFX 6×8 font,
+  `setTextSize()`). The shipped result of this item lives in
+  `Computer_Volume_Controller_v2.31/`.
 
 Proposed new layout (both must match, or preview diverges from the device): label
 **size 2** centred at y0 (≈16px tall), rule at y18, number **size 4** centred around
@@ -194,7 +203,8 @@ handling, confirm).
 - **⚠ Firmware reflash + bump (standing rule #6).** Because the on-device `LARGE_VOLUME`
   branch changes, this needs a firmware version bump (v2.25 → v2.26), folder rename
   (`Computer_Volume_Controller_v2.26/`), and a reflash — plus the CLAUDE.md firmware-
-  version line + README. **Sequencing note:** this makes 9b heavier than the rest of
+  version line + README. *(Done — v2.26 shipped with v3.16 and has since been superseded
+  up to v2.31; standing rule #6 now also requires deleting the superseded folder.)* **Sequencing note:** this makes 9b heavier than the rest of
   v3.16 (which is app-only). Options: keep it in v3.16 but as its own firmware-touching
   PR, or split the firmware change into a dedicated `fix/…-oled-largevolume` PR that lands
   alongside. The **Core-preview** half can ship app-only; the two just must not diverge on
@@ -220,9 +230,12 @@ has **no pixel-shift logic at all**, and `RenderOledPreviews()`
 periodic x/y offset, e.g. ±1–2px on a slow cycle) gated on the setting, and have the
 preview apply the same offset the firmware uses so preview == device. **First
 investigate where the shift is actually applied on the real device** — check the ESP32
-firmware (`Computer_Volume_Controller_v2.25.ino`) and `DeviceStateService`; the PC may
+firmware (`Computer_Volume_Controller_v2.25.ino`, since removed — read
+`Computer_Volume_Controller_v2.31/` instead) and `DeviceStateService`; the PC may
 only send content while the ESP32 does the shifting. The preview must mirror whichever
-side owns it.
+side owns it. *(Answered: the ESP32 owns the shift. v2.31 moved it to a 2-D software
+jitter that `Core/OledRenderer.cs` mirrors pixel-for-pixel — see the CLAUDE.md key
+constants.)*
 
 **Item 11 — anti-burn shift clips bottom text.** Almost certainly the same investigation:
 the shift (wherever it lives) offsets the drawing origin without shrinking the usable
