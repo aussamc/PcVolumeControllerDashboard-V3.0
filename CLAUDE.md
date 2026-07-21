@@ -141,19 +141,23 @@ Notes:
 
 ## Key constants
 
-- Dashboard version: **3.23.4** (Avalonia host). Required controller protocol: **2.24**
-  (firmware v2.31 is backward-compatible — v2.31 replaces the hardware
-  `SETDISPLAYOFFSET` anti-burn-in shift (vertical-only, wrapped) with a 2-D software
-  jitter: the drawing origin walks a 3×3 grid of 0–2px x/y offsets, one adjacent step
-  every 30s, clipped never wrapped; every screen keeps base content within
-  x0..125/y0..61 so a full jitter never clips a lit pixel, and Core's `OledRenderer`
-  preview mirrors it pixel-for-pixel (`SetAntiBurnJitter`/`AntiBurnJitterForStep`);
-  v2.30 replaced the per-display-mode
-  disconnected layouts with one unified "Disconnected" + firmware-version screen;
-  v2.29 made serial TX non-blocking, added a loop-task watchdog, and raised the
-  default no-dashboard sleep to 3 min so the disconnected-sleep countdown can't be
-  starved when the PC shuts down with the dashboard still connected; wire protocol
-  unchanged since v2.24). Expected channels: **6**.
+- Dashboard version: **3.23.4** (Avalonia host). Expected channels: **6**.
+- **Two firmware numbers, don't conflate them** (same split as the compatibility
+  tables — see `VERSION_COMPATIBILITY.md`):
+  - *Minimum protocol* — **2.24** (`SerialConnectionService.MinProtocol`). The
+    handshake floor: anything below is rejected outright. Only moves if the wire
+    format itself changes, which it hasn't since v2.24.
+  - *Matching firmware* — **v2.31** (`Computer_Volume_Controller_v2.31/`). What
+    3.23.x was built and tested against. Older-but-accepted firmware connects fine
+    and loses features silently, so this is the number to quote to a user.
+- **v2.31 anti-burn-in is mirrored in Core**, so it's the one firmware detail that
+  constrains host code: the drawing origin walks a 3×3 grid of 0–2px x/y offsets, one
+  adjacent step every 30s, **clipped never wrapped** (v2.28–v2.30 used a vertical-only,
+  wrapping hardware `SETDISPLAYOFFSET` shift). Every screen keeps base content within
+  x0..125/y0..61 so a full jitter never clips a lit pixel, and `OledRenderer` reproduces
+  it pixel-for-pixel (`SetAntiBurnJitter`/`AntiBurnJitterForStep`) — change one side and
+  the preview stops matching the panel. Per-firmware history for everything else lives
+  in the `VERSION_COMPATIBILITY.md` ladder, not here.
 - Hardware: v1.4 PCB, ESP32-S3-DevKitC-1-N16R8, SSD1315 OLEDs behind a TCA9548A I2C
   mux. GPIO/OLED layout is final — see the firmware source.
 
