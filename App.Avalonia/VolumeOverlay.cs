@@ -217,6 +217,14 @@ public sealed class VolumeOverlay : Window
         if (!IsVisible) Show();
         PositionOnScreen(position, screen);
 
+        // Re-assert topmost on every show. Windows keeps a z-order *within* the
+        // topmost band, and any app that claims topmost later (Fusion 360's viewport/
+        // palettes, games, other overlays) lands above us; the platform backend only
+        // re-issues its topmost call when the property value changes, so toggle it.
+        // Both calls are non-activating — no focus is stolen from the foreground app.
+        Topmost = false;
+        Topmost = true;
+
         _hideTimer.Stop();
         _hideTimer.Interval = TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 0.5, 10));
         _hideTimer.Start();
