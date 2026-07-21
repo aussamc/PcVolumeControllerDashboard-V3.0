@@ -11,9 +11,10 @@ _notes() {
   session gets an ACL on /dev/ttyACM* automatically — replug the controller if
   it was already connected. No group membership needed.
 
-  That rule matches Espressif's USB vendor ID (0x303a). If `lsusb` shows your
-  board behind a UART bridge instead (Silicon Labs, WCH, FTDI) it won't match,
-  and the port will fail to open. Fall back to the group route:
+  That rule matches Espressif's USB vendor ID (0x303a) and the WCH CH343 bridge
+  (0x1a86:0x55d3) the v1.4 PCB uses. If `lsusb` shows your board behind some
+  other UART bridge (Silicon Labs, FTDI) it won't match, and the port will fail
+  to open. Fall back to the group route:
 
       sudo usermod -aG uucp $USER     # `uucp`, not `dialout`, on Arch
       # then log out and back in
