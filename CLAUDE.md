@@ -25,7 +25,7 @@ reached feature parity — the Avalonia host is the single UI going forward.
 | `Platform.Windows/` | `net10.0-windows` | Windows-only implementations behind Core seams: WASAPI + VoiceMeeter audio backends. |
 | `Platform.Linux/` | `net10.0` | Linux audio backend behind the same seam: `PipeWireAudioBackend` (shells out to `pw-dump`/`wpctl`). Also referenced on macOS builds (shared TFM), but `AudioBackendFactory` only instantiates it at runtime on Linux. |
 | `tests/` (`PcVolumeControllerDashboard.Tests.csproj`) | `net10.0-windows` | xUnit + FluentAssertions. Tests Core (pure logic) + Windows platform pieces. |
-| `Computer_Volume_Controller_v2.31/` | Arduino | Current ESP32 firmware (`.ino`). `v2.30/`/`v2.29/`/`v2.28/`/`v2.27/`/`v2.26/`/`v2.25/`/`v2.24/` kept for reference. |
+| `Computer_Volume_Controller_v2.31/` | Arduino | Current ESP32 firmware (`.ino`) — **the only firmware kept in the repo**. Older versions (v2.24–v2.30) were removed; recover one from git history if ever needed. On a firmware bump, delete the superseded folder in the same PR. |
 | `PcVolumeControllerDashboard.slnx` | | Solution file (Core + App.Avalonia + Platform.Windows/Linux + tests). |
 
 Namespaces: Core = `PcVolumeControllerDashboard.Core`; Avalonia host =
@@ -100,7 +100,12 @@ Notes:
 5. **Identity handshake is strict** — `HELLO` must match both the `PC_VOLUME_CONTROLLER`
    name and the exact protocol string.
 6. **Firmware version** — only bump the firmware version / rename its folder when the
-   ESP32 code actually changes and a reflash is required.
+   ESP32 code actually changes and a reflash is required. On a bump, **delete the
+   superseded firmware folder** (git history is the archive) and update the firmware
+   ladder + matrix in `VERSION_COMPATIBILITY.md` and the README table: the
+   *minimum protocol* column only moves if the wire protocol itself changes, but the
+   *matching firmware* column must always point at the new firmware for the dashboard
+   version shipping alongside it.
 7. **Logs / settings** live in the per-OS user config dir
    (`%APPDATA%\PcVolumeController\` on Windows, `~/.config/PcVolumeController/` on
    Linux, `~/Library/Application Support/PcVolumeController/` on macOS).
@@ -124,7 +129,7 @@ Notes:
   `_initializing`/`_detailLoading` flag is set (they'd otherwise persist control
   defaults over just-loaded settings during construction).
 
-## Serial protocol (firmware v2.28)
+## Serial protocol (firmware v2.31; wire format unchanged since v2.24)
 
 - Handshake: ESP32 → `HELLO,PC_VOLUME_CONTROLLER,<protocol>,<channels>,<chipId>`
   (5th field = chip ID for controller pairing; absent = pre-v2.25, still accepted).
