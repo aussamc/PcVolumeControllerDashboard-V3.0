@@ -4,6 +4,12 @@
 *.desktop       text eol=lf
 AppRun          text eol=lf
 
+# Arch packaging + udev: makepkg and pacman's install scriptlets are parsed by
+# bash, and udev rejects rules with trailing CR — same LF requirement.
+PKGBUILD*       text eol=lf
+*.install       text eol=lf
+*.rules         text eol=lf
+
 # Binary assets — never apply line-ending or text normalization.
 *.png           binary
 *.ico           binary

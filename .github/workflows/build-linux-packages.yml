@@ -1,16 +1,22 @@
 name: Build Linux packages
 
 # Packages the Avalonia host for Linux from a self-contained linux-x64 publish:
-# a Debian .deb and a universal AppImage (installers/linux/build.sh).
-#   • pull_request — builds both and uploads them as a workflow artifact for
+# a Debian .deb, a universal AppImage and a plain .tar.gz (installers/linux/build.sh),
+# then an Arch .pkg.tar.zst built from that tarball (installers/arch/build.sh).
+#   • pull_request — builds everything and uploads it as a workflow artifact for
 #     pre-merge validation (path-filtered; no release changes).
-#   • push to main — builds both and attaches them to the v<version> GitHub Release.
+#   • push to main — builds everything and attaches it to the v<version> GitHub Release.
+#
+# Two jobs because the Arch package needs makepkg, which only exists on Arch: the
+# `linux` job publishes and packages on ubuntu-latest, then hands the tarball to
+# `arch` running in an archlinux container.
 
 on:
   push:
     branches: [main]
     paths:
       - 'installers/linux/**'
+      - 'installers/arch/**'
       - 'App.Avalonia/**'
       - 'Core/**'
       - 'Platform.Linux/**'
@@ -18,6 +24,7 @@ on:
   pull_request:
     paths:
       - 'installers/linux/**'
+      - 'installers/arch/**'
       - 'App.Avalonia/**'
       - 'Core/**'
       - 'Platform.Linux/**'
@@ -29,6 +36,8 @@ permissions:
 jobs:
   linux:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
 
     steps:
       - name: Checkout
@@ -60,7 +69,7 @@ jobs:
           -p:EnableWindowsTargeting=true
           -o linux_input/
 
-      - name: Build .deb + AppImage
+      - name: Build .deb + AppImage + tarball
         run: bash installers/linux/build.sh linux_input "${{ steps.version.outputs.VERSION }}" linux_output
 
       - name: Inspect .deb
@@ -68,14 +77,16 @@ jobs:
           dpkg-deb --info linux_output/*.deb
           dpkg-deb --contents linux_output/*.deb | head -40
 
-      - name: Upload packages artifact (PR validation)
-        if: github.event_name == 'pull_request'
+      # Always uploaded, not just on PRs: the `arch` job consumes the tarball from
+      # here, so this artifact is a job-to-job handoff as well as PR validation.
+      - name: Upload packages artifact
         uses: actions/upload-artifact@v5
         with:
           name: linux-packages
           path: |
             linux_output/*.deb
             linux_output/*.AppImage
+            linux_output/*.tar.gz
 
       - name: Attach packages to release (main)
         if: github.event_name == 'push'
@@ -85,4 +96,62 @@ jobs:
         run: |
           tag="v$VERSION"
           gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "$tag" --notes "Automated build for $tag"
-          gh release upload "$tag" linux_output/*.deb linux_output/*.AppImage --clobber
+          gh release upload "$tag" linux_output/*.deb linux_output/*.AppImage linux_output/*.tar.gz --clobber
+
+  arch:
+    needs: linux
+    runs-on: ubuntu-latest
+    # makepkg only exists on Arch, and the package must be built with the same
+    # pacman/zstd generation it will be installed by.
+    container: archlinux:base-devel
+
+    steps:
+      - name: Install build deps
+        # git for actions/checkout, github-cli for the release upload (neither is
+        # in base-devel), namcap for the advisory lint in installers/arch/build.sh.
+        run: pacman -Syu --noconfirm --needed git github-cli namcap
+
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Download Linux tarball
+        uses: actions/download-artifact@v5
+        with:
+          name: linux-packages
+          path: linux_output
+
+      - name: Build Arch package
+        # makepkg refuses to run as root, so build as an unprivileged user. The
+        # container runs as root, hence the explicit chown of the workspace.
+        env:
+          VERSION: ${{ needs.linux.outputs.version }}
+        run: |
+          useradd -m builder
+          chown -R builder .
+          su builder -c "bash installers/arch/build.sh \
+            'linux_output/pcvolumecontroller-$VERSION-linux-x64.tar.gz' \
+            '$VERSION' arch_output"
+
+      - name: Inspect package
+        run: |
+          pacman -Qip arch_output/*.pkg.tar.zst
+          bsdtar -tf arch_output/*.pkg.tar.zst | grep -vE '^opt/pcvolumecontroller/.'
+
+      - name: Upload Arch package artifact (PR validation)
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v5
+        with:
+          name: arch-package
+          path: |
+            arch_output/*.pkg.tar.zst
+            arch_output/PKGBUILD
+
+      - name: Attach Arch package to release (main)
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.linux.outputs.version }}
+        run: |
+          # The `linux` job already created the release if it was missing.
+          gh release upload "v$VERSION" arch_output/*.pkg.tar.zst arch_output/PKGBUILD --clobber
