@@ -9,7 +9,15 @@
 # to whoever owns the active local session, applied the moment it's plugged in.
 # Remote/SSH sessions deliberately don't get it.
 #
-# Scoped to the Espressif VID only. Boards wired through a generic UART bridge
-# (CP210x, CH34x, FTDI) enumerate under the bridge vendor's ID instead and won't
-# match — those still need the group route. `lsusb` will tell you which you have.
+# Two matches, because the board exists in both wirings. Native USB CDC boards
+# come up under Espressif's VID; the v1.4 PCB routes serial through a WCH CH343
+# bridge, which enumerates under QinHeng's VID with the ESP32 invisible behind it.
+#
+# The CH343 match is pinned to its product ID as well. VID 1a86 alone covers half
+# the cheap USB-serial adapters in existence (CH340 especially), and handing an
+# ACL to every one of them plugged into the machine is more than this needs.
+#
+# Still unmatched: boards behind a CP210x or FTDI bridge. Those need the group
+# route (`uucp` on Arch, `dialout` elsewhere) — `lsusb` will tell you which you have.
 SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", TAG+="uaccess"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d3", TAG+="uaccess"
