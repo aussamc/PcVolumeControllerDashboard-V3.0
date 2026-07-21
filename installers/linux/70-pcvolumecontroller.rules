@@ -9,6 +9,16 @@
 # to whoever owns the active local session, applied the moment it's plugged in.
 # Remote/SSH sessions deliberately don't get it.
 #
+# The 70- prefix is load-bearing — do not renumber this file upward. udev reads
+# rules in lexical order, and it's 73-seat-late.rules that does the actual work:
+#
+#     TAG=="uaccess", ENV{MAJOR}!="", RUN{builtin}+="uaccess"
+#
+# Setting the tag after that line has already run leaves it in the udev database
+# with the ACL builtin never invoked — `udevadm info` shows uaccess in
+# CURRENT_TAGS and `getfacl` shows no user entry at all. This file shipped as
+# 99- until v3.23.6 and was inert that entire time, on every board.
+#
 # Two matches, because the board exists in both wirings. Native USB CDC boards
 # come up under Espressif's VID; the v1.4 PCB routes serial through a WCH CH343
 # bridge, which enumerates under QinHeng's VID with the ESP32 invisible behind it.

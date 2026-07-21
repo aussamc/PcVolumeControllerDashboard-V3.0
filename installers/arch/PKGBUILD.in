@@ -51,5 +51,5 @@ package() {
     install -Dm644 "$_pkgname.png" "$pkgdir/usr/share/icons/hicolor/32x32/apps/$_pkgname.png"
 
     # uaccess tag for the controller's /dev/ttyACM* node — see the rule's comments.
-    install -Dm644 "99-$_pkgname.rules" "$pkgdir/usr/lib/udev/rules.d/99-$_pkgname.rules"
+    install -Dm644 "70-$_pkgname.rules" "$pkgdir/usr/lib/udev/rules.d/70-$_pkgname.rules"
 }
