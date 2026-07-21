@@ -24,7 +24,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DESKTOP="$SCRIPT_DIR/$APP.desktop"
 ICON="$SCRIPT_DIR/$APP.png"        # 32x32 (the app's only icon frame)
 ICON_DIR="hicolor/32x32/apps"
-UDEV="$SCRIPT_DIR/99-$APP.rules"   # uaccess tag for the ESP32's /dev/ttyACM* node
+UDEV="$SCRIPT_DIR/70-$APP.rules"   # uaccess tag for the ESP32's /dev/ttyACM* node
 UDEV_DIR="usr/lib/udev/rules.d"
 
 mkdir -p "$OUTDIR"
@@ -45,7 +45,7 @@ chmod +x "$DEB_ROOT/opt/$APP/$EXE"
 ln -s "/opt/$APP/$EXE" "$DEB_ROOT/usr/bin/$APP"
 cp "$DESKTOP" "$DEB_ROOT/usr/share/applications/$APP.desktop"
 cp "$ICON" "$DEB_ROOT/usr/share/icons/$ICON_DIR/$APP.png"
-cp "$UDEV" "$DEB_ROOT/$UDEV_DIR/99-$APP.rules"
+cp "$UDEV" "$DEB_ROOT/$UDEV_DIR/70-$APP.rules"
 
 INSTALLED_KB="$(du -sk "$DEB_ROOT/opt" | cut -f1)"
 cat > "$DEB_ROOT/DEBIAN/control" <<CTRL

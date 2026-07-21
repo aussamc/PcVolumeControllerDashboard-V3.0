@@ -142,13 +142,14 @@ ladder, and what you lose by staying on older firmware, see
 
 | Dashboard | Minimum protocol | Matching firmware | Hardware |
 |---|---|---|---|
-| v3.23 – v3.23.5 | v2.24 | **v2.31** | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
+| v3.23 – v3.23.6 | v2.24 | **v2.31** | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v3.22.5 | v2.24 | v2.30 | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v3.20 – v3.22.4 | v2.24 | v2.28 | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v3.19.2 – v3.19.6 | v2.24 | v2.27 | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v3.16 – v3.19.1 | v2.24 | v2.26 | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 
 -----------|---------------------------|----------------|
+| v3.23.6   | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v3.23.5   | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v3.23.4   | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |
 | v3.23.3   | v2.24                     | v1.4 PCB (6-channel, ESP32-S3-DevKitC-1-N16R8) |

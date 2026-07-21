@@ -141,7 +141,7 @@ Notes:
 
 ## Key constants
 
-- Dashboard version: **3.23.5** (Avalonia host). Expected channels: **6**.
+- Dashboard version: **3.23.6** (Avalonia host). Expected channels: **6**.
 - **Two firmware numbers, don't conflate them** (same split as the compatibility
   tables — see `VERSION_COMPATIBILITY.md`):
   - *Minimum protocol* — **2.24** (`SerialConnectionService.MinProtocol`). The
